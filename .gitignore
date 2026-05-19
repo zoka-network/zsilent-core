@@ -1,0 +1,16 @@
+.gradle/
+build/
+out/
+*.log
+*.lock
+*.iml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+

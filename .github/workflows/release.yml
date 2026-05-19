@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      node_ref:
+        description: "Ref of ZokaNetwork/ZokaNetwork to build against (branch, tag, sha)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_glob: zsilent-core/build/compose/binaries/main/msi/*.msi
+            artifact_name: ZSilentCore-windows-msi
+          - os: ubuntu-latest
+            artifact_glob: zsilent-core/build/compose/binaries/main/deb/*.deb
+            artifact_name: ZSilentCore-linux-deb
+
+    steps:
+      - name: Checkout zsilent-core
+        uses: actions/checkout@v4
+        with:
+          path: zsilent-core
+
+      - name: Checkout zoka-network
+        uses: actions/checkout@v4
+        with:
+          repository: ZokaNetwork/ZokaNetwork
+          ref: ${{ github.event.inputs.node_ref || 'main' }}
+          path: zoka-network
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            zoka-network/target
+          key: cargo-${{ matrix.os }}-${{ hashFiles('zoka-network/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.os }}-
+
+      - name: Install build deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake build-essential pkg-config
+
+      - name: Build zoka node binaries
+        working-directory: zoka-network
+        run: cargo build --release --features randomx --bin zoka --bin zokahd
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify node binaries exist
+        shell: bash
+        run: |
+          echo "Workspace contents:"
+          ls -la "$GITHUB_WORKSPACE"
+          echo ""
+          echo "zoka-network/target/release contents:"
+          ls -la "$GITHUB_WORKSPACE/zoka-network/target/release/" || echo "DIR MISSING"
+          echo ""
+          echo "trusted-setup contents:"
+          ls -la "$GITHUB_WORKSPACE/zoka-network/trusted-setup/" || echo "DIR MISSING"
+
+      - name: Package native distribution
+        working-directory: zsilent-core
+        shell: bash
+        run: |
+          chmod +x ./gradlew || true
+          ./gradlew packageDistributionForCurrentOS \
+            "-Pzoka.nodeRepoRoot=$GITHUB_WORKSPACE/zoka-network" \
+            --no-daemon --stacktrace
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifact tree
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.msi" -o -name "*.deb" \) -exec cp {} release/ \;
+          ls -lh release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -1,0 +1,137 @@
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.Copy
+import org.gradle.internal.os.OperatingSystem
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
+plugins {
+    kotlin("jvm") version "2.0.21"
+    kotlin("plugin.serialization") version "2.0.21"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
+    id("org.jetbrains.compose") version "1.7.3"
+}
+
+group = "com.zsilent"
+version = "0.1.0"
+
+val hostOs = OperatingSystem.current()
+val nodeRepoRoot = (findProperty("zoka.nodeRepoRoot") as String?)
+    ?.let { layout.projectDirectory.dir(it) }
+    ?: layout.projectDirectory.dir("..")
+val binaryExt = if (hostOs.isWindows) ".exe" else ""
+val zokaExe = nodeRepoRoot.file("target/release/zoka$binaryExt")
+val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
+val networkManifest = nodeRepoRoot.file("docs/mainnet-network.v1.json")
+val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
+val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")
+
+val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
+    val requiredFiles = listOf(zokaExe, zokahdExe, networkManifest)
+    val requiredTrustedSetupFiles = listOf(
+        "DIGEST",
+        "balance.params",
+        "merkle.params",
+        "nullifier.params",
+        "private_tx.params"
+    )
+    doFirst {
+        delete(packageResourcesRoot)
+        val missing = requiredFiles
+            .map { it.asFile }
+            .filterNot { it.exists() && it.isFile }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Missing ZSilent runtime file(s): ${missing.joinToString { it.path }}. " +
+                    "Build the Rust node first with: cargo build --release --features randomx --bins"
+            )
+        }
+        val missingTrustedSetup = requiredTrustedSetupFiles
+            .map { trustedSetupDir.file(it).asFile }
+            .filterNot { it.exists() && it.isFile }
+        if (missingTrustedSetup.isNotEmpty()) {
+            throw GradleException(
+                "Missing ZSilent trusted setup file(s): ${missingTrustedSetup.joinToString { it.path }}. " +
+                    "Regenerate trusted setup before packaging."
+            )
+        }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    into(packageResourcesRoot.map { it.dir("common") })
+    from(zokaExe) { into("bin") }
+    from(zokahdExe) { into("bin") }
+    from(networkManifest) { into("docs") }
+    from(trustedSetupDir) { into("trusted-setup") }
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
+
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    implementation("io.ktor:ktor-client-cio:3.0.1")
+    implementation("io.ktor:ktor-client-content-negotiation:3.0.1")
+    implementation("io.ktor:ktor-client-websockets:3.0.1")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.1")
+
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:javase:3.5.3")
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.zsilent.core.MainKt"
+
+        nativeDistributions {
+            val formats = when {
+                hostOs.isWindows -> arrayOf(TargetFormat.Msi, TargetFormat.Exe)
+                hostOs.isLinux -> arrayOf(TargetFormat.Deb, TargetFormat.Rpm)
+                hostOs.isMacOsX -> arrayOf(TargetFormat.Dmg, TargetFormat.Pkg)
+                else -> arrayOf(TargetFormat.Msi)
+            }
+            targetFormats(*formats)
+            packageName = "ZSilent Core"
+            packageVersion = "0.1.0"
+            description = "Private desktop control center for the Zoka network."
+            vendor = "ZSilent"
+            appResourcesRootDir.set(packageResourcesRoot)
+
+            windows {
+                menu = true
+                shortcut = true
+                dirChooser = true
+                perUserInstall = true
+                iconFile.set(project.file("src/main/resources/zsilent-icon.ico"))
+                upgradeUuid = "63E8B74E-A8E8-49F0-9E52-9DF7B48C6F95"
+            }
+
+            linux {
+                packageName = "zsilent-core"
+                menuGroup = "Network"
+            }
+
+            macOS {
+                bundleID = "com.zsilent.core"
+            }
+        }
+    }
+}
+
+tasks.matching {
+    it.name in setOf(
+        "createDistributable",
+        "prepareAppResources",
+        "packageExe",
+        "packageDistributionForCurrentOS",
+        "packageMsi",
+        "runDistributable"
+    )
+}.configureEach {
+    dependsOn(prepareZSilentRuntimeResources)
+}
