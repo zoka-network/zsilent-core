@@ -245,6 +245,7 @@ data class PersistedSetup(
     val walletName: String = "",
     val walletAddress: String = "",
     val managedWallets: List<String> = emptyList(),
+    val managedWalletAddresses: List<String> = emptyList(),
     val nodeEnabled: Boolean = true,
     val miningEnabled: Boolean = false,
     val balancesHidden: Boolean = false,

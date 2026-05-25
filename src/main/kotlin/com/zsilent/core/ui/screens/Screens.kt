@@ -638,7 +638,7 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         newWalletPassword.length >= 8 &&
         newWalletPassword == newWalletPasswordConfirm &&
         !ui.walletCreationBusy
-    val canExportBackup = ui.activeWalletName.isNotBlank() &&
+    val canExportBackup = ui.activeWalletAddress.isNotBlank() &&
         backupPath.isNotBlank() &&
         backupPassword.isNotBlank() &&
         !ui.walletBackupBusy
@@ -1063,7 +1063,7 @@ private fun WalletsListSection(
         meta = "${ui.wallets.size} found"
     ) {
         ui.wallets.forEach { wallet ->
-            val active = wallet.name == ui.activeWalletName
+            val active = wallet.address == ui.activeWalletAddress
             val shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
             Row(
                 modifier = Modifier
@@ -1081,7 +1081,7 @@ private fun WalletsListSection(
                         ),
                         shape
                     )
-                    .clickable { onSelect(wallet.name) }
+                    .clickable { onSelect(wallet.address) }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -1175,15 +1175,15 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     var reviewOpen by remember { mutableStateOf(false) }
     val recipientLooksValid = address.startsWith("zka1")
     val amountLooksValid = amount.toDoubleOrNull()?.let { it > 0.0 } == true
-    val selectedWallet = ui.wallets.firstOrNull { it.name == fromWallet }
-    val fromLooksValid = ui.wallets.any { it.name == fromWallet }
-    LaunchedEffect(ui.wallets, ui.activeWalletName) {
-        if (fromWallet.isBlank() || ui.wallets.none { it.name == fromWallet }) {
-            fromWallet = ui.wallets.firstOrNull { it.name == ui.activeWalletName && it.balanceAtoms > 0 }?.name
-                ?: ui.wallets.firstOrNull { it.balanceAtoms > 0 }?.name
-                ?: ui.wallets.firstOrNull { it.name == ui.activeWalletName }?.name
-                ?: ui.wallets.firstOrNull()?.name
-                ?: ui.activeWalletName.ifBlank { ui.walletName }
+    val selectedWallet = ui.wallets.firstOrNull { it.address == fromWallet }
+    val fromLooksValid = ui.wallets.any { it.address == fromWallet }
+    LaunchedEffect(ui.wallets, ui.activeWalletAddress) {
+        if (fromWallet.isBlank() || ui.wallets.none { it.address == fromWallet }) {
+            fromWallet = ui.wallets.firstOrNull { it.address == ui.activeWalletAddress && it.balanceAtoms > 0 }?.address
+                ?: ui.wallets.firstOrNull { it.balanceAtoms > 0 }?.address
+                ?: ui.wallets.firstOrNull { it.address == ui.activeWalletAddress }?.address
+                ?: ui.wallets.firstOrNull()?.address
+                ?: ui.activeWalletAddress
         }
     }
 
@@ -1222,7 +1222,8 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             reviewOpen -> {
                 val fee = ui.sendFeeEstimate
                 Panel(title = "Review transaction", meta = "device signing") {
-                    KeyValueRow("From", fromWallet)
+                    KeyValueRow("From", selectedWallet?.name ?: "selected wallet")
+                    CopyableKeyValueRow("Source address", fromWallet)
                     CopyableKeyValueRow("To", address)
                     KeyValueRow("Amount", fee?.amount ?: "$amount ZKA")
                     KeyValueRow("Estimated fee", fee?.fee ?: if (ui.sendBusy) "calculating" else "not available")
@@ -1258,7 +1259,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             else -> {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Panel(title = "Source wallet", meta = if (fromLooksValid) "selected" else "required", modifier = Modifier.weight(1f)) {
-                        KeyValueRow("From", fromWallet.ifBlank { "not selected" })
+                        KeyValueRow("From", selectedWallet?.name ?: "not selected")
                         CopyableKeyValueRow("Address", selectedWallet?.address ?: "not selected")
                         KeyValueRow("Available", selectedWallet?.balance?.let { "$it ZKA" } ?: "not loaded")
                     }
@@ -1277,11 +1278,11 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                             ui.wallets.forEach { wallet ->
                                 OutlinedButton(colors = zOutlinedButtonColors(), 
                                     onClick = {
-                                        fromWallet = wallet.name
-                                        appState.selectWallet(wallet.name)
+                                        fromWallet = wallet.address
+                                        appState.selectWallet(wallet.address)
                                     }
                                 ) {
-                                    Text("${wallet.name}${if (wallet.name == fromWallet) " / selected" else ""}")
+                                    Text("${wallet.name}${if (wallet.address == fromWallet) " / selected" else ""}")
                                 }
                             }
                         }
@@ -1331,7 +1332,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                                 reviewOpen = true
                                 appState.estimateSendFee(amount)
                             },
-                            enabled = recipientLooksValid && amountLooksValid && ui.activeWalletName.isNotBlank() && !ui.sendBusy && fromLooksValid,
+                            enabled = recipientLooksValid && amountLooksValid && ui.activeWalletAddress.isNotBlank() && !ui.sendBusy && fromLooksValid,
                             colors = zButtonColors()
                         ) { Text("Review transaction") }
                     }
@@ -1356,8 +1357,8 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         Panel(title = "Wallet selector", meta = "${ui.wallets.size} accounts") {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ui.wallets.forEach { wallet ->
-                    OutlinedButton(colors = zOutlinedButtonColors(), onClick = { appState.selectWallet(wallet.name) }) {
-                        Text("${wallet.name}${if (wallet.name == ui.activeWalletName) " / active" else ""}")
+                    OutlinedButton(colors = zOutlinedButtonColors(), onClick = { appState.selectWallet(wallet.address) }) {
+                        Text("${wallet.name}${if (wallet.address == ui.activeWalletAddress) " / active" else ""}")
                     }
                 }
                 OutlinedButton(colors = zOutlinedButtonColors(), onClick = { appState.refreshWallets() }, enabled = !ui.walletBusy) { Text("Rescan") }
@@ -1896,7 +1897,11 @@ fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         confirmReset = confirmReset,
                         onAskConfirm = { confirmReset = true },
                         onCancel = { confirmReset = false },
-                        onReset = appState::resetSetup
+                        onReset = {
+                            if (appState.resetLocalWallet()) {
+                                confirmReset = false
+                            }
+                        }
                     )
                 }
             }
@@ -2393,7 +2398,7 @@ private fun SettingsDangerPage(
 ) {
     Panel(title = "Clear all data", meta = "danger") {
         Text(
-            "This returns ZSilent Core to onboarding. Encrypted wallet files remain on disk until a password-protected wallet wipe is added.",
+            "This returns ZSilent Core to onboarding and removes local encrypted wallet files from this device. Funds stay on-chain; recovery requires the seed phrase.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (!confirmReset) {
@@ -2523,8 +2528,8 @@ private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean
 }
 
 private fun activeLocalWallet(ui: ZSilentUiState): LocalWallet? {
-    return ui.wallets.firstOrNull { it.name == ui.activeWalletName }
-        ?: ui.wallets.firstOrNull { it.address == ui.activeWalletAddress }
+    return ui.wallets.firstOrNull { it.address == ui.activeWalletAddress }
+        ?: ui.wallets.firstOrNull { it.name == ui.activeWalletName }
 }
 
 private fun activeWalletAvailable(ui: ZSilentUiState, wallet: LocalWallet?): String {

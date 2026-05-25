@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Icon
@@ -59,11 +60,27 @@ private val NoirAccent = Color(0xFFC8CDD7)
 private val NoirError = Color(0xFFE05757)
 private val NoirSuccess = Color(0xFF4FB585)
 private val NoirInk = Color(0xFF05070A)
+private val NoirSelected = Color(0xFF1A2232)
+
+// Builds the wallet list for the login selector.
+// Prefers ui.wallets (populated asynchronously from CLI, has proper name+address pairing).
+// Falls back to managedWallets names when the CLI result isn't ready yet.
+private fun loginWalletOptions(ui: ZSilentUiState): List<Pair<String, String>> {
+    if (ui.wallets.isNotEmpty()) {
+        return ui.wallets.map { it.name to it.address }
+    }
+    val names = ui.managedWallets.filter { it.isNotBlank() }.distinct()
+    if (names.isEmpty()) return emptyList()
+    // Without a CLI response we can't reliably pair names to addresses,
+    // so addresses are left empty and the selector shows names only.
+    return names.map { name -> name to "" }
+}
 
 @Composable
 fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     var password by remember { mutableStateOf("") }
     var showReset by remember { mutableStateOf(false) }
+    var showRestoreConfirm by remember { mutableStateOf(false) }
     var attempts by remember { mutableStateOf(0) }
 
     if (showReset) {
@@ -71,12 +88,28 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             onCancel = { showReset = false },
             onConfirm = {
                 password = ""
-                appState.resetSetup()
-                showReset = false
+                if (appState.resetLocalWallet()) {
+                    showReset = false
+                }
             }
         )
         return
     }
+
+    if (showRestoreConfirm) {
+        RestoreFromRecoveryConfirmScreen(
+            onCancel = { showRestoreConfirm = false },
+            onConfirm = {
+                password = ""
+                appState.resetSetup()
+                showRestoreConfirm = false
+            }
+        )
+        return
+    }
+
+    val walletOptions = loginWalletOptions(ui)
+    val showSelector = walletOptions.size > 1
 
     Box(Modifier.fillMaxSize()) {
         NoirBackground()
@@ -108,16 +141,35 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
             NoirCard(modifier = Modifier.widthIn(min = 460.dp, max = 540.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ScreenEyebrow("Session")
-                    Text(
-                        ui.activeWalletName.ifBlank { ui.walletName.ifBlank { "main" } },
-                        color = NoirText,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 18.sp
-                    )
-                    ui.activeWalletAddress.takeIf { it.isNotBlank() }?.let { addr ->
-                        Text(addr, color = NoirTextSubtle, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+
+                    if (showSelector) {
+                        // Multiple wallets: show selector so the user knows which to unlock
+                        ScreenEyebrow("Select wallet to unlock")
+                        WalletSelector(
+                            wallets = walletOptions,
+                            activeName = ui.activeWalletName,
+                            activeAddress = ui.activeWalletAddress,
+                            onSelect = { name ->
+                                // Clear the password when switching wallets — different wallets
+                                // may use different passwords.
+                                password = ""
+                                attempts = 0
+                                appState.selectWallet(name)
+                            }
+                        )
+                    } else {
+                        // Single wallet: show name and address as before
+                        ScreenEyebrow("Session")
+                        Text(
+                            ui.activeWalletName.ifBlank { ui.walletName.ifBlank { "main" } },
+                            color = NoirText,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 18.sp
+                        )
+                        ui.activeWalletAddress.takeIf { it.isNotBlank() }?.let { addr ->
+                            Text(addr, color = NoirTextSubtle, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        }
                     }
 
                     ui.lockMessage?.takeIf { it.isNotBlank() }?.let { msg ->
@@ -171,7 +223,7 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         SecondaryLink("Restore from recovery phrase") {
                             password = ""
-                            appState.resetSetup()
+                            showRestoreConfirm = true
                         }
                         SecondaryLink("Reset wallet", danger = true) { showReset = true }
                     }
@@ -182,6 +234,126 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 StatusDot(label = if (ui.rpcOnline) "Network reachable" else "Network unreachable", ok = ui.rpcOnline)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WalletSelector(
+    wallets: List<Pair<String, String>>,
+    activeName: String,
+    activeAddress: String,
+    onSelect: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        wallets.forEach { (name, address) ->
+            val isSelected = name == activeName ||
+                (address.isNotBlank() && activeAddress.isNotBlank() && address == activeAddress)
+            WalletSelectorRow(
+                name = name,
+                address = address,
+                selected = isSelected,
+                onClick = { if (!isSelected) onSelect(name) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun WalletSelectorRow(
+    name: String,
+    address: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val bgColor = if (selected) NoirSelected else NoirSurfaceElev
+    val borderColor = if (selected) NoirAccent else NoirOutlineStrong
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bgColor, RoundedCornerShape(10.dp))
+            .border(BorderStroke(1.dp, borderColor), RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            Icons.Outlined.AccountBalanceWallet,
+            contentDescription = null,
+            tint = if (selected) NoirAccent else NoirTextMuted,
+            modifier = Modifier.size(16.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                name,
+                color = if (selected) NoirText else NoirTextMuted,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp
+            )
+            if (address.isNotBlank()) {
+                val shortAddr = address.take(12) + "…" + address.takeLast(8)
+                Text(shortAddr, color = NoirTextSubtle, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(NoirAccent, RoundedCornerShape(50))
+            )
+        }
+    }
+}
+
+// Confirmation screen shown before clearing setup to restore from a recovery phrase.
+// Wallet files on disk are NOT deleted — only the setup registration is removed.
+@Composable
+private fun RestoreFromRecoveryConfirmScreen(onCancel: () -> Unit, onConfirm: () -> Unit) {
+    var ack by remember { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize()) {
+        NoirBackground()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(48.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            NoirCard(modifier = Modifier.widthIn(min = 480.dp, max = 620.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    ScreenEyebrow("Restore from recovery phrase")
+                    ScreenTitle("The current wallet setup will be cleared.")
+                    ScreenBody(
+                        "This removes the setup registration from this device so you can re-enter your " +
+                            "recovery phrase. Your encrypted wallet files are NOT deleted — only the " +
+                            "registration is cleared. You will need your recovery phrase to restore access."
+                    )
+
+                    SecurityWarningCard(
+                        title = "Have your recovery phrase ready",
+                        detail = "Without the recovery phrase you will not be able to access funds after clearing the setup.",
+                        accent = NoirError
+                    )
+
+                    ResponsibilityCheck(
+                        "I have my recovery phrase and understand the setup will be cleared.",
+                        ack
+                    ) { ack = it }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        SecondaryButton(label = "Cancel", modifier = Modifier.weight(1f), onClick = onCancel)
+                        DangerButton(
+                            label = "Clear setup and restore",
+                            modifier = Modifier.weight(1f),
+                            enabled = ack,
+                            onClick = onConfirm
+                        )
+                    }
+                }
             }
         }
     }

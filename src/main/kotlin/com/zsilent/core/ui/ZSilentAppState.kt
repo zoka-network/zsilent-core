@@ -84,6 +84,7 @@ data class ZSilentUiState(
     val walletName: String = "zsilent",
     val managedWalletName: String = "",
     val managedWallets: List<String> = emptyList(),
+    val managedWalletAddresses: List<String> = emptyList(),
     val walletLocked: Boolean = true,
     val balancesHidden: Boolean = false,
     val wallets: List<LocalWallet> = emptyList(),
@@ -174,12 +175,16 @@ class ZSilentAppState(
                 .ifEmpty { listOf(defaultWallet) }
                 .filter { it.isNotBlank() }
                 .distinct()
+            val managedWalletAddresses = (setup.managedWalletAddresses + setup.walletAddress + setup.managedWallets)
+                .filter { it.isZokaAddress() }
+                .distinct()
             update {
                 it.copy(
                     onboardingComplete = true,
                     walletName = defaultWallet,
                     managedWalletName = defaultWallet,
                     managedWallets = managedWallets,
+                    managedWalletAddresses = managedWalletAddresses,
                     activeWalletName = defaultWallet,
                     onboardingWalletName = defaultWallet,
                     onboardingWalletAddress = setup.walletAddress,
@@ -348,6 +353,7 @@ class ZSilentAppState(
                     walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
                     walletAddress = snapshot.activeWalletAddress,
                     managedWallets = snapshot.managedWallets,
+                    managedWalletAddresses = managedAddressesFor(snapshot),
                     nodeEnabled = snapshot.onboardingNodeEnabled,
                     miningEnabled = snapshot.onboardingMiningEnabled,
                     balancesHidden = snapshot.balancesHidden,
@@ -432,6 +438,7 @@ class ZSilentAppState(
                 walletName = walletName,
                 walletAddress = snapshot.onboardingWalletAddress,
                 managedWallets = listOf(walletName),
+                managedWalletAddresses = listOf(snapshot.onboardingWalletAddress).filter { it.isZokaAddress() },
                 nodeEnabled = snapshot.onboardingNodeEnabled,
                 miningEnabled = snapshot.onboardingMiningEnabled,
                 balancesHidden = snapshot.balancesHidden,
@@ -450,6 +457,7 @@ class ZSilentAppState(
                 walletName = walletName,
                 managedWalletName = walletName,
                 managedWallets = listOf(walletName),
+                managedWalletAddresses = listOf(it.onboardingWalletAddress).filter { address -> address.isZokaAddress() },
                 activeWalletName = walletName,
                 activeWalletAddress = it.onboardingWalletAddress,
                 appLocked = false,
@@ -480,6 +488,7 @@ class ZSilentAppState(
                     walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
                     walletAddress = snapshot.activeWalletAddress,
                     managedWallets = snapshot.managedWallets,
+                    managedWalletAddresses = managedAddressesFor(snapshot),
                     nodeEnabled = snapshot.onboardingNodeEnabled,
                     miningEnabled = snapshot.onboardingMiningEnabled,
                     balancesHidden = snapshot.balancesHidden,
@@ -505,6 +514,7 @@ class ZSilentAppState(
                     walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
                     walletAddress = snapshot.activeWalletAddress,
                     managedWallets = snapshot.managedWallets,
+                    managedWalletAddresses = managedAddressesFor(snapshot),
                     nodeEnabled = snapshot.onboardingNodeEnabled,
                     miningEnabled = snapshot.onboardingMiningEnabled,
                     balancesHidden = hidden,
@@ -578,8 +588,9 @@ class ZSilentAppState(
             password.fill('\u0000')
             return
         }
-        val walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName }
-        if (walletName.isBlank()) {
+        val walletSelector = snapshot.activeWalletAddress.ifBlank { snapshot.activeWalletName.ifBlank { snapshot.walletName } }
+        val walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName.ifBlank { walletSelector } }
+        if (walletSelector.isBlank()) {
             password.fill('\u0000')
             update { it.copy(loginError = "No wallet is configured. Reset setup to continue.") }
             return
@@ -606,8 +617,9 @@ class ZSilentAppState(
             }.onSuccess { result ->
                 val current = _uiState.value
                 val visibleWallets = visibleManagedWallets(result.privateWallets, current)
-                val selected = visibleWallets.firstOrNull { it.name == walletName }
-                    ?: visibleWallets.firstOrNull { it.address == current.activeWalletAddress }
+                val selected = visibleWallets.firstOrNull { it.address == current.activeWalletAddress }
+                    ?: visibleWallets.firstOrNull { it.address == walletSelector }
+                    ?: visibleWallets.firstOrNull { it.name == walletName }
                     ?: visibleWallets.firstOrNull()
                 if (selected == null) {
                     sessionPasswordCandidate.fill('\u0000')
@@ -665,7 +677,7 @@ class ZSilentAppState(
                     )
                 }
                 appendLog(RuntimeLog("wallet", "Unlocked wallet '${selected.name}'"))
-                refreshUnlockedWalletData(selected.name, balancePassword, historyPassword)
+                refreshUnlockedWalletData(selected.address, selected.name, balancePassword, historyPassword)
                 maybeAutoStartNode()
             }.onFailure { error ->
                 sessionPasswordCandidate.fill('\u0000')
@@ -711,7 +723,12 @@ class ZSilentAppState(
 
     fun selectWallet(name: String) {
         val current = _uiState.value
-        val wallet = current.wallets.firstOrNull { it.name == name }
+        val wallet = current.wallets.firstOrNull { it.address == name }
+            ?: current.wallets.firstOrNull { it.name == name }
+        val nextName = wallet?.name ?: name
+        val nextAddress = wallet?.address ?: name.takeIf { it.isZokaAddress() } ?: current.activeWalletAddress
+        val managedWallets = managedNamesFor(current, listOf(nextName))
+        val managedWalletAddresses = managedAddressesFor(current, listOf(nextAddress))
         if (wallet != null && current.onboardingComplete) {
             clearSessionPassword()
             setupStore.save(
@@ -719,7 +736,8 @@ class ZSilentAppState(
                     onboardingComplete = true,
                     walletName = wallet.name,
                     walletAddress = wallet.address,
-                    managedWallets = current.managedWallets.ifEmpty { listOf(wallet.name) },
+                    managedWallets = managedWallets,
+                    managedWalletAddresses = managedWalletAddresses,
                     nodeEnabled = current.onboardingNodeEnabled,
                     miningEnabled = current.onboardingMiningEnabled,
                     balancesHidden = current.balancesHidden,
@@ -734,12 +752,14 @@ class ZSilentAppState(
         }
         update {
             it.copy(
-                activeWalletName = name,
-                walletName = name,
-                activeWalletAddress = wallet?.address ?: it.activeWalletAddress,
+                activeWalletName = nextName,
+                walletName = nextName,
+                managedWallets = managedWallets,
+                managedWalletAddresses = managedWalletAddresses,
+                activeWalletAddress = nextAddress,
                 walletLocked = true,
                 walletBalance = null,
-                walletHistory = WalletHistory(wallet = name),
+                walletHistory = WalletHistory(wallet = nextName),
                 walletError = null,
                 secretRevealBusy = false,
                 secretRevealError = null,
@@ -762,28 +782,32 @@ class ZSilentAppState(
                 walletService.listWallets(password)
             }.onSuccess { result ->
                 val current = _uiState.value
-                val managedNames = current.managedWallets
-                    .ifEmpty {
-                        listOf(current.managedWalletName, current.walletName, current.onboardingWalletName)
-                            .filter { name -> name.isNotBlank() }
-                    }
-                    .toSet()
-                val visibleWallets = if (current.onboardingComplete && managedNames.isNotEmpty()) {
-                    result.privateWallets.filter { it.name in managedNames }
-                } else {
-                    result.privateWallets
-                }
-                val selected = visibleWallets.firstOrNull { it.name == current.activeWalletName }
+                val visibleWallets = visibleManagedWallets(result.privateWallets, current)
+                val selected = visibleWallets.firstOrNull { it.address == current.activeWalletAddress }
+                    ?: visibleWallets.firstOrNull { it.name == current.activeWalletName }
                     ?: visibleWallets.firstOrNull()
+                val managedWallets = managedNamesFor(
+                    current,
+                    visibleWallets.map { it.name } + listOfNotNull(selected?.name)
+                )
+                val managedWalletAddresses = managedAddressesFor(
+                    current,
+                    visibleWallets.map { it.address } + listOfNotNull(selected?.address)
+                )
                 update {
                     it.copy(
                         wallets = visibleWallets,
                         activeWalletName = selected?.name ?: it.activeWalletName,
                         walletName = selected?.name ?: it.walletName,
                         activeWalletAddress = selected?.address ?: it.activeWalletAddress,
+                        managedWallets = managedWallets,
+                        managedWalletAddresses = managedWalletAddresses,
                         walletBusy = false,
                         walletError = null
                     )
+                }
+                if (current.onboardingComplete && managedWalletAddresses != current.managedWalletAddresses) {
+                    persistCurrentSetup()
                 }
             }.onFailure { error ->
                 update {
@@ -838,12 +862,14 @@ class ZSilentAppState(
                 val managedWallets = (current.managedWallets + result.name)
                     .filter { it.isNotBlank() }
                     .distinct()
+                val managedWalletAddresses = managedAddressesFor(current, listOf(result.address))
                 setupStore.save(
                     PersistedSetup(
                         onboardingComplete = current.onboardingComplete,
                         walletName = result.name,
                         walletAddress = result.address,
                         managedWallets = managedWallets,
+                        managedWalletAddresses = managedWalletAddresses,
                         nodeEnabled = current.onboardingNodeEnabled,
                         miningEnabled = current.onboardingMiningEnabled,
                         balancesHidden = current.balancesHidden,
@@ -864,6 +890,7 @@ class ZSilentAppState(
                         walletName = result.name,
                         managedWalletName = result.name,
                         managedWallets = managedWallets,
+                        managedWalletAddresses = managedWalletAddresses,
                         activeWalletAddress = result.address,
                         walletLocked = false,
                         walletBalance = null,
@@ -891,8 +918,9 @@ class ZSilentAppState(
             return
         }
         val snapshot = _uiState.value
-        val walletName = wallet.ifBlank { snapshot.activeWalletName.ifBlank { snapshot.walletName } }
-        if (walletName.isBlank()) {
+        val walletSelector = resolveWalletAddress(wallet, snapshot)
+        val walletName = resolveWalletLabel(wallet, snapshot)
+        if (walletSelector.isBlank()) {
             password.fill('\u0000')
             update { it.copy(walletBackupError = "Select a wallet before exporting a backup") }
             return
@@ -914,7 +942,7 @@ class ZSilentAppState(
         scope.launch {
             runCatching {
                 walletService.exportEncryptedBackup(
-                    wallet = walletName,
+                    wallet = walletSelector,
                     outPath = outPath,
                     password = backupPassword
                 )
@@ -925,7 +953,7 @@ class ZSilentAppState(
                     it.copy(
                         walletBackupBusy = false,
                         walletBackupError = null,
-                        walletBackupResult = result.copy(name = walletName),
+                        walletBackupResult = result.copy(name = walletName, address = walletSelector),
                         walletImportError = null
                     )
                 }
@@ -978,12 +1006,14 @@ class ZSilentAppState(
                 val managedWallets = (current.managedWallets + result.name)
                     .filter { it.isNotBlank() }
                     .distinct()
+                val managedWalletAddresses = managedAddressesFor(current, listOf(result.address))
                 setupStore.save(
                     PersistedSetup(
                         onboardingComplete = current.onboardingComplete,
                         walletName = result.name,
                         walletAddress = result.address,
                         managedWallets = managedWallets,
+                        managedWalletAddresses = managedWalletAddresses,
                         nodeEnabled = current.onboardingNodeEnabled,
                         miningEnabled = current.onboardingMiningEnabled,
                         balancesHidden = current.balancesHidden,
@@ -1005,6 +1035,7 @@ class ZSilentAppState(
                         walletName = result.name,
                         managedWalletName = result.name,
                         managedWallets = managedWallets,
+                        managedWalletAddresses = managedWalletAddresses,
                         activeWalletAddress = result.address,
                         walletLocked = false,
                         walletBalance = null,
@@ -1032,6 +1063,7 @@ class ZSilentAppState(
             return
         }
         val walletName = wallet.ifBlank { _uiState.value.activeWalletName }
+        val walletSelector = wallet.ifBlank { _uiState.value.activeWalletAddress.ifBlank { _uiState.value.activeWalletName } }
         val sessionPasswordCandidate = password.copyOf()
         val unlockPassword = password.copyOf()
         val balancePassword = password.copyOf()
@@ -1044,9 +1076,10 @@ class ZSilentAppState(
             }.onSuccess { result ->
                 val current = _uiState.value
                 val visibleWallets = visibleManagedWallets(result.privateWallets, current)
-                val selected = visibleWallets.firstOrNull { it.name == walletName }
-                    ?: visibleWallets.firstOrNull { it.address == walletName }
-                    ?: visibleWallets.firstOrNull { it.name == current.activeWalletName }
+                val selected = visibleWallets.firstOrNull { it.address == walletSelector }
+                    ?: visibleWallets.firstOrNull { it.name == walletSelector }
+                    ?: visibleWallets.firstOrNull { it.name == walletName }
+                    ?: visibleWallets.firstOrNull { it.address == current.activeWalletAddress }
                 if (selected == null) {
                     sessionPasswordCandidate.fill('\u0000')
                     unlockPassword.fill('\u0000')
@@ -1094,7 +1127,7 @@ class ZSilentAppState(
                 sessionPasswordCandidate.fill('\u0000')
                 unlockPassword.fill('\u0000')
                 appendLog(RuntimeLog("wallet", "Unlocked wallet '${selected.name}'"))
-                refreshUnlockedWalletData(selected.name, balancePassword, historyPassword)
+                refreshUnlockedWalletData(selected.address, selected.name, balancePassword, historyPassword)
             }.onFailure { error ->
                 sessionPasswordCandidate.fill('\u0000')
                 unlockPassword.fill('\u0000')
@@ -1162,9 +1195,13 @@ class ZSilentAppState(
             return
         }
         val snapshot = _uiState.value
-        val from = fromWallet.ifBlank { snapshot.activeWalletName.ifBlank { snapshot.walletName } }
-        val resolvedFrom = snapshot.wallets.firstOrNull { it.name == from }?.address
-            ?: from.ifBlank { snapshot.activeWalletAddress }
+        val from = fromWallet.ifBlank { snapshot.activeWalletAddress.ifBlank { snapshot.activeWalletName.ifBlank { snapshot.walletName } } }
+        val resolvedFrom = resolveWalletAddress(from, snapshot)
+        if (resolvedFrom.isBlank()) {
+            password.fill('\u0000')
+            update { it.copy(sendError = "Select a wallet before sending.") }
+            return
+        }
         val selectedFee = fee ?: snapshot.sendFeeEstimate?.fee ?: "0"
         val sendPassword = password.copyOf()
         password.fill('\u0000')
@@ -1270,9 +1307,7 @@ class ZSilentAppState(
             confirmPassword.fill('\u0000')
             return
         }
-        val walletSelector = snapshot.activeWalletAddress
-            .ifBlank { snapshot.activeWalletName }
-            .ifBlank { snapshot.walletName }
+        val walletSelector = resolveWalletAddress(snapshot.activeWalletAddress, snapshot)
         when {
             walletSelector.isBlank() -> {
                 oldPassword.fill('\u0000')
@@ -1362,15 +1397,76 @@ class ZSilentAppState(
         }
     }
 
+    fun resetLocalWallet(): Boolean {
+        val darkTheme = _uiState.value.darkTheme
+        return runCatching {
+            integratedMiningRequested = false
+            nodeController.stop()
+            miningController.close()
+            clearSessionPassword()
+            setupStore.clear()
+            deleteLocalWalletFiles()
+        }.onSuccess { deletedEntries ->
+            update {
+                ZSilentUiState(
+                    zokaReady = cli.ready,
+                    darkTheme = darkTheme,
+                    logs = listOf(RuntimeLog("app", "Local wallet reset complete. Deleted $deletedEntries wallet file(s)/folder(s)."))
+                )
+            }
+        }.onFailure { error ->
+            val message = PrivacyGuards.redactForLog(error.message ?: "Local wallet reset failed.")
+            appendLog(RuntimeLog("app", "Local wallet reset failed: $message"))
+            update {
+                it.copy(
+                    loginError = "Could not reset local wallet: $message",
+                    walletError = "Could not reset local wallet: $message"
+                )
+            }
+        }.isSuccess
+    }
+
+    private fun deleteLocalWalletFiles(): Int {
+        val network = ZokaNetworkConfig.Network.ifBlank { "mainnet" }
+        val walletRoot = File(File(cli.dataRoot, ".zoka"), network).canonicalFile
+        val targets = listOf(
+            File(walletRoot, "private_wallets"),
+            File(walletRoot, "wallets")
+        )
+        var deletedEntries = 0
+        targets.forEach { target ->
+            if (!target.exists()) return@forEach
+            deletedEntries += deleteDirectoryTreeWithin(target, walletRoot)
+        }
+        return deletedEntries
+    }
+
+    private fun deleteDirectoryTreeWithin(target: File, allowedRoot: File): Int {
+        val root = target.canonicalFile
+        val allowed = allowedRoot.canonicalFile
+        val allowedPrefix = allowed.path + File.separator
+        require(root.path.startsWith(allowedPrefix)) {
+            "Refusing to delete outside Zoka wallet data root: ${root.path}"
+        }
+        var deletedEntries = 0
+        root.walkBottomUp().forEach { entry ->
+            if (entry.exists()) {
+                if (!entry.delete() && entry.exists()) {
+                    throw IllegalStateException("Failed to delete ${entry.path}")
+                }
+                deletedEntries += 1
+            }
+        }
+        return deletedEntries
+    }
+
     private fun revealWalletSecrets(password: CharArray, revealPrivateKeys: Boolean) {
         val snapshot = _uiState.value
         if (snapshot.secretRevealBusy) {
             password.fill('\u0000')
             return
         }
-        val walletSelector = snapshot.activeWalletAddress
-            .ifBlank { snapshot.activeWalletName }
-            .ifBlank { snapshot.walletName }
+        val walletSelector = resolveWalletAddress(snapshot.activeWalletAddress, snapshot)
         if (walletSelector.isBlank()) {
             password.fill('\u0000')
             update { it.copy(secretRevealError = "Select a wallet before revealing recovery data.") }
@@ -1925,6 +2021,37 @@ class ZSilentAppState(
         }
     }
 
+    private fun managedAddressesFor(current: ZSilentUiState, extraAddresses: List<String> = emptyList()): List<String> {
+        return (current.managedWalletAddresses + current.activeWalletAddress + current.onboardingWalletAddress + extraAddresses)
+            .map { it.trim() }
+            .filter { it.isZokaAddress() }
+            .distinct()
+    }
+
+    private fun managedNamesFor(current: ZSilentUiState, extraNames: List<String> = emptyList()): List<String> {
+        return (current.managedWallets + current.managedWalletName + current.walletName + current.onboardingWalletName + extraNames)
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.isZokaAddress() }
+            .distinct()
+    }
+
+    private fun resolveWalletAddress(selector: String, current: ZSilentUiState): String {
+        val trimmed = selector.trim()
+            .ifBlank { current.activeWalletAddress.ifBlank { current.activeWalletName.ifBlank { current.walletName } } }
+        if (trimmed.isZokaAddress()) return trimmed
+        return current.wallets.firstOrNull { it.address == trimmed }?.address
+            ?: current.wallets.firstOrNull { it.name == trimmed }?.address
+            ?: current.activeWalletAddress.takeIf { it.isZokaAddress() }
+            ?: current.onboardingWalletAddress.takeIf { it.isZokaAddress() }
+            ?: ""
+    }
+
+    private fun resolveWalletLabel(selector: String, current: ZSilentUiState): String {
+        val trimmed = selector.trim()
+        return current.wallets.firstOrNull { it.address == trimmed || it.name == trimmed }?.name
+            ?: current.activeWalletName.ifBlank { current.walletName }.ifBlank { trimmed }
+    }
+
     private fun visibleManagedWallets(wallets: List<LocalWallet>, current: ZSilentUiState): List<LocalWallet> {
         val managedNames = current.managedWallets
             .ifEmpty {
@@ -1932,10 +2059,16 @@ class ZSilentAppState(
                     .filter { name -> name.isNotBlank() }
             }
             .toSet()
-        return if (current.onboardingComplete && managedNames.isNotEmpty()) {
-            wallets.filter { it.name in managedNames }
-        } else {
-            wallets
+        val managedAddresses = managedAddressesFor(current)
+            .toSet()
+        return when {
+            current.onboardingComplete && managedAddresses.isNotEmpty() -> {
+                wallets.filter { it.address in managedAddresses }
+            }
+            current.onboardingComplete && managedNames.isNotEmpty() -> {
+                wallets.filter { it.name in managedNames }
+            }
+            else -> wallets
         }
     }
 
@@ -1954,21 +2087,26 @@ class ZSilentAppState(
     }
 
     private fun refreshUnlockedWalletData(
-        walletName: String,
+        walletAddress: String,
+        walletLabel: String,
         balancePassword: CharArray,
         historyPassword: CharArray
     ) {
         scope.launch {
             runCatching {
-                val balance = walletService.balance(walletName, balancePassword)
-                val history = walletService.history(walletName, historyPassword)
+                val walletSelector = walletAddress.ifBlank { walletLabel }
+                val balance = walletService.balance(walletSelector, balancePassword)
+                val history = walletService.history(walletSelector, historyPassword)
                 balance to history
             }.onSuccess { (balance, history) ->
                 update {
+                    val displayName = balance.wallet.ifBlank { walletLabel }
+                    val address = balance.address.ifBlank { walletAddress.ifBlank { it.activeWalletAddress } }
                     it.copy(
-                        walletName = balance.wallet.ifBlank { walletName },
-                        activeWalletName = balance.wallet.ifBlank { walletName },
-                        activeWalletAddress = balance.address.ifBlank { it.activeWalletAddress },
+                        walletName = displayName,
+                        activeWalletName = displayName,
+                        activeWalletAddress = address,
+                        managedWalletAddresses = managedAddressesFor(it, listOf(address)),
                         walletBalance = balance,
                         walletHistory = history,
                         walletError = null
@@ -2115,6 +2253,7 @@ class ZSilentAppState(
                 walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
                 walletAddress = snapshot.activeWalletAddress,
                 managedWallets = snapshot.managedWallets,
+                managedWalletAddresses = managedAddressesFor(snapshot),
                 nodeEnabled = snapshot.onboardingNodeEnabled,
                 miningEnabled = snapshot.onboardingMiningEnabled,
                 balancesHidden = snapshot.balancesHidden,
@@ -2244,6 +2383,7 @@ class ZSilentAppState(
                         walletName = resolved.name,
                         managedWalletName = resolved.name,
                         managedWallets = listOf(resolved.name),
+                        managedWalletAddresses = listOf(resolved.address).filter { address -> address.isZokaAddress() },
                         activeWalletName = resolved.name,
                         activeWalletAddress = resolved.address
                     )
@@ -2283,6 +2423,8 @@ class ZSilentAppState(
         }
     }
 }
+
+private fun String.isZokaAddress(): Boolean = trim().startsWith("zka1")
 
 private fun OnboardingStep.next(): OnboardingStep = when (this) {
     OnboardingStep.Welcome -> OnboardingStep.SelfCustody

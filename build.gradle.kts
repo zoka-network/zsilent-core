@@ -1,4 +1,4 @@
-import org.gradle.api.GradleException
+﻿import org.gradle.api.GradleException
 import org.gradle.api.tasks.Copy
 import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
@@ -11,7 +11,8 @@ plugins {
 }
 
 group = "com.zsilent"
-version = "0.1.0"
+val releaseVersion = "1.1.1"
+version = releaseVersion
 
 val hostOs = OperatingSystem.current()
 val nodeRepoRoot = (findProperty("zoka.nodeRepoRoot") as String?)
@@ -23,6 +24,19 @@ val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
 val networkManifest = nodeRepoRoot.file("docs/mainnet-network.v1.json")
 val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
 val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")
+val windowsMsvcRuntimeDlls = listOf(
+    "concrt140.dll",
+    "msvcp140.dll",
+    "msvcp140_1.dll",
+    "msvcp140_2.dll",
+    "msvcp140_atomic_wait.dll",
+    "msvcp140_codecvt_ids.dll",
+    "vcruntime140.dll",
+    "vcruntime140_1.dll"
+)
+val windowsSystem32 = System.getenv("WINDIR")
+    ?.let { file("$it/System32") }
+    ?: file("C:/Windows/System32")
 
 val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
     val requiredFiles = listOf(zokaExe, zokahdExe, networkManifest)
@@ -58,6 +72,11 @@ val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
     into(packageResourcesRoot.map { it.dir("common") })
     from(zokaExe) { into("bin") }
     from(zokahdExe) { into("bin") }
+    if (hostOs.isWindows) {
+        from(windowsMsvcRuntimeDlls.map { windowsSystem32.resolve(it) }.filter { it.isFile }) {
+            into("bin")
+        }
+    }
     from(networkManifest) { into("docs") }
     from(trustedSetupDir) { into("trusted-setup") }
 }
@@ -97,7 +116,7 @@ compose.desktop {
             }
             targetFormats(*formats)
             packageName = "ZSilent Core"
-            packageVersion = "0.1.0"
+            packageVersion = releaseVersion
             description = "Private desktop control center for the Zoka network."
             vendor = "ZSilent"
             appResourcesRootDir.set(packageResourcesRoot)
@@ -134,4 +153,33 @@ tasks.matching {
     )
 }.configureEach {
     dependsOn(prepareZSilentRuntimeResources)
+}
+
+tasks.matching { it.name == "packageMsi" }.configureEach {
+    doLast {
+        val msiFile = layout.buildDirectory
+            .file("compose/binaries/main/msi/ZSilent Core-$releaseVersion.msi")
+            .get()
+            .asFile
+        if (!msiFile.isFile) {
+            throw GradleException("MSI was not generated at ${msiFile.absolutePath}")
+        }
+
+        val patchScript = project.file("scripts/patch-launch-after-install.ps1")
+        if (!patchScript.isFile) {
+            throw GradleException("Missing MSI patch script: ${patchScript.absolutePath}")
+        }
+
+        exec {
+            workingDir(projectDir)
+            commandLine(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-File", patchScript.absolutePath,
+                "-MsiPath", msiFile.absolutePath
+            )
+            isIgnoreExitValue = false
+        }
+    }
 }
