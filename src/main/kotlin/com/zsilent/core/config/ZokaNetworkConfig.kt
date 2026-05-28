@@ -48,6 +48,10 @@ private data class DesktopConfig(
 )
 
 object ZokaNetworkConfig {
+    private const val DEFAULT_REMOTE_RPC_URL = "http://157.230.5.103:3000"
+    private const val DEFAULT_CHAIN_ID = "zoka-mainnet-v1"
+    private const val DEFAULT_NETWORK = "mainnet"
+
     private val codec = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -91,15 +95,17 @@ object ZokaNetworkConfig {
             ?.multiaddr
             .orEmpty()
         val chainId = envOrProperty("ZSILENT_CHAIN_ID", "zsilent.chainId")
-            ?: manifest?.chainId.orEmpty()
+            ?: manifest?.chainId?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_CHAIN_ID
         val network = envOrProperty("ZSILENT_NETWORK", "zsilent.network")
             ?: when {
                 chainId.contains("testnet", ignoreCase = true) -> "testnet"
                 chainId.contains("mainnet", ignoreCase = true) -> "mainnet"
-                else -> ""
+                else -> DEFAULT_NETWORK
             }
         val remoteRpc = envOrProperty("ZSILENT_REMOTE_RPC_URL", "zsilent.remoteRpcUrl")
-            ?: activeRpc
+            ?: activeRpc.takeIf { it.isNotBlank() }
+            ?: DEFAULT_REMOTE_RPC_URL
         val cliRpc = envOrProperty("ZSILENT_CLI_RPC_URL", "zsilent.cliRpcUrl")
             ?: remoteRpc
         val localRpc = envOrProperty("ZSILENT_LOCAL_RPC_URL", "zsilent.localRpcUrl")
