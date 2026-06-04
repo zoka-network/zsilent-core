@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "1.1.1"
+val releaseVersion = "1.1.2"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
@@ -95,9 +95,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation("io.ktor:ktor-client-cio:3.0.1")
-    implementation("io.ktor:ktor-client-content-negotiation:3.0.1")
     implementation("io.ktor:ktor-client-websockets:3.0.1")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.1")
 
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.zxing:javase:3.5.3")

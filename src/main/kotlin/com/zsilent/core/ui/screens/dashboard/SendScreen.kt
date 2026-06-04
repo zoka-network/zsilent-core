@@ -4,14 +4,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import com.zsilent.core.app.AppState
 import com.zsilent.core.design.ZSpacing
+import com.zsilent.core.design.ZTextSecondary
 import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZCard
 import com.zsilent.core.ui.components.ZSecondaryButton
@@ -21,6 +28,13 @@ import com.zsilent.core.wallet.PrivacyMode
 @Composable
 fun SendScreen(appState: AppState) {
     val draft = appState.sendDraft
+    val recipientEmpty = draft.recipient.isBlank()
+    val recipientValid = !recipientEmpty &&
+        draft.recipient.startsWith("zka1") &&
+        draft.recipient.length >= 60
+    val amountValid = draft.amount.isNotBlank() &&
+        draft.amount.toDoubleOrNull()?.let { it > 0 } == true
+    val canReview = recipientValid && amountValid
     Column(verticalArrangement = Arrangement.spacedBy(ZSpacing.lg)) {
         ZCard {
             Text("Private send", style = MaterialTheme.typography.titleLarge)
@@ -28,7 +42,29 @@ fun SendScreen(appState: AppState) {
                 value = draft.recipient,
                 onValueChange = { appState.updateSendDraft(recipient = it) },
                 label = "Recipient address",
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = !recipientEmpty && !recipientValid,
+                leadingIcon = {
+                    val (icon, tint, desc) = when {
+                        recipientEmpty -> Triple(
+                            Icons.Outlined.AccountCircle,
+                            ZTextSecondary,
+                            "Address"
+                        )
+                        recipientValid -> Triple(
+                            Icons.Outlined.CheckCircle,
+                            Color(0xFF22C55E),
+                            "Valid Zoka address"
+                        )
+                        else -> Triple(
+                            Icons.Outlined.Cancel,
+                            MaterialTheme.colorScheme.error,
+                            "Invalid Zoka address"
+                        )
+                    }
+                    Icon(icon, contentDescription = desc, tint = tint)
+                }
             )
             Row(horizontalArrangement = Arrangement.spacedBy(ZSpacing.md)) {
                 ZTextField(
@@ -36,6 +72,7 @@ fun SendScreen(appState: AppState) {
                     onValueChange = { appState.updateSendDraft(amount = it) },
                     label = "Amount",
                     keyboardType = KeyboardType.Decimal,
+                    isError = draft.amount.isNotBlank() && !amountValid,
                     modifier = Modifier.weight(1f)
                 )
                 ZTextField(
@@ -57,7 +94,7 @@ fun SendScreen(appState: AppState) {
             ZButton(
                 text = "Review transfer",
                 onClick = { appState.updateSendDraft(confirmOpen = true) },
-                enabled = draft.recipient.startsWith("zka1") && draft.amount.isNotBlank()
+                enabled = canReview
             )
         }
 

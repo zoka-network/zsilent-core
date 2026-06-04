@@ -15,15 +15,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,213 +42,216 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
-import com.zsilent.core.ui.onboarding.DangerButton
-import com.zsilent.core.ui.onboarding.NoirBackground
-import com.zsilent.core.ui.onboarding.NoirCard
-import com.zsilent.core.ui.onboarding.NoirPasswordField
-import com.zsilent.core.ui.onboarding.PrimaryButton
-import com.zsilent.core.ui.onboarding.ResponsibilityCheck
-import com.zsilent.core.ui.onboarding.ScreenBody
-import com.zsilent.core.ui.onboarding.ScreenEyebrow
-import com.zsilent.core.ui.onboarding.ScreenTitle
-import com.zsilent.core.ui.onboarding.SecondaryButton
-import com.zsilent.core.ui.onboarding.SecurityWarningCard
 
-private val NoirText = Color(0xFFEAEDF2)
-private val NoirTextMuted = Color(0xFF858C99)
-private val NoirTextSubtle = Color(0xFF4E5563)
-private val NoirSurfaceElev = Color(0xFF11151B)
-private val NoirOutline = Color(0xFF1E242C)
-private val NoirOutlineStrong = Color(0xFF2A3140)
-private val NoirAccent = Color(0xFFC8CDD7)
-private val NoirError = Color(0xFFE05757)
-private val NoirSuccess = Color(0xFF4FB585)
-private val NoirInk = Color(0xFF05070A)
-private val NoirSelected = Color(0xFF1A2232)
+// ─── Smoke-gray dark theme colors for Login ───
+private val LBg       = Color(0xFF2B2D31)   // page background — smoke gray
+private val LCard     = Color(0xFF35373C)   // card bg
+private val LBorder   = Color(0xFF45474D)   // card border
+private val LText     = Color(0xFFFFFFFF)   // primary text — white
+private val LMuted    = Color(0xFFC7C9CF)   // secondary text
+private val LSubtle   = Color(0xFF9AA0A6)   // tertiary / placeholder
+private val LAccent   = Color(0xFF4ADE80)   // green accent
+private val LBtnBg    = Color(0xFF1C1C1E)   // button background (near-black)
+private val LBtnText  = Color(0xFFFFFFFF)   // button text (white)
+private val LError    = Color(0xFFEF5350)   // error
+private val LSuccess  = Color(0xFF4ADE80)   // success — green
 
-// Builds the wallet list for the login selector.
-// Prefers ui.wallets (populated asynchronously from CLI, has proper name+address pairing).
-// Falls back to managedWallets names when the CLI result isn't ready yet.
 private fun loginWalletOptions(ui: ZSilentUiState): List<Pair<String, String>> {
-    if (ui.wallets.isNotEmpty()) {
-        return ui.wallets.map { it.name to it.address }
-    }
+    if (ui.wallets.isNotEmpty()) return ui.wallets.map { it.name to it.address }
     val names = ui.managedWallets.filter { it.isNotBlank() }.distinct()
-    if (names.isEmpty()) return emptyList()
-    // Without a CLI response we can't reliably pair names to addresses,
-    // so addresses are left empty and the selector shows names only.
     return names.map { name -> name to "" }
 }
 
 @Composable
 fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     var password by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
     var showReset by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var attempts by remember { mutableStateOf(0) }
 
     if (showReset) {
-        ResetWalletScreen(
-            onCancel = { showReset = false },
-            onConfirm = {
-                password = ""
-                if (appState.resetLocalWallet()) {
-                    showReset = false
-                }
-            }
-        )
+        LoginResetScreen(onCancel = { showReset = false }, onConfirm = {
+            password = ""
+            if (appState.resetLocalWallet()) showReset = false
+        })
         return
     }
-
     if (showRestoreConfirm) {
-        RestoreFromRecoveryConfirmScreen(
-            onCancel = { showRestoreConfirm = false },
-            onConfirm = {
-                password = ""
-                appState.resetSetup()
-                showRestoreConfirm = false
-            }
-        )
+        LoginRestoreScreen(onCancel = { showRestoreConfirm = false }, onConfirm = {
+            password = ""
+            appState.resetSetup()
+            showRestoreConfirm = false
+        })
         return
     }
 
     val walletOptions = loginWalletOptions(ui)
     val showSelector = walletOptions.size > 1
 
-    Box(Modifier.fillMaxSize()) {
-        NoirBackground()
+    fun doLogin() {
+        if (password.isNotBlank() && !ui.loginBusy) {
+            attempts += 1
+            appState.login(password.toCharArray())
+            password = ""
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize().background(LBg),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(48.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.widthIn(min = 420.dp, max = 500.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Brand
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 32.dp)
-            ) {
+            // ── Brand ────────────────────────────────────────────────────
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(
                     modifier = Modifier
-                        .size(54.dp)
-                        .background(NoirSurfaceElev, RoundedCornerShape(14.dp))
-                        .border(BorderStroke(1.dp, NoirOutlineStrong), RoundedCornerShape(14.dp)),
+                        .size(60.dp)
+                        .background(LBtnBg, RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Outlined.Lock, contentDescription = null, tint = NoirAccent, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Outlined.Lock, null, tint = LBtnText, modifier = Modifier.size(26.dp))
                 }
-                Text("ZSILENT WALLET", color = NoirText, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, fontSize = 13.sp)
-                Text("Unlock your local encrypted wallet.", color = NoirTextMuted, fontSize = 12.sp)
+                Text("ZSilent Wallet", color = LText, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                Text("Enter your password to unlock", color = LMuted, fontSize = 13.sp)
             }
 
-            NoirCard(modifier = Modifier.widthIn(min = 460.dp, max = 540.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-
+            // ── Login card ───────────────────────────────────────────────
+            androidx.compose.material3.Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = LCard,
+                shadowElevation = 4.dp,
+                tonalElevation = 0.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(28.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     if (showSelector) {
-                        // Multiple wallets: show selector so the user knows which to unlock
-                        ScreenEyebrow("Select wallet to unlock")
-                        WalletSelector(
+                        Text("Select wallet", color = LSubtle, fontSize = 11.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
+                        LoginWalletSelector(
                             wallets = walletOptions,
                             activeName = ui.activeWalletName,
                             activeAddress = ui.activeWalletAddress,
-                            onSelect = { name ->
-                                // Clear the password when switching wallets — different wallets
-                                // may use different passwords.
-                                password = ""
-                                attempts = 0
-                                appState.selectWallet(name)
-                            }
+                            onSelect = { name -> password = ""; attempts = 0; appState.selectWallet(name) }
                         )
                     } else {
-                        // Single wallet: show name and address as before
-                        ScreenEyebrow("Session")
-                        Text(
-                            ui.activeWalletName.ifBlank { ui.walletName.ifBlank { "main" } },
-                            color = NoirText,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 18.sp
-                        )
-                        ui.activeWalletAddress.takeIf { it.isNotBlank() }?.let { addr ->
-                            Text(addr, color = NoirTextSubtle, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.size(36.dp).background(Color(0xFF2E4A38), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.AccountBalanceWallet, null, tint = LAccent, modifier = Modifier.size(18.dp))
+                            }
+                            Column {
+                                Text(ui.activeWalletName.ifBlank { "Main wallet" }, color = LText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                ui.activeWalletAddress.takeIf { it.isNotBlank() }?.let {
+                                    Text("${it.take(10)}…${it.takeLast(8)}", color = LSubtle, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                }
+                            }
                         }
                     }
 
-                    ui.lockMessage?.takeIf { it.isNotBlank() }?.let { msg ->
-                        SecurityWarningCard(
-                            title = "Locked",
-                            detail = msg,
-                            accent = NoirTextMuted
-                        )
+                    ui.lockMessage?.takeIf { it.isNotBlank() }?.let {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().background(Color(0xFF3C3E44), RoundedCornerShape(10.dp)).padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Outlined.Lock, null, tint = Color(0xFFFFB74D), modifier = Modifier.size(14.dp))
+                            Text(it, color = Color(0xFFFFB74D), fontSize = 12.sp)
+                        }
                     }
 
-                    NoirPasswordField(
+                    // Password field — always shows, button always black
+                    OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = "Wallet password",
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = ui.loginError != null
+                        label = { Text("Password", color = LSubtle) },
+                        singleLine = true,
+                        isError = ui.loginError != null,
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { doLogin() }),
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    null, tint = LMuted, modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = LText, unfocusedTextColor = LText,
+                            focusedContainerColor = Color(0xFF3C3E44), unfocusedContainerColor = Color(0xFF3C3E44),
+                            focusedBorderColor = LAccent, unfocusedBorderColor = LBorder,
+                            focusedLabelColor = LAccent, unfocusedLabelColor = LSubtle,
+                            errorBorderColor = LError, errorTextColor = LText, cursorColor = LAccent
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     ui.loginError?.let { err ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = NoirError, modifier = Modifier.size(14.dp))
-                            Text(err, color = NoirError, fontSize = 12.sp)
-                        }
-                        if (attempts >= 3) {
-                            Text(
-                                "Multiple failed attempts. Make sure the keyboard layout matches the one you used during setup.",
-                                color = NoirTextMuted,
-                                fontSize = 11.sp
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Outlined.ErrorOutline, null, tint = LError, modifier = Modifier.size(14.dp))
+                            Text(err, color = LError, fontSize = 12.sp)
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        PrimaryButton(
-                            label = if (ui.loginBusy) "Unlocking..." else "Unlock",
-                            onClick = {
-                                if (password.isNotBlank() && !ui.loginBusy) {
-                                    attempts += 1
-                                    appState.login(password.toCharArray())
-                                    password = ""
-                                }
-                            },
-                            enabled = password.isNotBlank() && !ui.loginBusy,
-                            loading = ui.loginBusy,
-                            modifier = Modifier.weight(1f)
+                    // Unlock button — always near-black, never gray
+                    Button(
+                        onClick = { doLogin() },
+                        enabled = !ui.loginBusy,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = LBtnBg,
+                            contentColor = LBtnText,
+                            disabledContainerColor = Color(0xFF3A3A3C), // slightly lighter when busy
+                            disabledContentColor = LBtnText
+                        )
+                    ) {
+                        Icon(Icons.Outlined.Lock, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            if (ui.loginBusy) "Unlocking…" else "Unlock wallet",
+                            fontWeight = FontWeight.SemiBold, fontSize = 14.sp
                         )
                     }
 
-                    Spacer(Modifier.height(4.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        SecondaryLink("Restore from recovery phrase") {
-                            password = ""
-                            showRestoreConfirm = true
-                        }
-                        SecondaryLink("Reset wallet", danger = true) { showReset = true }
+                    // Footer links
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Restore from phrase", color = LAccent, fontSize = 12.sp,
+                            modifier = Modifier.clickable { password = ""; showRestoreConfirm = true }.padding(8.dp))
+                        Text("·", color = LSubtle, modifier = Modifier.padding(horizontal = 4.dp))
+                        Text("Reset wallet", color = LError.copy(alpha = 0.7f), fontSize = 12.sp,
+                            modifier = Modifier.clickable { showReset = true }.padding(8.dp))
                     }
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                StatusDot(label = if (ui.rpcOnline) "Network reachable" else "Network unreachable", ok = ui.rpcOnline)
+            // Network status dot
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.size(7.dp).background(if (ui.rpcOnline) LSuccess else LError.copy(alpha = 0.5f), CircleShape))
+                Text(if (ui.rpcOnline) "Network reachable" else "Network unreachable", color = LSubtle, fontSize = 11.sp)
             }
         }
     }
 }
 
 @Composable
-private fun WalletSelector(
+private fun LoginWalletSelector(
     wallets: List<Pair<String, String>>,
     activeName: String,
     activeAddress: String,
@@ -248,214 +259,129 @@ private fun WalletSelector(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         wallets.forEach { (name, address) ->
-            val isSelected = name == activeName ||
-                (address.isNotBlank() && activeAddress.isNotBlank() && address == activeAddress)
-            WalletSelectorRow(
-                name = name,
-                address = address,
-                selected = isSelected,
-                onClick = { if (!isSelected) onSelect(name) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun WalletSelectorRow(
-    name: String,
-    address: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val bgColor = if (selected) NoirSelected else NoirSurfaceElev
-    val borderColor = if (selected) NoirAccent else NoirOutlineStrong
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bgColor, RoundedCornerShape(10.dp))
-            .border(BorderStroke(1.dp, borderColor), RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Icon(
-            Icons.Outlined.AccountBalanceWallet,
-            contentDescription = null,
-            tint = if (selected) NoirAccent else NoirTextMuted,
-            modifier = Modifier.size(16.dp)
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                name,
-                color = if (selected) NoirText else NoirTextMuted,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 14.sp
-            )
-            if (address.isNotBlank()) {
-                val shortAddr = address.take(12) + "…" + address.takeLast(8)
-                Text(shortAddr, color = NoirTextSubtle, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            }
-        }
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(NoirAccent, RoundedCornerShape(50))
-            )
-        }
-    }
-}
-
-// Confirmation screen shown before clearing setup to restore from a recovery phrase.
-// Wallet files on disk are NOT deleted — only the setup registration is removed.
-@Composable
-private fun RestoreFromRecoveryConfirmScreen(onCancel: () -> Unit, onConfirm: () -> Unit) {
-    var ack by remember { mutableStateOf(false) }
-
-    Box(Modifier.fillMaxSize()) {
-        NoirBackground()
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(48.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            NoirCard(modifier = Modifier.widthIn(min = 480.dp, max = 620.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ScreenEyebrow("Restore from recovery phrase")
-                    ScreenTitle("The current wallet setup will be cleared.")
-                    ScreenBody(
-                        "This removes the setup registration from this device so you can re-enter your " +
-                            "recovery phrase. Your encrypted wallet files are NOT deleted — only the " +
-                            "registration is cleared. You will need your recovery phrase to restore access."
-                    )
-
-                    SecurityWarningCard(
-                        title = "Have your recovery phrase ready",
-                        detail = "Without the recovery phrase you will not be able to access funds after clearing the setup.",
-                        accent = NoirError
-                    )
-
-                    ResponsibilityCheck(
-                        "I have my recovery phrase and understand the setup will be cleared.",
-                        ack
-                    ) { ack = it }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                        SecondaryButton(label = "Cancel", modifier = Modifier.weight(1f), onClick = onCancel)
-                        DangerButton(
-                            label = "Clear setup and restore",
-                            modifier = Modifier.weight(1f),
-                            enabled = ack,
-                            onClick = onConfirm
-                        )
-                    }
+            val selected = name == activeName || (address.isNotBlank() && activeAddress.isNotBlank() && address == activeAddress)
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .background(if (selected) Color(0xFF2E4A38) else Color(0xFF3C3E44), RoundedCornerShape(10.dp))
+                    .border(BorderStroke(1.dp, if (selected) LAccent else LBorder), RoundedCornerShape(10.dp))
+                    .clickable { if (!selected) onSelect(name) }
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(Icons.Outlined.AccountBalanceWallet, null,
+                    tint = if (selected) LAccent else LMuted, modifier = Modifier.size(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, color = LText, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, fontSize = 13.sp)
+                    if (address.isNotBlank()) Text("${address.take(10)}…${address.takeLast(8)}", color = LSubtle, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
+                if (selected) Box(Modifier.size(8.dp).background(LAccent, CircleShape))
             }
         }
     }
 }
 
 @Composable
-private fun ResetWalletScreen(onCancel: () -> Unit, onConfirm: () -> Unit) {
+private fun LoginResetScreen(onCancel: () -> Unit, onConfirm: () -> Unit) {
     var ack by remember { mutableStateOf(false) }
     var confirmText by remember { mutableStateOf("") }
-    val canReset = ack && confirmText.trim().equals("RESET", ignoreCase = false)
+    val canReset = ack && confirmText.trim() == "RESET"
+    LoginConfirmationLayout(
+        title = "Reset local wallet",
+        body = "This removes the encrypted wallet from this device. Funds remain on the blockchain. You need your recovery phrase to restore access.",
+        warningText = "Without the recovery phrase you will permanently lose access.",
+        checkLabel = "I understand I need my recovery phrase to restore access.",
+        checked = ack, onChecked = { ack = it },
+        extra = {
+            OutlinedTextField(
+                value = confirmText, onValueChange = { confirmText = it.uppercase() },
+                label = { Text("Type RESET to confirm", color = LSubtle) },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = LText, unfocusedTextColor = LText,
+                    focusedContainerColor = Color(0xFF3C3E44), unfocusedContainerColor = Color(0xFF3C3E44),
+                    focusedBorderColor = if (canReset) LSuccess else LAccent, unfocusedBorderColor = LBorder,
+                    cursorColor = LAccent
+                )
+            )
+        },
+        cancelLabel = "Cancel", onCancel = onCancel,
+        confirmLabel = "Reset wallet", onConfirm = onConfirm, confirmEnabled = canReset, isDanger = true
+    )
+}
 
-    Box(Modifier.fillMaxSize()) {
-        NoirBackground()
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(48.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+@Composable
+private fun LoginRestoreScreen(onCancel: () -> Unit, onConfirm: () -> Unit) {
+    var ack by remember { mutableStateOf(false) }
+    LoginConfirmationLayout(
+        title = "Restore from recovery phrase",
+        body = "This clears the setup registration so you can re-enter your recovery phrase. Wallet files are NOT deleted. You will need your recovery phrase.",
+        warningText = "Have your recovery phrase ready before continuing.",
+        checkLabel = "I have my recovery phrase and understand the setup will be cleared.",
+        checked = ack, onChecked = { ack = it }, extra = {},
+        cancelLabel = "Cancel", onCancel = onCancel,
+        confirmLabel = "Clear and restore", onConfirm = onConfirm, confirmEnabled = ack, isDanger = true
+    )
+}
+
+@Composable
+private fun LoginConfirmationLayout(
+    title: String, body: String, warningText: String, checkLabel: String,
+    checked: Boolean, onChecked: (Boolean) -> Unit,
+    extra: @Composable () -> Unit,
+    cancelLabel: String, onCancel: () -> Unit,
+    confirmLabel: String, onConfirm: () -> Unit,
+    confirmEnabled: Boolean, isDanger: Boolean
+) {
+    Box(Modifier.fillMaxSize().background(LBg), contentAlignment = Alignment.Center) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier.widthIn(min = 460.dp, max = 580.dp),
+            shape = RoundedCornerShape(20.dp), color = LCard, shadowElevation = 4.dp
         ) {
-            NoirCard(modifier = Modifier.widthIn(min = 500.dp, max = 640.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ScreenEyebrow("Reset wallet")
-                    ScreenTitle("This removes the local encrypted wallet.")
-                    ScreenBody(
-                        "Resetting removes the encrypted wallet from this device. It does not delete funds " +
-                            "from the blockchain. Only your recovery phrase can restore access afterwards."
-                    )
-
-                    SecurityWarningCard(
-                        title = "Make sure you have your recovery phrase",
-                        detail = "Without the recovery phrase you will not be able to restore access to this wallet.",
-                        accent = NoirError
-                    )
-
-                    ResponsibilityCheck(
-                        "I understand that I need my recovery phrase to restore access.",
-                        ack
-                    ) { ack = it }
-
-                    OutlinedTextField(
-                        value = confirmText,
-                        onValueChange = { confirmText = it.uppercase() },
-                        label = { Text("Type RESET to confirm", color = NoirTextMuted) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = NoirSurfaceElev,
-                            unfocusedContainerColor = NoirSurfaceElev,
-                            focusedTextColor = NoirText,
-                            unfocusedTextColor = NoirText,
-                            focusedIndicatorColor = if (canReset) NoirSuccess else NoirOutlineStrong,
-                            unfocusedIndicatorColor = NoirOutlineStrong,
-                            cursorColor = NoirAccent
-                        )
-                    )
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                        SecondaryButton(label = "Cancel", modifier = Modifier.weight(1f), onClick = onCancel)
-                        DangerButton(
-                            label = "Reset local wallet",
-                            modifier = Modifier.weight(1f),
-                            enabled = canReset,
-                            onClick = onConfirm
-                        )
+            Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(title, color = LText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(body, color = LMuted, fontSize = 13.sp)
+                Row(
+                    Modifier.fillMaxWidth().background(Color(0xFF3C3E44), RoundedCornerShape(10.dp)).padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("⚠", fontSize = 14.sp)
+                    Text(warningText, color = Color(0xFFFFB74D), fontSize = 12.sp)
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { onChecked(!checked) }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        Modifier.size(20.dp)
+                            .background(if (checked) LBtnBg else Color.Transparent, RoundedCornerShape(4.dp))
+                            .border(BorderStroke(1.dp, if (checked) LBtnBg else LBorder), RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (checked) Text("✓", color = LBtnText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
+                    Text(checkLabel, color = LText, fontSize = 12.sp)
+                }
+                extra()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = onCancel, modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF45474D), contentColor = LText)
+                    ) { Text(cancelLabel, fontWeight = FontWeight.SemiBold) }
+                    Button(
+                        onClick = onConfirm, enabled = confirmEnabled,
+                        modifier = Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDanger) LError else LBtnBg,
+                            contentColor = LBtnText,
+                            disabledContainerColor = Color(0xFFE5E7EB), disabledContentColor = LSubtle
+                        )
+                    ) { Text(confirmLabel, fontWeight = FontWeight.SemiBold) }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SecondaryLink(label: String, danger: Boolean = false, onClick: () -> Unit) {
-    val color = if (danger) NoirError.copy(alpha = 0.85f) else NoirTextMuted
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        Text(
-            label,
-            color = color,
-            fontSize = 12.sp,
-            modifier = Modifier
-                .background(Color.Transparent, RoundedCornerShape(6.dp))
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        )
-    }
-}
-
-@Composable
-private fun StatusDot(label: String, ok: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .background(if (ok) NoirSuccess else NoirError.copy(alpha = 0.5f), RoundedCornerShape(50))
-        )
-        Text(label, color = NoirTextSubtle, fontSize = 11.sp, letterSpacing = 0.8.sp)
     }
 }

@@ -97,20 +97,20 @@ import kotlin.math.sin
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Premium fintech palette — deep blacks + lilac/violet accents.
-// Names kept for compatibility with existing call sites.
-internal val NoirInk = Color(0xFF07080C)              // app background
-internal val NoirSurface = Color(0xFF10131A)          // standard card
-internal val NoirSurfaceElev = Color(0xFF141822)      // elevated card / hover
-internal val NoirOutline = Color(0xFF1E2430)          // hairline border
-internal val NoirOutlineStrong = Color(0xFF2A3140)    // emphasized border
-internal val NoirText = Color(0xFFF4F4F5)             // primary text (soft white)
-internal val NoirTextMuted = Color(0xFF9CA3AF)        // secondary text (cool grey)
-internal val NoirTextSubtle = Color(0xFF6B7280)       // tertiary / disabled
-internal val NoirSilver = Color(0xFFE9D5FF)           // very light lilac highlight
-internal val NoirAccent = Color(0xFFC084FC)           // primary lilac accent
-internal val NoirSuccess = Color(0xFFA78BFA)          // active / positive (violet family)
-internal val NoirError = Color(0xFFE08B8B)            // desaturated rose
-internal val NoirInfo = Color(0xFFD8B4FE)             // soft lavender for info
+// Smoke-gray dark theme — minimalist, white text, green accent for metrics.
+internal val NoirInk = Color(0xFF2B2D31)             // section background — smoke gray
+internal val NoirSurface = Color(0xFF35373C)         // card surface — lighter smoke gray
+internal val NoirSurfaceElev = Color(0xFF3C3E44)     // input / elevated
+internal val NoirOutline = Color(0xFF45474D)         // hairline border
+internal val NoirOutlineStrong = Color(0xFF55575E)   // emphasized border
+internal val NoirText = Color(0xFFFFFFFF)            // primary text — WHITE
+internal val NoirTextMuted = Color(0xFFC7C9CF)       // secondary text
+internal val NoirTextSubtle = Color(0xFF9AA0A6)      // tertiary
+internal val NoirSilver = Color(0xFF4ADE80)          // green for labels/metrics
+internal val NoirAccent = Color(0xFF4ADE80)          // green accent
+internal val NoirSuccess = Color(0xFF4ADE80)         // green
+internal val NoirError = Color(0xFFEF5350)           // error red
+internal val NoirInfo = Color(0xFF60A5FA)            // soft blue for info
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  BACKGROUND
@@ -124,47 +124,11 @@ internal val NoirInfo = Color(0xFFD8B4FE)             // soft lavender for info
  */
 @Composable
 fun NoirBackground(modifier: Modifier = Modifier) {
-    Canvas(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(NoirInk)
-    ) {
-        val w = size.width
-        val h = size.height
-        // Soft top-left lilac wash (anchors the eye, fades quickly).
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    NoirAccent.copy(alpha = 0.07f),
-                    Color.Transparent
-                ),
-                center = Offset(w * 0.18f, h * 0.18f),
-                radius = (w.coerceAtLeast(h)) * 0.55f
-            ),
-            size = Size(w, h)
-        )
-        // Mirror glow bottom-right, even softer, for compositional balance.
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    NoirInfo.copy(alpha = 0.04f),
-                    Color.Transparent
-                ),
-                center = Offset(w * 0.82f, h * 0.85f),
-                radius = (w.coerceAtLeast(h)) * 0.45f
-            ),
-            size = Size(w, h)
-        )
-        // Subtle vertical vignette without resorting to pure black.
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color.Transparent, Color(0xFF03040A).copy(alpha = 0.55f)),
-                startY = h * 0.55f,
-                endY = h
-            ),
-            size = Size(w, h)
-        )
-    }
+            .background(NoirInk)  // smoke gray
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -489,7 +453,7 @@ fun NoirPasswordField(
             Icon(
                 if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                 contentDescription = null,
-                tint = NoirSilver,
+                tint = NoirText,
                 modifier = Modifier
                     .size(18.dp)
                     .clickable { visible = !visible }
@@ -804,7 +768,7 @@ private fun FeatureBlock(icon: androidx.compose.ui.graphics.vector.ImageVector, 
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(icon, contentDescription = null, tint = NoirSilver, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = NoirText, modifier = Modifier.size(20.dp))
         Text(title, color = NoirText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
         Text(text, color = NoirTextMuted, fontSize = 11.sp, lineHeight = 15.sp)
     }
@@ -1447,29 +1411,23 @@ fun DashboardReadyStepNoir(ui: ZSilentUiState) {
  */
 @Composable
 fun NoirScreenShell(
-    eyebrow: String,
-    title: String,
-    subtitle: String,
+    eyebrow: String,    // kept for API compat, not shown
+    title: String,      // kept for API compat, not shown
+    subtitle: String,   // kept for API compat, not shown
     content: @Composable () -> Unit
 ) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(NoirInk)
+            .background(NoirInk)  // gray bg
     ) {
-        NoirBackground()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 28.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(eyebrow.uppercase(), color = NoirTextSubtle, fontSize = 11.sp, letterSpacing = 1.8.sp)
-                Text(title, color = NoirText, fontWeight = FontWeight.SemiBold, fontSize = 24.sp)
-                Text(subtitle, color = NoirTextMuted, fontSize = 12.sp)
-            }
             content()
         }
     }
@@ -1484,30 +1442,31 @@ fun NoirStatusPill(
     tone: NoirStatusTone = NoirStatusTone.Neutral,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    val dot = when (tone) {
-        NoirStatusTone.Ok -> NoirSuccess
-        NoirStatusTone.Warn -> Color(0xFFE0B260)
-        NoirStatusTone.Bad -> NoirError
-        NoirStatusTone.Neutral -> NoirSilver
+    val shape = RoundedCornerShape(16.dp)
+    val (dotColor, bgColor) = when (tone) {
+        NoirStatusTone.Ok      -> Color(0xFF81C784) to Color(0xFFF1F8F1)  // pastel green
+        NoirStatusTone.Warn    -> Color(0xFFFFB74D) to Color(0xFFFFF8F0)  // pastel orange
+        NoirStatusTone.Bad     -> Color(0xFFEF9A9A) to Color(0xFFFFF0F0)  // pastel red
+        NoirStatusTone.Neutral -> Color(0xFFB0BEC5) to Color(0xFFF8F9FA)  // pastel blue-gray
     }
-    Column(
-        modifier = modifier
-            .background(NoirSurface, shape)
-            .border(BorderStroke(1.dp, NoirOutline), shape)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+    androidx.compose.material3.Surface(
+        modifier = modifier,
+        shape = shape,
+        color = NoirSurface,
+        shadowElevation = 2.dp,
+        tonalElevation = 0.dp
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .background(dot, CircleShape)
-            )
-            Text(label.uppercase(), color = NoirTextSubtle, fontSize = 10.sp, letterSpacing = 1.4.sp)
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.size(7.dp).background(dotColor, CircleShape))
+                Text(label.uppercase(), color = NoirTextSubtle, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Text(value, color = NoirText, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = FontFamily.Monospace)
+            Text(detail, color = NoirTextSubtle, fontSize = 10.sp, lineHeight = 13.sp)
         }
-        Text(value, color = NoirText, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
-        Text(detail, color = NoirTextMuted, fontSize = 11.sp, lineHeight = 14.sp)
     }
 }
 
@@ -1519,38 +1478,32 @@ fun NoirMetricCard(
     label: String,
     value: String,
     samples: List<Double>,
-    accent: Color = NoirSilver,
+    accent: Color = NoirAccent,
     hidden: Boolean = false,
     detail: String? = null,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    Column(
-        modifier = modifier
-            .background(NoirSurface, shape)
-            .border(BorderStroke(1.dp, NoirOutline), shape)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+    val shape = RoundedCornerShape(16.dp)
+    androidx.compose.material3.Surface(
+        modifier = modifier,
+        shape = shape,
+        color = NoirSurface,
+        shadowElevation = 2.dp,
+        tonalElevation = 0.dp
     ) {
-        Text(label.uppercase(), color = NoirTextSubtle, fontSize = 10.sp, letterSpacing = 1.4.sp)
-        Text(
-            if (hidden) "••••" else value,
-            color = NoirText,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 17.sp,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1
-        )
-        if (detail != null) {
-            Text(detail, color = NoirTextMuted, fontSize = 10.sp, letterSpacing = 0.3.sp)
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label.uppercase(), color = NoirTextSubtle, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (hidden) "••••" else value,
+                color = NoirText, fontWeight = FontWeight.Bold,
+                fontSize = 20.sp, fontFamily = FontFamily.Monospace, maxLines = 1
+            )
+            if (detail != null) Text(detail, color = NoirTextSubtle, fontSize = 10.sp)
+            // Line graph with fill gradient — no colored strip
+            NoirSparklineGradient(samples = samples, accent = accent,
+                modifier = Modifier.fillMaxWidth().height(32.dp))
         }
-        NoirSparkline(
-            samples = samples,
-            accent = accent,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp)
-        )
     }
 }
 
@@ -1581,6 +1534,39 @@ internal fun NoirSparkline(samples: List<Double>, accent: Color, modifier: Modif
     }
 }
 
+/** Sparkline with filled gradient area below the line. */
+@Composable
+internal fun NoirSparklineGradient(samples: List<Double>, accent: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        if (samples.size < 2) return@Canvas
+        val w = size.width; val h = size.height
+        val maxV = (samples.maxOrNull() ?: 0.0).let { if (it <= 0.0) 1.0 else it }
+        val minV = samples.minOrNull() ?: 0.0
+        val span = (maxV - minV).coerceAtLeast(1e-9)
+        val step = w / (samples.size - 1).coerceAtLeast(1)
+        val pts = samples.mapIndexed { i, v ->
+            Offset(i * step, h - (((v - minV) / span) * h * 0.85f).toFloat().coerceIn(0f, h))
+        }
+        // Filled gradient area
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(pts.first().x, h)
+            pts.forEach { lineTo(it.x, it.y) }
+            lineTo(pts.last().x, h); close()
+        }
+        drawPath(path, brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+            listOf(accent.copy(alpha = 0.25f), accent.copy(alpha = 0.0f)), startY = 0f, endY = h))
+        // Line
+        val linePath = androidx.compose.ui.graphics.Path().apply {
+            pts.forEachIndexed { i, pt -> if (i == 0) moveTo(pt.x, pt.y) else lineTo(pt.x, pt.y) }
+        }
+        drawPath(linePath, color = accent.copy(alpha = 0.9f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.8f,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        drawCircle(accent, radius = 3f, center = pts.last())
+    }
+}
+
 /** Noir-styled section panel used to group dashboard content. */
 @Composable
 fun NoirSection(
@@ -1589,37 +1575,46 @@ fun NoirSection(
     meta: String? = null,
     content: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(24.dp)
-    Column(
-        modifier = modifier
-            .background(NoirSurface, shape)
-            .border(BorderStroke(1.dp, NoirOutline), shape)
-            .padding(22.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    val shape = RoundedCornerShape(16.dp)
+    androidx.compose.material3.Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = shape,
+        color = NoirSurface,
+        shadowElevation = 2.dp,
+        tonalElevation = 0.dp
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(title, color = NoirText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            if (meta != null) {
-                Text(meta.uppercase(), color = NoirTextSubtle, fontSize = 10.sp, letterSpacing = 1.4.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, color = NoirText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                if (meta != null) {
+                    com.zsilent.core.ui.components.MetaBadge(meta)
+                }
             }
+            content()
         }
-        content()
     }
 }
 
-/** Simple label : value row, noir styled. */
+/** Simple label : value row, noir styled, with auto icon on the label. */
 @Composable
 fun NoirKeyValue(label: String, value: String, mono: Boolean = false) {
+    val icon = com.zsilent.core.ui.components.labelIcon(label)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = NoirTextMuted, fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (icon != null) Icon(icon, null, tint = NoirTextMuted, modifier = Modifier.size(14.dp))
+            Text(label, color = NoirTextMuted, fontSize = 12.sp)
+        }
         Text(
             value,
             color = NoirText,

@@ -1,13 +1,16 @@
 package com.zsilent.core.ui.screens
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,9 +31,14 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.CurrencyExchange
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.History
@@ -63,6 +73,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path as GraphicsPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -688,7 +699,8 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                                 appState.clearWalletCreationResult()
                                 walletPage = WalletPage.Create
                             },
-                            onToggleHide = appState::toggleBalances
+                            onToggleHide = appState::toggleBalances,
+                            onRefresh = { appState.refreshWallets() }
                         )
 
                         // ── Balance breakdown chips ──────────────────────────
@@ -887,26 +899,27 @@ private fun WalletHeroCard(
     ui: ZSilentUiState,
     activeWallet: LocalWallet?,
     onAddWallet: () -> Unit,
-    onToggleHide: () -> Unit
+    onToggleHide: () -> Unit,
+    onRefresh: () -> Unit = {}
 ) {
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
     val address = activeWallet?.address ?: ui.activeWalletAddress.ifBlank { "" }
     val totalAtoms = ui.walletBalance?.totalBalanceAtoms ?: activeWallet?.totalBalanceAtoms ?: 0L
     val hidden = ui.balancesHidden || ui.walletLocked
     val (whole, decimals) = splitZkaForDisplay(totalAtoms)
 
+    androidx.compose.material3.Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        color = Color(0xFF35373C),   // smoke-gray card
+        shadowElevation = 3.dp,
+        tonalElevation = 0.dp
+    ) {
     androidx.compose.foundation.layout.Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(com.zsilent.core.ui.onboarding.NoirSurface, shape)
-            .border(
-                androidx.compose.foundation.BorderStroke(1.dp, com.zsilent.core.ui.onboarding.NoirOutline),
-                shape
-            )
-            .padding(22.dp),
+        modifier = Modifier.padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        // Top row: address + copy + add wallet + hide toggle
+        // Top row: address + copy | refresh + add + eye (all black)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -920,17 +933,16 @@ private fun WalletHeroCard(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
-                if (address.isNotBlank()) {
-                    CopyIconButton(address)
-                }
+                if (address.isNotBlank()) CopyIconButton(address)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                NoirIconButton(
+                // Refresh — black button, actually triggers refresh
+                BlackIconButton(icon = Icons.Outlined.Sync, contentDescription = "Refresh balance", onClick = onRefresh)
+                BlackIconButton(
                     icon = com.zsilent.core.ui.onboarding.BootstrapIcons.PatchPlus,
-                    contentDescription = "Add wallet",
-                    onClick = onAddWallet
+                    contentDescription = "Add wallet", onClick = onAddWallet
                 )
-                NoirIconButton(
+                BlackIconButton(
                     icon = if (hidden) com.zsilent.core.ui.onboarding.BootstrapIcons.EyeSlash
                         else com.zsilent.core.ui.onboarding.BootstrapIcons.Eye,
                     contentDescription = if (hidden) "Show balances" else "Hide balances",
@@ -1002,34 +1014,101 @@ private fun WalletHeroCard(
             }
         }
     }
+    } // close Surface
+}
+
+/** Black rounded button with white icon — used for wallet action buttons. */
+@Composable
+private fun BlackIconButton(icon: androidx.compose.ui.graphics.vector.ImageVector, contentDescription: String, onClick: () -> Unit) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .size(34.dp)
+            .background(androidx.compose.ui.graphics.Color(0xFF1C1C1E), shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = contentDescription,
+            tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(16.dp))
+    }
 }
 
 @Composable
 private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
-    val balance = ui.walletBalance
-    val spendableAtoms = balance?.balanceAtoms ?: activeWallet?.balanceAtoms ?: 0L
-    val maturingAtoms = balance?.lockedBalanceAtoms ?: activeWallet?.lockedBalanceAtoms ?: 0L
-    val txCount = activeWallet?.txCount ?: ui.walletHistory.count
+    val balance       = ui.walletBalance
+    val spendableAtoms = balance?.balanceAtoms     ?: activeWallet?.balanceAtoms     ?: 0L
+    val maturingAtoms  = balance?.lockedBalanceAtoms ?: activeWallet?.lockedBalanceAtoms ?: 0L
+    val totalAtoms     = balance?.totalBalanceAtoms  ?: activeWallet?.totalBalanceAtoms  ?: 0L
+    val pendingCount   = ui.pendingPrivateTransfers.count
+    val txCount        = activeWallet?.txCount ?: ui.walletHistory.count
+    val hidden         = ui.walletLocked || ui.balancesHidden
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        BreakdownChip(
-            label = "Spendable",
-            value = if (ui.walletLocked || ui.balancesHidden) "••••" else formatZkaCompact(spendableAtoms),
-            detail = "available now",
-            modifier = Modifier.weight(1f)
-        )
-        BreakdownChip(
-            label = "Maturing",
-            value = if (ui.walletLocked || ui.balancesHidden) "••••" else formatZkaCompact(maturingAtoms),
-            detail = "coinbase locked",
-            modifier = Modifier.weight(1f)
-        )
-        BreakdownChip(
-            label = "Transactions",
-            value = txCount.toString(),
-            detail = if (ui.walletLocked) "unlock to load" else "private history",
-            modifier = Modifier.weight(1f)
-        )
+    // Sparkline histories — reset when wallet changes, update on value change
+    var spendableHistory by remember(activeWallet?.address) { mutableStateOf(seedMetricHistory(spendableAtoms.toDouble())) }
+    var maturingHistory  by remember(activeWallet?.address) { mutableStateOf(seedMetricHistory(maturingAtoms.toDouble())) }
+    var totalHistory     by remember(activeWallet?.address) { mutableStateOf(seedMetricHistory(totalAtoms.toDouble())) }
+    LaunchedEffect(spendableAtoms) { spendableHistory = appendMetricSample(spendableHistory, spendableAtoms.toDouble()) }
+    LaunchedEffect(maturingAtoms)  { maturingHistory  = appendMetricSample(maturingHistory,  maturingAtoms.toDouble()) }
+    LaunchedEffect(totalAtoms)     { totalHistory     = appendMetricSample(totalHistory,     totalAtoms.toDouble()) }
+
+    // Live "updated X seconds ago" ticker
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(ui.lastBalanceRefreshedAt) { while (true) { nowMs = System.currentTimeMillis(); delay(5_000) } }
+    val updatedLabel = if (ui.lastBalanceRefreshedAt > 0L) {
+        val secs = ((nowMs - ui.lastBalanceRefreshedAt) / 1000).coerceAtLeast(0)
+        when { secs < 5 -> "just now"; secs < 60 -> "${secs}s ago"; else -> "${secs / 60}m ago" }
+    } else if (!ui.walletLocked) "loading..." else ""
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("BALANCE BREAKDOWN", color = com.zsilent.core.ui.onboarding.NoirTextSubtle, fontSize = 10.sp, letterSpacing = 1.8.sp)
+            if (updatedLabel.isNotBlank()) {
+                Text(
+                    if (ui.walletLocked) "LOCKED" else "AUTO · $updatedLabel",
+                    color = if (ui.walletLocked) com.zsilent.core.ui.onboarding.NoirTextSubtle
+                            else com.zsilent.core.ui.onboarding.NoirSuccess,
+                    fontSize = 10.sp, letterSpacing = 1.4.sp
+                )
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            com.zsilent.core.ui.onboarding.NoirMetricCard(
+                label    = "Spendable",
+                value    = if (hidden) "••••" else formatZkaCompact(spendableAtoms),
+                samples  = spendableHistory,
+                accent   = Color(0xFF4ADE80),
+                detail   = "available now",
+                hidden   = hidden,
+                modifier = Modifier.weight(1f)
+            )
+            com.zsilent.core.ui.onboarding.NoirMetricCard(
+                label    = "Maturing",
+                value    = if (hidden) "••••" else formatZkaCompact(maturingAtoms),
+                samples  = maturingHistory,
+                accent   = Color(0xFFE2C56B),
+                detail   = if (maturingAtoms > 0L) "coinbase locked" else "none locking",
+                hidden   = hidden,
+                modifier = Modifier.weight(1f)
+            )
+            com.zsilent.core.ui.onboarding.NoirMetricCard(
+                label    = "Pending",
+                value    = if (pendingCount > 0) "$pendingCount tx" else "—",
+                samples  = seedMetricHistory(pendingCount.toDouble()),
+                accent   = Color(0xFFFB923C),
+                detail   = if (pendingCount > 0) "queued · not mined" else "no pending sends",
+                modifier = Modifier.weight(1f)
+            )
+            com.zsilent.core.ui.onboarding.NoirMetricCard(
+                label    = "Total",
+                value    = if (hidden) "••••" else formatZkaCompact(totalAtoms),
+                samples  = totalHistory,
+                accent   = com.zsilent.core.ui.onboarding.NoirSilver,
+                detail   = "$txCount transactions",
+                hidden   = hidden,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 
@@ -1168,15 +1247,16 @@ private fun truncateAddressForHero(addr: String): String {
 
 @Composable
 fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
-    var fromWallet by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var reviewOpen by remember { mutableStateOf(false) }
+    var fromWallet  by remember { mutableStateOf("") }
+    var address     by remember { mutableStateOf("") }
+    var amount      by remember { mutableStateOf("") }
+    var password    by remember { mutableStateOf("") }
+    var reviewOpen  by remember { mutableStateOf(false) }
     val recipientLooksValid = address.startsWith("zka1")
-    val amountLooksValid = amount.toDoubleOrNull()?.let { it > 0.0 } == true
-    val selectedWallet = ui.wallets.firstOrNull { it.address == fromWallet }
-    val fromLooksValid = ui.wallets.any { it.address == fromWallet }
+    val amountLooksValid    = amount.toDoubleOrNull()?.let { it > 0.0 } == true
+    val selectedWallet      = ui.wallets.firstOrNull { it.address == fromWallet }
+    val fromLooksValid      = ui.wallets.any { it.address == fromWallet }
+
     LaunchedEffect(ui.wallets, ui.activeWalletAddress) {
         if (fromWallet.isBlank() || ui.wallets.none { it.address == fromWallet }) {
             fromWallet = ui.wallets.firstOrNull { it.address == ui.activeWalletAddress && it.balanceAtoms > 0 }?.address
@@ -1187,166 +1267,328 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
     }
 
-    ScreenScaffold("Send", "Build and sign private transactions.") {
+    ScreenScaffold("Send", "Private zero-knowledge transfer.") {
         when {
+            // ── SUCCESS ────────────────────────────────────────────────────
             ui.sendResult != null -> {
-                val result = ui.sendResult
-                Panel(title = "Private transfer queued", meta = "${result.splitCount} tx") {
-                    KeyValueRow("Transactions", result.splitCount.toString())
-                    KeyValueRow("Status", transferStatusLabel(ui, result))
-                    result.transactionHashes.forEachIndexed { index, hash ->
-                        CopyableKeyValueRow("Hash ${index + 1} ${singleTransferStatus(ui, hash)}", hash)
+                SendSuccessPanel(
+                    result = ui.sendResult!!,
+                    ui = ui,
+                    onNewTransfer = {
+                        address = ""; amount = ""; password = ""; reviewOpen = false
+                        appState.clearSendResult()
                     }
-                    ThinDivider()
-                    CopyableKeyValueRow("From", result.from)
-                    CopyableKeyValueRow("To", result.to)
-                    KeyValueRow("Node queue DB", result.queuedDb ?: "not queued")
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = {
-                                address = ""
-                                amount = ""
-                                password = ""
-                                reviewOpen = false
-                                appState.clearSendResult()
-                            },
-                            colors = zButtonColors()
-                        ) { Text("New transfer") }
-                        OutlinedButton(colors = zOutlinedButtonColors(), onClick = { appState.refreshWallets() }, enabled = !ui.walletBusy) {
-                            Text("Refresh wallets")
+                )
+
+                // Recent activity after successful send
+                if (ui.walletHistory.transactions.isNotEmpty()) {
+                    com.zsilent.core.ui.onboarding.NoirSection(
+                        title = "Recent activity",
+                        meta = "last ${ui.walletHistory.transactions.size.coerceAtMost(5)}"
+                    ) {
+                        ui.walletHistory.transactions.take(5).forEach { tx ->
+                            SendActivityRow(tx)
                         }
                     }
                 }
             }
 
+            // ── SENDING (busy) ─────────────────────────────────────────────
+            ui.sendBusy -> {
+                SendingPanel()
+            }
+
+            // ── REVIEW ────────────────────────────────────────────────────
             reviewOpen -> {
                 val fee = ui.sendFeeEstimate
-                Panel(title = "Review transaction", meta = "device signing") {
-                    KeyValueRow("From", selectedWallet?.name ?: "selected wallet")
-                    CopyableKeyValueRow("Source address", fromWallet)
-                    CopyableKeyValueRow("To", address)
-                    KeyValueRow("Amount", fee?.amount ?: "$amount ZKA")
-                    KeyValueRow("Estimated fee", fee?.fee ?: if (ui.sendBusy) "calculating" else "not available")
-                    KeyValueRow("Signing", "device only")
-                    ui.sendError?.let { ErrorText(it) }
-                    PasswordField(password, { password = it }, "Master password", Modifier.fillMaxWidth())
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(colors = zOutlinedButtonColors(), 
-                            onClick = {
-                                reviewOpen = false
-                                password = ""
-                            },
-                            enabled = !ui.sendBusy
-                        ) { Text("Back") }
-                        Button(
-                            onClick = {
-                                appState.sendPrivateFunds(
-                                    fromWallet = fromWallet,
-                                    to = address,
-                                    amount = amount,
-                                    password = password.toCharArray(),
-                                    fee = fee?.fee
-                                )
-                                password = ""
-                            },
-                            enabled = password.isNotBlank() && fee != null && !ui.sendBusy,
-                            colors = zButtonColors()
-                        ) { Text(if (ui.sendBusy) "Sending..." else "Sign and send") }
+                com.zsilent.core.ui.onboarding.NoirSection(title = "Review transfer", meta = "private · shielded") {
+                    com.zsilent.core.ui.onboarding.NoirKeyValue("From", selectedWallet?.name ?: "selected wallet")
+                    com.zsilent.core.ui.onboarding.NoirKeyValue("Amount", fee?.amount ?: "$amount ZKA", mono = true)
+                    com.zsilent.core.ui.onboarding.NoirKeyValue("Fee", fee?.fee ?: "estimated on sign", mono = true)
+                    com.zsilent.core.ui.onboarding.NoirKeyValue("Recipient", "${address.take(16)}…${address.takeLast(8)}", mono = true)
+                    com.zsilent.core.ui.onboarding.NoirKeyValue("Privacy", "zero-knowledge · keys never leave device")
+                }
+                ui.sendError?.let { ErrorText(it) }
+                PasswordField(password, { password = it }, "Wallet password to sign", Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                        contentPadding = SettingsButtonPadding,
+                        onClick = { reviewOpen = false; password = "" }, enabled = !ui.sendBusy
+                    ) { Text("Back") }
+                    Button(
+                        onClick = {
+                            appState.sendPrivateFunds(fromWallet, address, amount, password.toCharArray(), fee?.fee)
+                            password = ""
+                        },
+                        enabled = password.isNotBlank() && fee != null && !ui.sendBusy,
+                        colors = zButtonColors(), shape = MaterialTheme.shapes.small,
+                        contentPadding = SettingsButtonPadding
+                    ) {
+                        Icon(Icons.Outlined.Lock, null, Modifier.size(15.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Sign and send")
                     }
                 }
             }
 
+            // ── FORM ──────────────────────────────────────────────────────
             else -> {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Panel(title = "Source wallet", meta = if (fromLooksValid) "selected" else "required", modifier = Modifier.weight(1f)) {
-                        KeyValueRow("From", selectedWallet?.name ?: "not selected")
-                        CopyableKeyValueRow("Address", selectedWallet?.address ?: "not selected")
-                        KeyValueRow("Available", selectedWallet?.balance?.let { "$it ZKA" } ?: "not loaded")
-                    }
-                    Panel(title = "Privacy", meta = "shielded", modifier = Modifier.weight(1f)) {
-                        KeyValueRow("Private keys", "device only")
-                        KeyValueRow("Address validation", if (recipientLooksValid) "zka1 prefix" else "waiting")
-                        KeyValueRow("Fee", ui.sendFeeEstimate?.fee ?: "not estimated")
+                // Source wallet selector
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ui.wallets.forEach { wallet ->
+                        val active = wallet.address == fromWallet
+                        val shape  = RoundedCornerShape(12.dp)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(
+                                    if (active) MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                    shape
+                                )
+                                .border(
+                                    BorderStroke(1.dp,
+                                        if (active) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outline),
+                                    shape
+                                )
+                                .clickable { fromWallet = wallet.address; appState.selectWallet(wallet.address) }
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(wallet.name,
+                                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                                color = if (active) MaterialTheme.colorScheme.primary else com.zsilent.core.ui.onboarding.NoirText)
+                            Text(wallet.balance + " ZKA",
+                                fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                                color = if (active) MaterialTheme.colorScheme.primary else com.zsilent.core.ui.onboarding.NoirTextMuted)
+                            if (active) Text("SELECTED", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, letterSpacing = 1.4.sp)
+                        }
                     }
                 }
 
-                Panel(title = "Compose transfer", meta = "private send") {
-                    if (ui.wallets.isEmpty()) {
-                        EmptyState("No wallet accounts found. Rescan or create a wallet first.")
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            ui.wallets.forEach { wallet ->
-                                OutlinedButton(colors = zOutlinedButtonColors(), 
-                                    onClick = {
-                                        fromWallet = wallet.address
-                                        appState.selectWallet(wallet.address)
+                // Recipient + Amount — white card with paste/max/icons
+                val clipboardMgr = androidx.compose.ui.platform.LocalClipboardManager.current
+                com.zsilent.core.ui.onboarding.NoirSection(title = "Transfer details", meta = "zk-private") {
+                    // Recipient address with paste + check icon
+                    OutlinedTextField(
+                        value = address, onValueChange = { address = it.trim() },
+                        label = { Text("Recipient address") },
+                        placeholder = { Text("zka1…", color = com.zsilent.core.ui.onboarding.NoirTextSubtle) },
+                        isError = address.isNotBlank() && !recipientLooksValid,
+                        colors = zFieldColors(), shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Outlined.AccountBalanceWallet, null, tint = com.zsilent.core.ui.onboarding.NoirTextSubtle, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (recipientLooksValid) {
+                                    Icon(Icons.Outlined.CheckCircle, null, tint = com.zsilent.core.ui.onboarding.NoirSuccess, modifier = Modifier.size(16.dp))
+                                } else {
+                                    // Paste button with icon
+                                    OutlinedButton(
+                                        onClick = { address = clipboardMgr.getText()?.text?.trim() ?: address },
+                                        colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(30.dp)
+                                    ) {
+                                        Icon(Icons.Outlined.ContentPaste, null, modifier = Modifier.size(13.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Paste", fontSize = 11.sp)
                                     }
-                                ) {
-                                    Text("${wallet.name}${if (wallet.address == fromWallet) " / selected" else ""}")
                                 }
+                                Spacer(Modifier.width(4.dp))
                             }
                         }
-                    }
-
-                    OutlinedTextField(
-                        value = address,
-                        onValueChange = {
-                            address = it.trim()
-                            appState.clearSendResult()
-                        },
-                        label = { Text("Recipient address") },
-                        isError = address.isNotBlank() && !recipientLooksValid,
-                        colors = zFieldColors(),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
                     )
+                    // Amount with MAX button + currency icon
+                    val maxBalance = selectedWallet?.balance ?: "0"
                     OutlinedTextField(
-                        value = amount,
-                        onValueChange = {
-                            amount = it.trim()
-                            appState.clearSendResult()
-                        },
-                        label = { Text("Amount") },
+                        value = amount, onValueChange = { amount = it.trim() },
+                        label = { Text("Amount ZKA") },
                         isError = amount.isNotBlank() && !amountLooksValid,
-                        colors = zFieldColors(),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth()
+                        colors = zFieldColors(), shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Outlined.CurrencyExchange, null, tint = com.zsilent.core.ui.onboarding.NoirTextSubtle, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedButton(
+                                    onClick = { amount = maxBalance },
+                                    colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Icon(Icons.Outlined.KeyboardDoubleArrowUp, null, modifier = Modifier.size(13.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("MAX", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.width(4.dp))
+                            }
+                        }
                     )
-
                     ui.sendFeeEstimate?.let { fee ->
-                        Panel(title = "Fee estimate", meta = fee.priority, contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp)) {
-                            KeyValueRow("Estimated fee", fee.fee)
-                            KeyValueRow("Priority", fee.priority)
+                        Row(Modifier.fillMaxWidth().background(Color(0xFF3C3E44), RoundedCornerShape(10.dp)).padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Estimated fee", color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
+                            Text(fee.fee, color = com.zsilent.core.ui.onboarding.NoirText, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-
                     ui.sendError?.let { ErrorText(it) }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(colors = zOutlinedButtonColors(), 
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(
+                            colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                            contentPadding = SettingsButtonPadding,
                             onClick = { appState.estimateSendFee(amount) },
                             enabled = amountLooksValid && !ui.sendBusy
-                        ) { Text(if (ui.sendBusy) "Calculating..." else "Estimate fee") }
+                        ) { Text("Estimate fee") }
                         Button(
-                            onClick = {
-                                reviewOpen = true
-                                appState.estimateSendFee(amount)
-                            },
-                            enabled = recipientLooksValid && amountLooksValid && ui.activeWalletAddress.isNotBlank() && !ui.sendBusy && fromLooksValid,
-                            colors = zButtonColors()
-                        ) { Text("Review transaction") }
+                            onClick = { reviewOpen = true; appState.estimateSendFee(amount) },
+                            enabled = recipientLooksValid && amountLooksValid && fromLooksValid && !ui.sendBusy,
+                            colors = zButtonColors(), shape = MaterialTheme.shapes.small,
+                            contentPadding = SettingsButtonPadding
+                        ) {
+                            Icon(Icons.Outlined.Lock, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Review →")
+                        }
                     }
                 }
 
-                if (ui.pendingPrivateTransfers.count > 0) {
-                    Panel(title = "Node queue", meta = "${ui.pendingPrivateTransfers.count} pending") {
-                        KeyValueRow("Pending private txs", ui.pendingPrivateTransfers.count.toString())
-                        ui.pendingPrivateTransfers.pendingPrivateTxHashes.take(4).forEachIndexed { index, hash ->
-                            CopyableKeyValueRow("Tx ${index + 1}", hash)
-                        }
+                // Recent activity
+                if (!ui.walletLocked && ui.walletHistory.transactions.isNotEmpty()) {
+                    com.zsilent.core.ui.onboarding.NoirSection(
+                        title = "Recent activity",
+                        meta = "last ${ui.walletHistory.transactions.size.coerceAtMost(5)}"
+                    ) {
+                        ui.walletHistory.transactions.take(5).forEach { tx -> SendActivityRow(tx) }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SendSuccessPanel(
+    result: com.zsilent.core.models.SendResult,
+    ui: ZSilentUiState,
+    onNewTransfer: () -> Unit
+) {
+    val checkScale = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) {
+        delay(120)
+        checkScale.animateTo(1f, tween(550, easing = FastOutSlowInEasing))
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        // Animated check circle
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .background(Color(0xFF4CAF50).copy(alpha = 0.12f), CircleShape)
+                .border(BorderStroke(2.dp, Color(0xFF4CAF50).copy(alpha = 0.4f)), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(Color(0xFF4CAF50), CircleShape)
+                    .graphicsLayer(scaleX = checkScale.value, scaleY = checkScale.value),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Outlined.CheckCircle, null, tint = Color.White, modifier = Modifier.size(40.dp))
+            }
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Transfer sent!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+            Text("Private · Zero-knowledge · Broadcasting to network",
+                color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
+        }
+
+        // TX hashes
+        com.zsilent.core.ui.onboarding.NoirSection(title = "Transaction", meta = "${result.splitCount} tx") {
+            result.transactionHashes.forEachIndexed { i, hash ->
+                val status = singleTransferStatus(ui, hash)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("TX ${i + 1}  $status", color = com.zsilent.core.ui.onboarding.NoirTextSubtle, fontSize = 10.sp, letterSpacing = 1.2.sp)
+                        Text(hash, color = com.zsilent.core.ui.onboarding.NoirText, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CopyIconButton(hash)
+                        // Explorer link
+                        OutlinedButton(
+                            colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            onClick = {
+                                runCatching {
+                                    java.awt.Desktop.getDesktop().browse(java.net.URI("https://www.zokascan.cc/tx/$hash"))
+                                }
+                            }
+                        ) { Text("Explorer ↗", fontSize = 11.sp) }
+                    }
+                }
+            }
+            ThinDivider()
+            com.zsilent.core.ui.onboarding.NoirKeyValue("To", "${result.to.take(14)}…${result.to.takeLast(8)}", mono = true)
+        }
+
+        Button(
+            onClick = onNewTransfer,
+            colors = zButtonColors(), shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("New transfer") }
+    }
+}
+
+@Composable
+private fun SendingPanel() {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(
+            modifier = Modifier.size(64.dp),
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 3.dp
+        )
+        Text("Signing transaction…", style = MaterialTheme.typography.titleMedium, color = com.zsilent.core.ui.onboarding.NoirText)
+        Text("Building zero-knowledge proof on device. This may take 20-30 seconds.",
+            color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+@Composable
+private fun SendActivityRow(tx: com.zsilent.core.models.WalletHistoryEntry) {
+    val statusColor = when (tx.status.lowercase()) {
+        "confirmed", "finalized" -> Color(0xFF2E7D32)
+        "pending"                -> Color(0xFFF57C00)
+        "failed"                 -> Color(0xFFD32F2F)
+        else                     -> com.zsilent.core.ui.onboarding.NoirTextMuted
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(8.dp).background(statusColor, CircleShape))
+            Column {
+                Text(shortHash(tx.txHash), color = com.zsilent.core.ui.onboarding.NoirText, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text(tx.status, color = statusColor, fontSize = 10.sp, letterSpacing = 0.8.sp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            CopyIconButton(tx.txHash, enabled = tx.txHash.isNotBlank())
+            OutlinedButton(
+                colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 3.dp),
+                onClick = { runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI("https://www.zokascan.cc/tx/${tx.txHash}")) } }
+            ) { Text("↗", fontSize = 11.sp) }
         }
     }
 }
@@ -1443,6 +1685,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         Switch(
                             checked = nodeOn,
                             enabled = nodeSwitchEnabled,
+                            colors = com.zsilent.core.ui.components.zSwitchColors(),
                             onCheckedChange = { wantOn ->
                                 if (wantOn && canStartNode) {
                                     appState.startNode(autoMine = false)
@@ -1626,6 +1869,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         Switch(
                             checked = miningOn,
                             enabled = miningSwitchEnabled,
+                            colors = com.zsilent.core.ui.components.zSwitchColors(),
                             onCheckedChange = { wantOn ->
                                 if (wantOn && canStart && miningPrereqs) {
                                     miningRequestActive = true
@@ -1773,8 +2017,29 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
 @Composable
 fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
+    var hostText by remember(ui.torSocksHost) { mutableStateOf(ui.torSocksHost) }
+    var portText by remember(ui.torSocksPort) { mutableStateOf(ui.torSocksPort.toString()) }
     ScreenScaffold("Privacy", "Privacy controls for secrets, logs and display safety.") {
-        TorPrivacyPanel(ui, appState)
+        Panel(title = "Tor privacy", meta = if (ui.torOnly) "tor-only" else if (ui.torEnabled) "enabled" else "off") {
+            ToggleRow("Enable Tor proxy for node networking", ui.torEnabled, appState::setTorEnabled)
+            ToggleRow("Require Tor-only seed connections", ui.torOnly, appState::setTorOnly)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = hostText,
+                    onValueChange = { hostText = it; appState.setTorSocksHost(it) },
+                    label = { Text("SOCKS host") }, singleLine = true,
+                    colors = zFieldColors(), modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = portText,
+                    onValueChange = { portText = it.filter(Char::isDigit).take(5); appState.setTorSocksPort(portText) },
+                    label = { Text("SOCKS port") }, singleLine = true,
+                    colors = zFieldColors(), modifier = Modifier.weight(1f)
+                )
+            }
+            KeyValueRow("Launch flag", if (ui.torEnabled) "--tor-proxy ${ui.torSocksHost}:${ui.torSocksPort}" else "not used")
+            KeyValueRow("Clearnet seeds", if (ui.torOnly) "blocked by policy" else "allowed by node config")
+        }
         Panel(title = "Display privacy", meta = if (ui.balancesHidden) "hidden" else "visible") {
             ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
             ToggleRow("Wallet session", !ui.appLocked) { appState.lockApp("Locked manually.") }
@@ -1887,11 +2152,8 @@ fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             ) {
                 when (currentPage) {
                     SettingsPage.Home -> SettingsHome(ui) { page = it }
-                    SettingsPage.Appearance -> SettingsAppearancePage(ui, appState)
-                    SettingsPage.Security -> SettingsSecurityPage(ui, appState) { page = it }
-                    SettingsPage.Privacy -> SettingsPrivacyPage(ui, appState)
-                    SettingsPage.Wallet -> SettingsWalletPage(ui, appState)
-                    SettingsPage.History -> SettingsHistoryPage(ui)
+                    SettingsPage.Security -> SettingsSecurityPage(ui, appState)
+                    SettingsPage.Network -> SettingsNetworkPage(ui)
                     SettingsPage.About -> SettingsAboutPage(ui)
                     SettingsPage.Danger -> SettingsDangerPage(
                         confirmReset = confirmReset,
@@ -1914,11 +2176,8 @@ private enum class SettingsPage(
     val subtitle: String
 ) {
     Home("Settings", "Personal controls for ZSilent Core."),
-    Appearance("Appearance", "Choose how the wallet looks and what stays visible."),
-    Security("Security", "Access, recovery and sensitive controls."),
-    Privacy("Privacy", "Tor routing and anonymous network posture."),
-    Wallet("Wallet", "Main account and account manager."),
-    History("Transaction history", "Import and export controls."),
+    Security("Security", "Change PIN, reveal recovery phrase and private keys."),
+    Network("Network", "RPC endpoint and connection status."),
     About("About", "ZSilent Core details and runtime status."),
     Danger("Danger zone", "Reset app setup deliberately.")
 }
@@ -1961,65 +2220,40 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsMenuCard(
-                title = "Appearance",
-                detail = if (ui.darkTheme) "Dark mode active" else "Light mode active",
-                icon = Icons.Outlined.Settings,
-                meta = "dark / light",
-                modifier = Modifier.weight(1f),
-                onClick = { onOpen(SettingsPage.Appearance) }
-            )
-            SettingsMenuCard(
                 title = "Security",
-                detail = "PIN, recovery phrase, private key and privacy checks",
+                detail = "Change PIN, recovery phrase and private keys",
                 icon = Icons.Outlined.Lock,
                 meta = "secure",
                 modifier = Modifier.weight(1f),
                 onClick = { onOpen(SettingsPage.Security) }
             )
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsMenuCard(
-                title = "Wallet",
-                detail = activeLocalWallet(ui)?.name ?: ui.activeWalletName.ifBlank { "Main account" },
-                icon = Icons.Outlined.AccountBalanceWallet,
-                meta = "accounts",
+                title = "Network",
+                detail = if (ui.rpcOnline) "RPC online" else "RPC offline",
+                icon = Icons.Outlined.Sync,
+                meta = "rpc",
                 modifier = Modifier.weight(1f),
-                onClick = { onOpen(SettingsPage.Wallet) }
-            )
-            SettingsMenuCard(
-                title = "Transaction history",
-                detail = "${ui.walletHistory.count} transaction record(s)",
-                icon = Icons.Outlined.History,
-                meta = "import / export",
-                modifier = Modifier.weight(1f),
-                onClick = { onOpen(SettingsPage.History) }
+                onClick = { onOpen(SettingsPage.Network) }
             )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsMenuCard(
-                title = "Privacy",
-                detail = if (ui.torOnly) "Tor-only mode" else if (ui.torEnabled) "Tor proxy configured" else "Direct mode",
-                icon = Icons.Outlined.Shield,
-                meta = "tor",
-                modifier = Modifier.weight(1f),
-                onClick = { onOpen(SettingsPage.Privacy) }
-            )
             SettingsMenuCard(
                 title = "About",
-                detail = "ZSilent Core, Zoka CLI and runtime details",
+                detail = "ZSilent Core, Zoka and runtime details",
                 icon = Icons.Outlined.Info,
                 meta = "details",
                 modifier = Modifier.weight(1f),
                 onClick = { onOpen(SettingsPage.About) }
             )
+            SettingsMenuCard(
+                title = "Danger zone",
+                detail = "Clear app setup and return to onboarding",
+                icon = Icons.Outlined.WarningAmber,
+                meta = "reset",
+                modifier = Modifier.weight(1f),
+                onClick = { onOpen(SettingsPage.Danger) }
+            )
         }
-        SettingsMenuCard(
-            title = "Danger zone",
-            detail = "Clear app setup and return to onboarding",
-            icon = Icons.Outlined.WarningAmber,
-            meta = "reset",
-            onClick = { onOpen(SettingsPage.Danger) }
-        )
     }
 }
 
@@ -2034,10 +2268,10 @@ private fun SettingsMenuCard(
 ) {
     Panel(modifier = modifier, title = title, meta = meta) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp))
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
             Text(
                 detail,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2066,40 +2300,9 @@ private fun SettingsMenuCard(
 }
 
 @Composable
-private fun SettingsAppearancePage(ui: ZSilentUiState, appState: ZSilentAppState) {
-    Panel(title = "Appearance", meta = if (ui.darkTheme) "dark" else "light") {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = { if (!ui.darkTheme) appState.toggleTheme() },
-                colors = zButtonColors(),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = SettingsButtonPadding,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Outlined.Security, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(if (ui.darkTheme) "Dark active" else "Use dark")
-            }
-            Button(
-                onClick = { if (ui.darkTheme) appState.toggleTheme() },
-                colors = zButtonColors(),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = SettingsButtonPadding,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(if (!ui.darkTheme) "Light active" else "Use light")
-            }
-        }
-        ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
-        KeyValueRow("Current mode", if (ui.darkTheme) "Dark" else "Light")
-    }
-}
-
-@Composable
 private fun SettingsSecurityPage(
     ui: ZSilentUiState,
-    appState: ZSilentAppState,
-    onOpen: (SettingsPage) -> Unit
+    appState: ZSilentAppState
 ) {
     var notice by remember { mutableStateOf<String?>(null) }
     var pinEditorOpen by remember { mutableStateOf(false) }
@@ -2286,87 +2489,22 @@ private fun SettingsSecurityPage(
         }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
-
-    Panel(title = "Privacy", meta = if (ui.torOnly) "tor-only" else "controls") {
-        SettingsActionButton(
-            title = "Network privacy",
-            detail = "Configure Tor proxy and anonymous-only launch policy.",
-            icon = Icons.Outlined.Shield,
-            onClick = { onOpen(SettingsPage.Privacy) }
-        )
-    }
 }
 
 @Composable
-private fun SettingsPrivacyPage(ui: ZSilentUiState, appState: ZSilentAppState) {
-    TorPrivacyPanel(ui, appState)
-    Panel(title = "Device privacy", meta = "wallet") {
-        ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
-        KeyValueRow("Telemetry", "disabled")
-        KeyValueRow("Sensitive logs", "redacted")
-        KeyValueRow("Private key export", "password gated")
+private fun SettingsNetworkPage(ui: ZSilentUiState) {
+    Panel(title = "RPC endpoint", meta = if (ui.rpcOnline) "online" else "offline") {
+        CopyableKeyValueRow("Endpoint", ZokaNetworkConfig.displayUrl(ui.networkRpcUrl))
+        KeyValueRow("Status", if (ui.rpcOnline) "connected" else "unreachable")
+        KeyValueRow("Network height", ui.networkHeight.toString())
+        KeyValueRow("Node height", ui.chainHeight.toString())
+        KeyValueRow("Sync gate", if (ui.networkSynced) "synced" else "syncing")
     }
-}
-
-@Composable
-private fun SettingsWalletPage(ui: ZSilentUiState, appState: ZSilentAppState) {
-    val activeWallet = activeLocalWallet(ui)
-    Panel(title = "Main account", meta = if (ui.walletLocked) "locked" else "unlocked") {
-        KeyValueRow("Name", activeWallet?.name ?: ui.activeWalletName.ifBlank { ui.walletName })
-        CopyableKeyValueRow("Address", ui.activeWalletAddress.ifBlank { activeWallet?.address.orEmpty() })
-        KeyValueRow("Available", activeWalletAvailable(ui, activeWallet))
-        KeyValueRow("Locked", activeWalletLocked(ui, activeWallet))
-        Button(
-            onClick = { appState.select(AppSection.Wallet) },
-            colors = zButtonColors(),
-            shape = MaterialTheme.shapes.small,
-            contentPadding = SettingsButtonPadding,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
-            Text("Open wallet manager")
-        }
-    }
-
-    Panel(title = "Manager account", meta = "${ui.wallets.size} accounts") {
-        val wallets = ui.wallets.take(6)
-        if (wallets.isEmpty()) {
-            EmptyState("No wallets loaded yet.")
-        } else {
-            wallets.forEach { wallet ->
-                CopyableKeyValueRow(wallet.name, wallet.address)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsHistoryPage(ui: ZSilentUiState) {
-    var notice by remember { mutableStateOf<String?>(null) }
-    Panel(title = "Transaction history", meta = "${ui.walletHistory.count} records") {
-        KeyValueRow("Wallet", ui.walletHistory.wallet.ifBlank { ui.activeWalletName.ifBlank { "main" } })
-        KeyValueRow("Loaded records", ui.walletHistory.transactions.size.toString())
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = { notice = "History export will write an encrypted JSON/CSV file for this wallet only." },
-                colors = zButtonColors(),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = SettingsButtonPadding
-            ) {
-                Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text("Export history")
-            }
-            OutlinedButton(
-                colors = zOutlinedButtonColors(),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = SettingsButtonPadding,
-                onClick = { notice = "History import will merge a file after wallet/address validation." }
-            ) {
-                Icon(Icons.Outlined.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text("Import history")
-            }
-        }
-        notice?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    Panel(title = "Local node", meta = if (ui.localRpcOnline) "online" else "offline") {
+        KeyValueRow("Local RPC", if (ui.localRpcOnline) "${ZokaNetworkConfig.displayUrl(ui.localRpcUrl)} online" else "offline")
+        CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
+        KeyValueRow("Connected peers", ui.stats.connectedPeers.toString())
+        KeyValueRow("Network miners", ui.stats.minersOnline.toString())
     }
 }
 
@@ -2434,48 +2572,6 @@ private fun SettingsDangerPage(
 }
 
 @Composable
-private fun TorPrivacyPanel(ui: ZSilentUiState, appState: ZSilentAppState) {
-    var hostText by remember(ui.torSocksHost) { mutableStateOf(ui.torSocksHost) }
-    var portText by remember(ui.torSocksPort) { mutableStateOf(ui.torSocksPort.toString()) }
-
-    Panel(title = "Tor privacy", meta = if (ui.torOnly) "tor-only" else if (ui.torEnabled) "enabled" else "off") {
-        ToggleRow("Enable Tor proxy for node networking", ui.torEnabled, appState::setTorEnabled)
-        ToggleRow("Require Tor-only seed connections", ui.torOnly, appState::setTorOnly)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
-                value = hostText,
-                onValueChange = {
-                    hostText = it
-                    appState.setTorSocksHost(it)
-                },
-                label = { Text("SOCKS host") },
-                singleLine = true,
-                colors = zFieldColors(),
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = portText,
-                onValueChange = {
-                    portText = it.filter(Char::isDigit).take(5)
-                    appState.setTorSocksPort(portText)
-                },
-                label = { Text("SOCKS port") },
-                singleLine = true,
-                colors = zFieldColors(),
-                modifier = Modifier.weight(1f)
-            )
-        }
-        KeyValueRow("Launch flag", if (ui.torEnabled) "--tor-proxy ${ui.torSocksHost}:${ui.torSocksPort}" else "not used")
-        KeyValueRow("Clearnet seeds", if (ui.torOnly) "blocked by policy" else "allowed only by node config")
-        Text(
-            "For strongest anonymity, run Tor on this device and use onion seed peers. Tor-only mode rejects direct seed targets before dialing.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium
-        )
-    }
-}
-
-@Composable
 private fun SettingsActionButton(
     title: String,
     detail: String,
@@ -2523,7 +2619,7 @@ private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = com.zsilent.core.ui.components.zSwitchColors())
     }
 }
 

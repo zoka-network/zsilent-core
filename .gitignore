@@ -14,3 +14,6 @@ out/
 .DS_Store
 Thumbs.db
 
+
+# local node runtime data (chain DB, node identity) - never commit
+.zoka/

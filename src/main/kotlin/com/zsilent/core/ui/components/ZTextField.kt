@@ -29,7 +29,9 @@ fun ZTextField(
     singleLine: Boolean = true,
     minLines: Int = 1,
     keyboardType: KeyboardType = KeyboardType.Text,
-    trailingIcon: @Composable (() -> Unit)? = null
+    leadingIcon: @Composable (() -> Unit)? = null,
+    trailingIcon: @Composable (() -> Unit)? = null,
+    isError: Boolean = false
 ) {
     OutlinedTextField(
         value = value,
@@ -39,7 +41,9 @@ fun ZTextField(
         singleLine = singleLine,
         minLines = minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
+        isError = isError,
         colors = fieldColors()
     )
 }

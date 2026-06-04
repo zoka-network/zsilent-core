@@ -12,7 +12,6 @@ enum class AppSection {
     Mining,
     Privacy,
     Logs,
-    Explorer,
     Settings
 }
 

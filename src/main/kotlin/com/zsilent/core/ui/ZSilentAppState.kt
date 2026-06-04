@@ -136,7 +136,8 @@ data class ZSilentUiState(
     val miningControlledByApp: Boolean = false,
     val logs: List<RuntimeLog> = emptyList(),
     val rpcOnline: Boolean = false,
-    val zokaReady: Boolean = false
+    val zokaReady: Boolean = false,
+    val lastBalanceRefreshedAt: Long = 0L
 )
 
 class ZSilentAppState(
@@ -162,6 +163,10 @@ class ZSilentAppState(
     @Volatile private var autoRpcSyncBackoffUntilMillis = 0L
     private var sessionPassword: CharArray? = null
     private var integratedMiningRequested = false
+    private var lastLocalHeightReadMillis = 0L
+    @Volatile private var blockPushInProgress = false
+    private var lastPushedRemoteHeight = 0L
+    private var lastBalanceRefreshMillis = 0L
 
     fun start() {
         val staleProcesses = ZokaProcessKiller.terminateManagedZokaProcesses(cli)
@@ -244,12 +249,20 @@ class ZSilentAppState(
             }
         }
         scope.launch {
+            var lastPushedHeight = 0L
             miningController.snapshot.collectLatest { mining ->
+                val newHeight = mining.chainHeight
                 update {
                     it.copy(
                         mining = mining,
-                        chainHeight = maxOf(it.chainHeight, mining.chainHeight)
+                        chainHeight = maxOf(it.chainHeight, newHeight)
                     )
+                }
+                // When a new block is mined locally, push it to remote nodes
+                // so they don't need to pull via P2P (works through NAT).
+                if (newHeight > lastPushedHeight && newHeight > 0 && mining.running) {
+                    lastPushedHeight = newHeight
+                    scope.launch { pushMinedBlockToRemotes(newHeight) }
                 }
             }
         }
@@ -1228,12 +1241,15 @@ class ZSilentAppState(
                         sendBusy = false,
                         sendResult = result,
                         sendError = null,
-                        walletLocked = true,
+                        // Keep wallet UNLOCKED — session password stays in memory.
+                        // Balance will refresh automatically on next pollRpc cycle.
                         walletBalance = null,
                         walletHistory = WalletHistory(wallet = it.activeWalletName)
                     )
                 }
-                refreshWallets()
+                // Refresh with session password so wallet stays visible immediately
+                val pwd = copySessionPassword()
+                if (pwd != null) refreshWallets(pwd) else refreshWallets()
             }.onFailure { error ->
                 appendLog(RuntimeLog("send", "Private transfer failed: ${safeLogMessage(error)}"))
                 update {
@@ -1729,12 +1745,15 @@ class ZSilentAppState(
         val mayReadDbDirectly = localRpcHeight == null &&
             snapshot.nodeStatus == ServiceStatus.Offline &&
             snapshot.miningStatus == ServiceStatus.Offline
-        val localDbHeight = if (mayReadDbDirectly) {
+        // Throttle direct DB reads to once per 15s — each call spawns a zoka subprocess
+        val now = System.currentTimeMillis()
+        val localDbHeight = if (mayReadDbDirectly && (now - lastLocalHeightReadMillis > 15_000L)) {
+            lastLocalHeightReadMillis = now
             readLocalChainHeight().getOrElse {
                 maxOf(snapshot.chainHeight, snapshot.mining.chainHeight)
             }
         } else {
-            0L
+            maxOf(snapshot.chainHeight, snapshot.mining.chainHeight)
         }
         val localHeight = maxOf(localDbHeight, localRpcHeight ?: 0L, snapshot.mining.chainHeight)
         val localRpcOnline = localRpcHeight != null
@@ -1745,7 +1764,12 @@ class ZSilentAppState(
             val stats = rpc.stats()
             val networkHeight = stats.height.coerceAtLeast(0)
             val remaining = (networkHeight - localHeight).coerceAtLeast(0)
-            val synced = networkHeight > 0 && localHeight >= networkHeight
+            // Synced once the local node has caught up to the network head.
+            // A freshly reset network sits at genesis (height 0); reaching the
+            // network requires NO blocks, so 0 >= 0 must count as synced —
+            // otherwise mining stays locked forever on a brand-new chain.
+            // The RPC-offline case is handled in the onFailure branch below.
+            val synced = localHeight >= networkHeight
             update {
                 val reconciledMining = if (localRpcMining) {
                     it.mining.copy(
@@ -1788,6 +1812,28 @@ class ZSilentAppState(
                 )
             }
             maybeStartAutoRpcSync(localHeight, networkHeight)
+            // Auto-refresh wallet balance every 30s when unlocked — no need to
+            // close/reopen session to see updated balance.
+            val nowMs = System.currentTimeMillis()
+            val snap = _uiState.value
+            if (!snap.walletLocked && !snap.walletBusy && localRpcOnline &&
+                nowMs - lastBalanceRefreshMillis > 30_000L) {
+                lastBalanceRefreshMillis = nowMs
+                val pwd = copySessionPassword()
+                if (pwd != null && pwd.isNotEmpty()) {
+                    val addr = snap.activeWalletAddress.ifBlank { snap.activeWalletName }
+                    update { it.copy(lastBalanceRefreshedAt = nowMs) }
+                    refreshUnlockedWalletData(addr, snap.activeWalletName, pwd.copyOf(), pwd.also { it.fill(' ') })
+                }
+            }
+            // Auto-push blocks when local is ahead of remote (works through NAT,
+            // covers both new blocks from mining and blocks loaded from local DB).
+            if (localHeight > networkHeight && localRpcOnline && !blockPushInProgress) {
+                val from = maxOf(networkHeight + 1, lastPushedRemoteHeight + 1)
+                if (from <= localHeight) {
+                    scope.launch { pushBlockRangeToRemotes(from, localHeight) }
+                }
+            }
         }.onFailure {
             update {
                 it.copy(
@@ -1890,7 +1936,7 @@ class ZSilentAppState(
                     chainHeight = maxOf(it.chainHeight, response.endHeight),
                     syncRemainingBlocks = (it.networkHeight - response.endHeight).coerceAtLeast(0),
                     syncProgressPercent = syncProgressPercent(response.endHeight, it.networkHeight),
-                    networkSynced = it.networkHeight > 0 && response.endHeight >= it.networkHeight,
+                    networkSynced = response.endHeight >= it.networkHeight,
                     syncStatusMessage = if (response.imported > 0) {
                         "Imported ${response.imported} block(s) from network bootstrap."
                     } else {
@@ -2421,6 +2467,44 @@ class ZSilentAppState(
                 "The password could not be accepted. Pick a different one and try again."
             else -> trimmed
         }
+    }
+
+    // Push a range of blocks from local to all remote nodes.
+    // Runs automatically whenever local is ahead of the remote RPC —
+    // covers both freshly mined blocks and blocks loaded from local DB on startup.
+    private suspend fun pushBlockRangeToRemotes(fromHeight: Long, toHeight: Long) {
+        if (blockPushInProgress) return
+        blockPushInProgress = true
+        try {
+            val targets = listOf(rpc.baseUrl).filter { it.isNotBlank() }
+            var pushed = 0
+            for (h in fromHeight..toHeight) {
+                val rawJson = try {
+                    localRpc.getRawBlock(h)
+                } catch (e: Exception) {
+                    break // local node not ready yet
+                }
+                for (url in targets) {
+                    try {
+                        val remote = com.zsilent.core.rpc.ZokaRpcClient(url)
+                        remote.submitBlock(rawJson)
+                        remote.close()
+                    } catch (_: Exception) {}
+                }
+                lastPushedRemoteHeight = h
+                pushed++
+            }
+            if (pushed > 0) {
+                appendLog(RuntimeLog("sync", "Auto-pushed $pushed block(s) ($fromHeight–${fromHeight + pushed - 1}) to remote nodes"))
+            }
+        } finally {
+            blockPushInProgress = false
+        }
+    }
+
+    // Called from the mining observer when a new block is found.
+    private suspend fun pushMinedBlockToRemotes(height: Long) {
+        pushBlockRangeToRemotes(height, height)
     }
 }
 

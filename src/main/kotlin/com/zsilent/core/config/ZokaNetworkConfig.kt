@@ -48,7 +48,7 @@ private data class DesktopConfig(
 )
 
 object ZokaNetworkConfig {
-    private const val DEFAULT_REMOTE_RPC_URL = "http://157.230.5.103:3000"
+    private const val DEFAULT_REMOTE_RPC_URL = "http://159.223.119.216:3000"
     private const val DEFAULT_CHAIN_ID = "zoka-mainnet-v1"
     private const val DEFAULT_NETWORK = "mainnet"
 

@@ -116,19 +116,37 @@ private val DarkScheme: ColorScheme = darkColorScheme(
     surfaceContainerHighest = SurfaceHigher
 )
 
-private val LightScheme: ColorScheme = lightColorScheme(
-    primary = Color(0xFF1A3B6B),
-    secondary = Color(0xFF005047),
-    tertiary = Color(0xFF315FAD),
-    error = Color(0xFFB3261E),
-    background = Paper,
-    surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFF1F2F4),
-    onPrimary = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF11151A),
-    onSurface = Color(0xFF11151A),
-    onSurfaceVariant = Color(0xFF626873),
-    outline = Color(0xFFDADDE3)
+// Smoke-gray dark scheme — minimalist, green accent, white text, no purple.
+private val LightScheme: ColorScheme = darkColorScheme(
+    primary             = Color(0xFF4ADE80),   // green accent
+    onPrimary           = Color(0xFF0A2912),
+    primaryContainer    = Color(0xFF2E4A38),
+    onPrimaryContainer  = Color(0xFFB6F3CB),
+    secondary           = Color(0xFF22C55E),
+    onSecondary         = Color(0xFF06250F),
+    secondaryContainer  = Color(0xFF274A33),
+    onSecondaryContainer= Color(0xFFC7F9D8),
+    tertiary            = Color(0xFF60A5FA),
+    onTertiary          = Color(0xFF052046),
+    error               = Color(0xFFEF5350),
+    onError             = Color(0xFF3A0A0A),
+    errorContainer      = Color(0xFF5A2424),
+    onErrorContainer    = Color(0xFFFFD9D9),
+    background          = Color(0xFF2B2D31),   // smoke gray
+    onBackground        = Color(0xFFFFFFFF),
+    surface             = Color(0xFF35373C),
+    onSurface           = Color(0xFFFFFFFF),
+    surfaceVariant      = Color(0xFF3C3E44),
+    onSurfaceVariant    = Color(0xFFC7C9CF),
+    outline             = Color(0xFF45474D),
+    outlineVariant      = Color(0xFF3C3E44),
+    inverseSurface      = Color(0xFFE9EAEC),
+    inverseOnSurface    = Color(0xFF1F2126),
+    surfaceContainerLowest  = Color(0xFF26282C),
+    surfaceContainerLow     = Color(0xFF2F3135),
+    surfaceContainer        = Color(0xFF35373C),
+    surfaceContainerHigh    = Color(0xFF3C3E44),
+    surfaceContainerHighest = Color(0xFF45474D)
 )
 
 // Premium-fintech corner radii. Cards lean large (24-28dp) so they read as
@@ -237,11 +255,11 @@ private val ZSilentTypography = Typography(
 
 @Composable
 fun ZSilentTheme(
-    darkTheme: Boolean,
+    darkTheme: Boolean = false,  // always light — matches ZKAPriv
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkScheme else LightScheme,
+        colorScheme = LightScheme,   // dark theme removed: single clean light palette
         typography = ZSilentTypography,
         shapes = ZSilentShapes,
         content = content
