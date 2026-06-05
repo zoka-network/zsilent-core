@@ -90,15 +90,15 @@ class NodeController(private val cli: ZokaCli) {
         if (ZokaNetworkConfig.BootstrapMultiaddr.isNotBlank()) {
             command += listOf("--seed", ZokaNetworkConfig.BootstrapMultiaddr)
         }
-        if (!autoMine) {
-            command += "--no-mine"
-        }
-        if (autoMine && threads != null && threads > 0) {
+        // Always launch the node in node-only mode (--no-mine). Mining is toggled
+        // at RUNTIME via the node's /mining RPC, so the node stays online + synced
+        // while mining is turned on/off without a restart. The miner params are
+        // still passed so the runtime-enabled miner uses them.
+        command += "--no-mine"
+        if (threads != null && threads > 0) {
             command += listOf("--threads", threads.toString())
         }
-        if (autoMine) {
-            command += listOf("--min-mine-peers", "1")
-        }
+        command += listOf("--min-mine-peers", "1")
         if (address.isNotBlank()) {
             command += listOf("--address", address)
         }
@@ -110,6 +110,9 @@ class NodeController(private val cli: ZokaCli) {
         }
         val builder = cli.processBuilder(binary, command)
         builder.environment()["ZSILENT_NODE_PASSWORD"] = password
+        // Enable the runtime mining-control RPC (/mining/start|stop) so mining can
+        // be toggled in-process without restarting the node.
+        builder.environment()["ZOKA_API_ENABLE_MINING_CONTROL"] = "true"
         builder.redirectErrorStream(true)
 
         scope.launch {

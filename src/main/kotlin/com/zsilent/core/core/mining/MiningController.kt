@@ -99,78 +99,56 @@ class MiningController(private val cli: ZokaCli) {
         }
 
         scope.launch {
-            val current = readSnapshot(network).getOrNull()
-            if (current?.running == true) {
-                _snapshot.value = current
-                _status.value = ServiceStatus.Online
-                _controlledByApp.value = false
-                _logs.tryEmit(RuntimeLog("mining", "Mining is already active from the node or another local process. ZSilent will monitor it."))
-                refresh(network)
-                return@launch
-            }
-
             _status.value = ServiceStatus.Starting
             stopRequested = false
-            val command = listOf(
-                cli.zoka.absolutePath,
-                "mine",
-                address,
-                "--network", network,
-                "--password-env", "ZSILENT_MINING_PASSWORD",
-                "--threads", threads.toString()
-            )
-            val builder = cli.processBuilder(cli.zoka, command.drop(1))
-            builder.environment()["ZSILENT_MINING_PASSWORD"] = password
-            builder.redirectErrorStream(true)
-
-            runCatching {
-                val child = builder.start()
-                process = child
+            // Toggle the running node's IN-PROCESS miner via its /mining RPC. No
+            // separate `zoka mine` process → no RocksDB lock fight with the node,
+            // and the node stays online + synced while mining starts/stops.
+            val ok = postMiningControl("/mining/start", threads)
+            if (ok) {
                 _controlledByApp.value = true
                 _status.value = ServiceStatus.Online
-                _logs.tryEmit(RuntimeLog("mining", "Started local miner with $threads thread(s)."))
-                streamLogs(child)
-                val exitCode = child.waitFor()
-                val expectedStop = stopRequested
-                process = null
-                stopRequested = false
-                _controlledByApp.value = false
-                _logs.tryEmit(RuntimeLog("mining", "Miner stopped with exit code $exitCode."))
-                if (expectedStop || exitCode == 0) {
-                    refresh(network)
-                } else {
-                    _status.value = ServiceStatus.Error
-                }
-            }.onFailure { error ->
-                process = null
-                stopRequested = false
+                _logs.tryEmit(RuntimeLog("mining", "Mining started in-process with $threads thread(s); the node stays online."))
+                refresh(network)
+            } else {
                 _controlledByApp.value = false
                 _status.value = ServiceStatus.Error
-                _logs.tryEmit(RuntimeLog("mining", "Failed to start miner: ${sanitize(error.message ?: "unknown error")}"))
+                _logs.tryEmit(RuntimeLog("mining", "Could not start mining — is the node running? (mining-control RPC unreachable)"))
             }
         }
     }
 
     fun stop() {
-        val child = process
-        if (child?.isAlive == true) {
+        scope.launch {
             _status.value = ServiceStatus.Stopping
-            _logs.tryEmit(RuntimeLog("mining", "Stopping miner started by ZSilent."))
             stopRequested = true
-            ZokaProcessKiller.terminate(child)
-            process = null
+            // Stop the node's in-process miner via RPC. The node keeps running.
+            val ok = postMiningControl("/mining/stop", null)
             _controlledByApp.value = false
+            if (ok) {
+                _logs.tryEmit(RuntimeLog("mining", "Mining stopped via the node; the node stays online and synced."))
+            } else {
+                _logs.tryEmit(RuntimeLog("mining", "Could not reach the node to stop mining (it may already be off)."))
+            }
             _status.value = ServiceStatus.Offline
-            return
-        }
-
-        if (_snapshot.value.running) {
-            _logs.tryEmit(RuntimeLog("mining", "Mining is active outside this panel. Stop the node/autopilot process from the Node screen."))
-            _status.value = ServiceStatus.Online
-        } else {
-            _status.value = ServiceStatus.Offline
+            refresh()
         }
     }
+
+    private fun postMiningControl(path: String, threads: Int?): Boolean = runCatching {
+        val rpc = ZokaNetworkConfig.LocalRpcUrl.ifBlank { "http://127.0.0.1:3000" }.trimEnd('/')
+        val conn = java.net.URL("$rpc$path").openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 4000
+        conn.readTimeout = 4000
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        val body = if (threads != null) "{\"threads\":$threads}" else "{}"
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        runCatching { (if (code in 200..299) conn.inputStream else conn.errorStream)?.use { it.readBytes() } }
+        code in 200..299
+    }.getOrElse { false }
 
     fun close() {
         ZokaProcessKiller.terminate(process)
