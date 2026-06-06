@@ -163,6 +163,7 @@ class ZSilentAppState(
     @Volatile private var autoRpcSyncBackoffUntilMillis = 0L
     private var sessionPassword: CharArray? = null
     private var integratedMiningRequested = false
+    private var lastMiningThreads = 0
     private var lastLocalHeightReadMillis = 0L
     @Volatile private var blockPushInProgress = false
     private var lastPushedRemoteHeight = 0L
@@ -289,10 +290,33 @@ class ZSilentAppState(
         }
         scope.launch {
             while (true) {
+                delay(4_000)
+                reconcileMiningIfNeeded()
+            }
+        }
+        scope.launch {
+            while (true) {
                 enforceAutoLock()
                 delay(5_000)
             }
         }
+    }
+
+    // Self-heal the mining switch: if mining is requested (switch ON) and the
+    // node is online + synced but the node isn't actually mining (e.g. the node
+    // restarted and the in-memory mining control reset, or a transient stop),
+    // re-apply the mining control. Without this the switch can read ON while the
+    // node silently isn't mining.
+    private suspend fun reconcileMiningIfNeeded() {
+        if (!integratedMiningRequested) return
+        val s = _uiState.value
+        if (s.nodeStatus != ServiceStatus.Online || !s.networkSynced) return
+        val stats = runCatching { localRpc.stats() }.getOrNull() ?: return
+        val actuallyMining = stats.localMining || stats.reportedHashrateHps > 0
+        if (actuallyMining) return
+        val threads = (if (lastMiningThreads > 0) lastMiningThreads else s.mining.availableCpuThreads).coerceAtLeast(1)
+        appendLog(RuntimeLog("mining", "Mining is on but the node isn't mining; re-applying mining control with $threads thread(s)."))
+        enableLocalNodeMining(threads, quiet = true)
     }
 
     fun select(section: AppSection) {
@@ -1704,6 +1728,7 @@ class ZSilentAppState(
     }
 
     private suspend fun enableLocalNodeMining(threads: Int, quiet: Boolean = false): Boolean {
+        lastMiningThreads = threads.coerceAtLeast(1)
         return runCatching {
             localRpc.startMining(threads)
         }.onSuccess {
