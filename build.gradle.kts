@@ -34,9 +34,13 @@ val windowsMsvcRuntimeDlls = listOf(
     "vcruntime140.dll",
     "vcruntime140_1.dll"
 )
-val windowsSystem32 = System.getenv("WINDIR")
-    ?.let { file("$it/System32") }
-    ?: file("C:/Windows/System32")
+val windowsSystem32 = if (hostOs.isWindows) {
+    System.getenv("WINDIR")
+        ?.let { file("$it/System32") }
+        ?: file("C:/Windows/System32")
+} else {
+    null
+}
 
 val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
     val requiredFiles = listOf(zokaExe, zokahdExe, networkManifest)
@@ -73,7 +77,7 @@ val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
     from(zokaExe) { into("bin") }
     from(zokahdExe) { into("bin") }
     if (hostOs.isWindows) {
-        from(windowsMsvcRuntimeDlls.map { windowsSystem32.resolve(it) }.filter { it.isFile }) {
+        from(windowsMsvcRuntimeDlls.mapNotNull { dll -> windowsSystem32?.resolve(dll) }.filter { it.isFile }) {
             into("bin")
         }
     }
