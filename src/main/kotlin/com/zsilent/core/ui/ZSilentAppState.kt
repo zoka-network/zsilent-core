@@ -1,4 +1,4 @@
-package com.zsilent.core.ui
+﻿package com.zsilent.core.ui
 
 import com.zsilent.core.config.ZokaNetworkConfig
 import com.zsilent.core.core.node.NodeController
@@ -1837,20 +1837,6 @@ class ZSilentAppState(
                 )
             }
             maybeStartAutoRpcSync(localHeight, networkHeight)
-            // Auto-refresh wallet balance every 30s when unlocked — no need to
-            // close/reopen session to see updated balance.
-            val nowMs = System.currentTimeMillis()
-            val snap = _uiState.value
-            if (!snap.walletLocked && !snap.walletBusy && localRpcOnline &&
-                nowMs - lastBalanceRefreshMillis > 30_000L) {
-                lastBalanceRefreshMillis = nowMs
-                val pwd = copySessionPassword()
-                if (pwd != null && pwd.isNotEmpty()) {
-                    val addr = snap.activeWalletAddress.ifBlank { snap.activeWalletName }
-                    update { it.copy(lastBalanceRefreshedAt = nowMs) }
-                    refreshUnlockedWalletData(addr, snap.activeWalletName, pwd.copyOf(), pwd.also { it.fill(' ') })
-                }
-            }
             // Auto-push blocks when local is ahead of remote (works through NAT,
             // covers both new blocks from mining and blocks loaded from local DB).
             if (localHeight > networkHeight && localRpcOnline && !blockPushInProgress) {
@@ -1874,6 +1860,21 @@ class ZSilentAppState(
                     networkSynced = false,
                     syncStatusMessage = "Network bootstrap RPC is offline or unreachable."
                 )
+            }
+        }
+        // Refresh balance whenever the local node is online — runs even when
+        // the remote RPC is offline so mining rewards appear without restarting.
+        val balRefNow = System.currentTimeMillis()
+        val balRefSnap = _uiState.value
+        if (!balRefSnap.walletLocked && !balRefSnap.walletBusy && localRpcOnline &&
+            balRefNow - lastBalanceRefreshMillis > 30_000L) {
+            lastBalanceRefreshMillis = balRefNow
+            val balRefPwd = copySessionPassword()
+            if (balRefPwd != null && balRefPwd.isNotEmpty()) {
+                val addr = balRefSnap.activeWalletAddress.ifBlank { balRefSnap.activeWalletName }
+                update { it.copy(lastBalanceRefreshedAt = balRefNow) }
+                refreshUnlockedWalletData(addr, balRefSnap.activeWalletName, balRefPwd.copyOf(), balRefPwd.copyOf())
+                balRefPwd.fill(0.toChar())
             }
         }
     }
