@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "1.2.0"
+val releaseVersion = "1.2.1"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
@@ -108,7 +108,10 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.zsilent.core.MainKt"
-        jvmArgs += listOf("-Dzsilent.version=$releaseVersion")
+        jvmArgs += listOf(
+            "-Dzsilent.version=$releaseVersion",
+            "-Dzsilent.bootstrapMultiaddr=/ip4/159.223.119.216/tcp/28080"
+        )
 
         nativeDistributions {
             val formats = when {
