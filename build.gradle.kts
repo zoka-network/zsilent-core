@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "1.1.5"
+val releaseVersion = "1.2.0"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
@@ -108,6 +108,7 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.zsilent.core.MainKt"
+        jvmArgs += listOf("-Dzsilent.version=$releaseVersion")
 
         nativeDistributions {
             val formats = when {
