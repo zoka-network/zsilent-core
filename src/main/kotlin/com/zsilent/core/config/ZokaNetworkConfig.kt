@@ -49,8 +49,11 @@ private data class DesktopConfig(
 
 object ZokaNetworkConfig {
     private const val DEFAULT_REMOTE_RPC_URL = "http://159.223.119.216:3000"
-    private const val DEFAULT_CHAIN_ID = "zoka-mainnet-v1"
+    private const val DEFAULT_CHAIN_ID = "zoka-mainnet-zenith-v1"
     private const val DEFAULT_NETWORK = "mainnet"
+
+    /** App version, injected at build time via -Dzsilent.version (see build.gradle.kts). */
+    val AppVersion: String = System.getProperty("zsilent.version")?.takeIf { it.isNotBlank() } ?: "dev"
 
     private val codec = Json {
         ignoreUnknownKeys = true
