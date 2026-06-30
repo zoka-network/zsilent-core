@@ -14,7 +14,8 @@ data class ZokaNetworkSettings(
     val remoteRpcUrl: String = "",
     val cliRemoteRpcUrl: String = "",
     val bootstrapMultiaddr: String = "",
-    val manifestPath: String = ""
+    val manifestPath: String = "",
+    val minimumClientVersion: String = ""
 )
 
 @Serializable
@@ -26,7 +27,9 @@ private data class NetworkManifest(
     val seedNodes: List<SeedNode> = emptyList(),
     @SerialName("public_rpc")
     val publicRpc: List<RpcEndpoint> = emptyList(),
-    val desktop: DesktopConfig = DesktopConfig()
+    val desktop: DesktopConfig = DesktopConfig(),
+    @SerialName("minimum_client_version")
+    val minimumClientVersion: String = ""
 )
 
 @Serializable
@@ -78,6 +81,26 @@ object ZokaNetworkConfig {
         get() = current.status
     val ManifestPath: String
         get() = current.manifestPath
+    val MinimumClientVersion: String
+        get() = current.minimumClientVersion
+
+    /** Returns true if the running app version is below the network-required minimum. */
+    fun isClientOutdated(): Boolean {
+        val minimum = MinimumClientVersion.takeIf { it.isNotBlank() } ?: return false
+        if (AppVersion == "dev") return false
+        return compareVersions(AppVersion, minimum) < 0
+    }
+
+    private fun compareVersions(a: String, b: String): Int {
+        val partsA = a.split(".").mapNotNull { it.toIntOrNull() }
+        val partsB = b.split(".").mapNotNull { it.toIntOrNull() }
+        val len = maxOf(partsA.size, partsB.size)
+        for (i in 0 until len) {
+            val diff = (partsA.getOrElse(i) { 0 }) - (partsB.getOrElse(i) { 0 })
+            if (diff != 0) return diff
+        }
+        return 0
+    }
 
     fun configure(settings: ZokaNetworkSettings) {
         current = settings
@@ -123,7 +146,8 @@ object ZokaNetworkConfig {
             cliRemoteRpcUrl = cliRpc.trimEnd('/'),
             bootstrapMultiaddr = envOrProperty("ZSILENT_BOOTSTRAP_MULTIADDR", "zsilent.bootstrapMultiaddr")
                 ?: activeSeed,
-            manifestPath = manifestFile?.absolutePath.orEmpty()
+            manifestPath = manifestFile?.absolutePath.orEmpty(),
+            minimumClientVersion = manifest?.minimumClientVersion.orEmpty()
         ).also(::configure)
     }
 

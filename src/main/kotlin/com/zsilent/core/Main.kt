@@ -48,6 +48,16 @@ import com.zsilent.core.services.ZokaCli
 import com.zsilent.core.ui.ZSilentApp
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.theme.ZSilentTheme
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import java.awt.Desktop
+import java.net.URI
 import java.io.File
 import java.awt.Point
 import java.awt.event.MouseAdapter
@@ -58,11 +68,33 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.file.StandardOpenOption
 import javax.swing.JOptionPane
 
+/**
+ * Window size for the current monitor: 80% of its width/height, clamped so
+ * the window is never taller than it is wide (the app's layout assumes a
+ * landscape shape — sidebar + content side by side).
+ */
+private fun preferredWindowSizeDp(): Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> {
+    val minWideAspect = 1.4f
+    return try {
+        val bounds = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+            .defaultScreenDevice.defaultConfiguration.bounds
+        val width = (bounds.width * 0.8f)
+        var height = (bounds.height * 0.8f)
+        if (width / height < minWideAspect) {
+            height = width / minWideAspect
+        }
+        width.dp to height.dp
+    } catch (_: Throwable) {
+        1280.dp to 820.dp
+    }
+}
+
 fun main() {
     val instanceLock = AppInstanceLock.acquire() ?: return
     application {
         val appState = rememberZSilentAppState()
-        val windowState = rememberWindowState(width = 1280.dp, height = 820.dp)
+        val (windowWidth, windowHeight) = remember { preferredWindowSizeDp() }
+        val windowState = rememberWindowState(width = windowWidth, height = windowHeight)
         var windowVisible by remember { mutableStateOf(true) }
 
         LaunchedEffect(appState) {
@@ -212,7 +244,11 @@ private fun WindowScope.ZSilentRoot(
                     onCloseToTray = onCloseToTray
                 )
                 Box(modifier = Modifier.weight(1f)) {
-                    ZSilentApp(appState)
+                    if (ZokaNetworkConfig.isClientOutdated()) {
+                        OutdatedVersionScreen()
+                    } else {
+                        ZSilentApp(appState)
+                    }
                 }
             }
         }
@@ -235,7 +271,7 @@ private fun WindowScope.WindowTitleBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            "ZSilent Core",
+            "ZSilent Core · Zenith mainnet · v${ZokaNetworkConfig.AppVersion}",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.SemiBold,
@@ -283,6 +319,48 @@ private fun WindowScope.InstallWindowDragHandler() {
         onDispose {
             window.removeMouseListener(listener)
             window.removeMouseMotionListener(listener)
+        }
+    }
+}
+
+@Composable
+private fun OutdatedVersionScreen() {
+    val releaseUrl = "https://github.com/ZokaNetwork/zsilent-core/releases/latest"
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color(0xFF0A0A0C)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(48.dp)
+        ) {
+            Text(
+                "Versión desactualizada",
+                color = Color(0xFFFF6B35),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                "Esta versión de ZSilent Core (v${ZokaNetworkConfig.AppVersion}) ya no es compatible con la red ZOKA Mainnet Zenith.\n\nDescargá la versión más reciente (v${ZokaNetworkConfig.MinimumClientVersion} o superior) para continuar minando y usando la red.",
+                color = Color(0xFFAAAAAA),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center
+            )
+            Button(
+                onClick = {
+                    runCatching { Desktop.getDesktop().browse(URI(releaseUrl)) }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B35))
+            ) {
+                Text("Descargar última versión", color = Color.Black, fontWeight = FontWeight.SemiBold)
+            }
+            Text(
+                "v${ZokaNetworkConfig.AppVersion} · requiere v${ZokaNetworkConfig.MinimumClientVersion}+",
+                color = Color(0xFF555555),
+                fontSize = 11.sp
+            )
         }
     }
 }
