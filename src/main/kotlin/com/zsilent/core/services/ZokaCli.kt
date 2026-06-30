@@ -66,6 +66,9 @@ data class ZokaCli(
     }
 
     fun applyRuntimeEnvironment(environment: MutableMap<String, String>) {
+        environment["ZOKA_MINER_LAUNCHER"] = "zsilent"
+        environment["ZOKA_MINER_LAUNCHER_VERSION"] = ZokaNetworkConfig.AppVersion
+        environment["ZSILENT_APP_VERSION"] = ZokaNetworkConfig.AppVersion
         val manifest = ZokaNetworkConfig.ManifestPath.takeIf { it.isNotBlank() }
         if (manifest != null) {
             environment["ZOKA_NETWORK_CONFIG"] = manifest
