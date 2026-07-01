@@ -6,10 +6,14 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      node_ref:
-        description: "Ref of ZokaNetwork/ZokaNetwork to build against (branch, tag, sha)"
+      node_version:
+        description: "ZokaNetwork/ZokaNetwork release tag whose verified binaries to embed"
         required: false
-        default: "main"
+        default: "v1.5.0"
+      release_tag:
+        description: "ZSilent release tag to (re)publish the artifacts to"
+        required: false
+        default: "v1.5.0"
 
 permissions:
   contents: write
@@ -23,8 +27,10 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_glob: zsilent-core/build/compose/binaries/main/msi/*.msi
-            artifact_name: ZSilentCore-windows-msi
+            artifact_glob: |
+              zsilent-core/build/compose/binaries/main/msi/*.msi
+              zsilent-core/build/compose/binaries/main/exe/*.exe
+            artifact_name: ZSilentCore-windows-installers
           - os: ubuntu-latest
             artifact_glob: zsilent-core/build/compose/binaries/main/deb/*.deb
             artifact_name: ZSilentCore-linux-deb
@@ -35,17 +41,43 @@ jobs:
         with:
           path: zsilent-core
 
-      - name: Checkout zoka-network
+      - name: Checkout zoka-network (release tag)
         uses: actions/checkout@v4
         with:
           repository: ZokaNetwork/ZokaNetwork
-          ref: ${{ github.event.inputs.node_ref || 'main' }}
+          ref: ${{ github.event.inputs.node_version || 'v1.5.0' }}
           path: zoka-network
 
-      - name: Install Rust toolchain
+      # Embed the exact, verified binaries published in the ZokaNetwork release
+      # instead of recompiling from source. Recompiling in CI is non-reproducible
+      # (and previously built from `main`, shipping pre-1.5.0 code), so the MSI's
+      # embedded zoka.exe never matched the published checksum. Downloading the
+      # release assets and checksum-verifying them guarantees the packaged miner
+      # is byte-identical to the one users can verify against the network release.
+      - name: Fetch & verify official Windows node binaries
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_VERSION: ${{ github.event.inputs.node_version || 'v1.5.0' }}
+        run: |
+          mkdir -p zoka-network/target/release
+          cd zoka-network/target/release
+          gh release download "$NODE_VERSION" --repo ZokaNetwork/ZokaNetwork \
+            --pattern 'zoka.exe' --pattern 'zokahd.exe' --clobber
+          # Pinned v1.5.0 checksums — update these together with NODE_VERSION.
+          echo "c8df298cc7cd31da384534467eec042ce24fdd29a1f8b713cb4bed3fdf7767d4  zoka.exe"   | sha256sum -c -
+          echo "eda80eef674788617fa20808c72004623d860ba5910ef7a788916beadf18bc0e  zokahd.exe" | sha256sum -c -
+
+      # Linux publishes only `zoka` (no `zokahd`) as a release asset, while the
+      # packaging requires both. Build both from the pinned release tag checked
+      # out above so the .deb ships the exact 1.5.0 source (not `main`).
+      - name: Install Rust toolchain (Linux)
+        if: runner.os == 'Linux'
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo
+      - name: Cache cargo (Linux)
+        if: runner.os == 'Linux'
         uses: actions/cache@v4
         with:
           path: |
@@ -62,7 +94,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake build-essential pkg-config
 
-      - name: Build zoka node binaries
+      - name: Build zoka node binaries (Linux)
+        if: runner.os == 'Linux'
         working-directory: zoka-network
         run: cargo build --release --features randomx --bin zoka --bin zokahd
 
@@ -106,7 +139,7 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -117,12 +150,13 @@ jobs:
       - name: Flatten artifact tree
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "*.msi" -o -name "*.deb" \) -exec cp {} release/ \;
+          find artifacts -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.deb" \) -exec cp {} release/ \;
           ls -lh release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
