@@ -83,7 +83,12 @@ class WalletService(private val cli: ZokaCli) {
         network: String = ZokaNetworkConfig.Network
     ): WalletListResponse = withContext(Dispatchers.IO) {
         runWalletJsonCommand(
-            args = listOf("wallet-list", "--network", network, "--json"),
+            // ZSilent always runs its own embedded fullnode against the same
+            // local chain DB, so a local-DB attempt here would just hit a
+            // RocksDB lock conflict and fall back to RPC anyway. Going
+            // straight to RPC skips that wasted round trip and gives a
+            // single deterministic full scan instead of a partial one.
+            args = listOf("wallet-list", "--network", network, "--json", "--rpc-only"),
             password = password
         )
     }
@@ -95,7 +100,7 @@ class WalletService(private val cli: ZokaCli) {
     ): WalletBalance = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
         runWalletJsonCommand(
-            args = listOf("wallet-balance", "--address", wallet, "--network", network, "--json"),
+            args = listOf("wallet-balance", "--address", wallet, "--network", network, "--json", "--rpc-only"),
             password = password
         )
     }
@@ -112,6 +117,7 @@ class WalletService(private val cli: ZokaCli) {
                 "wallet-history",
                 "--address", wallet,
                 "--network", network,
+                "--rpc-only",
                 "--limit", limit.coerceIn(1, 100).toString(),
                 "--json"
             ),

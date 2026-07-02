@@ -67,15 +67,15 @@ import com.zsilent.core.ui.screens.SendScreen
 import com.zsilent.core.ui.screens.SettingsScreen
 import com.zsilent.core.ui.screens.WalletScreen
 
-// ── Sidebar color palette ────────────────────────────────────────────────────
-private val SbBg       = Color(0xFF2B2D31)   // sidebar background — smoke gray
-private val SbBtn      = Color(0xFF1C1C1E)   // nav button bg — near-black
-private val SbBtnHover = Color(0xFF3C3E44)   // hover — lighter smoke
-private val SbBtnActive= Color(0xFF111111)   // active — deepest black
+// ── Sidebar color palette ("Zenith") ────────────────────────────────────────
+private val SbBg       = Color(0xFF0A0A0C)   // sidebar background — near black
+private val SbBtn      = Color(0xFF050506)   // nav button bg — true near-black
+private val SbBtnHover = Color(0xFF1D1F24)   // hover — a touch lighter than bg
+private val SbBtnActive= Color(0xFF000000)   // active — deepest black
 private val SbText     = Color(0xFFFFFFFF)   // button text + icons — WHITE
-private val SbMuted    = Color(0xFF9AA0A6)   // toggle / muted elements
-private val SbAccent   = Color(0xFF4ADE80)   // active accent — green
-private val SbDivider  = Color(0xFF45474D)   // separator
+private val SbMuted    = Color(0xFF7A7F88)   // toggle / muted elements
+private val SbAccent   = Color(0xFFA8E6B0)   // active accent — pastel green
+private val SbDivider  = Color(0xFF2A2D33)   // separator
 
 @Composable
 fun ZSilentApp(appState: ZSilentAppState) {
@@ -143,21 +143,11 @@ private fun CollapsibleSidebar(
         ) {
             if (expanded) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(
-                        Modifier.size(32.dp).background(SbAccent, RoundedCornerShape(10.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Z", color = Color(0xFF1C1C1E), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
+                    com.zsilent.core.ui.onboarding.NoirBrandBadge(size = 32.dp)
                     Text("ZSilent", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             } else {
-                Box(
-                    Modifier.size(32.dp).background(SbAccent, RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Z", color = Color(0xFF1C1C1E), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
+                com.zsilent.core.ui.onboarding.NoirBrandBadge(size = 32.dp)
             }
             ToggleSidebarButton(expanded = expanded, onClick = onToggle)
         }
@@ -190,6 +180,16 @@ private fun CollapsibleSidebar(
             onClick = onCloseSession,
             tintOverride = Color(0xFFFFFFFF)   // white icon on black button
         )
+
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "v${com.zsilent.core.config.ZokaNetworkConfig.AppVersion}",
+                color = SbMuted,
+                fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)
+            )
+        }
     }
 }
 

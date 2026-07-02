@@ -67,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -80,20 +81,26 @@ import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 
-// Smoke-gray dark theme — minimalist, white text, green accent for metrics.
-private val ZInk        = Color(0xFF2B2D31)   // section background — strong smoke gray
-private val ZSurface    = Color(0xFF35373C)   // card surface — lighter smoke gray
-private val ZSurfaceElev= Color(0xFF3C3E44)   // input field bg
-private val ZOutline    = Color(0xFF45474D)   // subtle border
-private val ZOutlineStrong = Color(0xFF55575E)
+// "Zenith" palette — near-black, white text, pastel green accent for metrics.
+private val ZInk        = Color(0xFF0A0A0C)   // section background — near black
+private val ZSurface    = Color(0xFF16171B)   // card surface — a touch lighter than bg
+private val ZSurfaceElev= Color(0xFF1D1F24)   // input field bg
+private val ZOutline    = Color(0xFF2A2D33)   // subtle border
+private val ZOutlineStrong = Color(0xFF3A3D44)
 private val ZText       = Color(0xFFFFFFFF)   // primary text — WHITE
-private val ZTextMuted  = Color(0xFFC7C9CF)   // secondary text — light gray
-private val ZTextSubtle = Color(0xFF9AA0A6)   // tertiary
-private val ZAccent     = Color(0xFF4ADE80)   // green accent (metrics/charts)
-private val ZAccentSoft = Color(0xFF2E4A38)   // green-tinted bg
-private val ZAccentDeep = Color(0xFF22C55E)   // deeper green
-private val ZError      = Color(0xFFEF5350)   // error red
-private val ZBtnBlack   = Color(0xFF1C1C1E)   // button bg — near-black
+private val ZTextMuted  = Color(0xFFB8BCC4)   // secondary text — light gray
+private val ZTextSubtle = Color(0xFF7A7F88)   // tertiary
+private val ZAccent     = Color(0xFFA8E6B0)   // pastel green accent (metrics/charts)
+private val ZAccentSoft = Color(0xFF1C2B20)   // pastel-green-tinted bg
+private val ZAccentDeep = Color(0xFF7FCB8E)   // deeper pastel green
+private val ZError      = Color(0xFFE2918F)   // soft desaturated rose
+private val ZBtnBlack   = Color(0xFF050506)   // button bg — true near-black
+
+// Subtle vertical gradient so flat cards read with a touch of depth against
+// the near-black background, matching NoirCardGradient in NoirOnboarding.kt.
+private val ZCardGradient = Brush.verticalGradient(
+    listOf(Color(0xFF1B1D22), Color(0xFF101114))
+)
 
 @Composable
 fun ScreenScaffold(
@@ -126,16 +133,19 @@ fun Panel(
     contentPadding: PaddingValues = PaddingValues(20.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val shape = RoundedCornerShape(16.dp)
     androidx.compose.material3.Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = ZSurface,
+        shape = shape,
+        color = Color.Transparent,
         shadowElevation = 2.dp,
         tonalElevation = 0.dp
     ) {
         CompositionLocalProvider(LocalContentColor provides ZText) {
             Column(
-                modifier = Modifier.padding(contentPadding),
+                modifier = Modifier
+                    .background(ZCardGradient, shape)
+                    .padding(contentPadding),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (title != null || meta != null) PanelHeader(title = title.orEmpty(), meta = meta)
@@ -191,14 +201,17 @@ fun StatusCard(
     detail: String,
     modifier: Modifier = Modifier
 ) {
+    val shape = RoundedCornerShape(14.dp)
     androidx.compose.material3.Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = ZSurface,
+        shape = shape,
+        color = Color.Transparent,
         shadowElevation = 2.dp,
         tonalElevation = 0.dp
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier
+            .background(ZCardGradient, shape)
+            .padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 labelIcon(title)?.let { Icon(it, null, tint = ZText, modifier = Modifier.size(17.dp)) }
                 Text(title.uppercase(), style = MaterialTheme.typography.labelSmall, color = ZTextSubtle, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
@@ -481,6 +494,16 @@ fun zFieldColors() = OutlinedTextFieldDefaults.colors(
 fun zButtonColors() = ButtonDefaults.buttonColors(
     containerColor = ZBtnBlack,
     contentColor = Color(0xFFFFFFFF),
+    disabledContainerColor = Color(0xFF3A3A3C),
+    disabledContentColor = ZTextSubtle
+)
+
+// Pastel-accented variant for the single essential action on a screen (e.g.
+// "Sign and send"). Use sparingly — most buttons should keep zButtonColors().
+@Composable
+fun zPastelButtonColors(accent: Color) = ButtonDefaults.buttonColors(
+    containerColor = accent,
+    contentColor = ZInk,
     disabledContainerColor = Color(0xFF3A3A3C),
     disabledContentColor = ZTextSubtle
 )

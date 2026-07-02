@@ -1,5 +1,12 @@
 package com.zsilent.core.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import com.zsilent.core.models.OnboardingStep
 import com.zsilent.core.models.SeedWordCount
@@ -32,17 +39,28 @@ fun OnboardingScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         onBack = appState::onboardingBack,
         onNext = appState::onboardingNext
     ) {
-        when (ui.onboardingStep) {
-            OnboardingStep.Welcome -> WelcomeStepNoir()
-            OnboardingStep.SelfCustody -> SelfCustodyStepNoir(ui, appState)
-            OnboardingStep.Wallet -> WalletChoiceStepNoir(ui, appState)
-            OnboardingStep.Recovery -> RecoveryRevealStepNoir(ui)
-            OnboardingStep.VerifySeed -> VerifySeedStepNoir(ui, appState)
-            OnboardingStep.Security -> CreatePasswordStepNoir(ui, appState)
-            OnboardingStep.Account -> AccountStepNoir(ui)
-            OnboardingStep.Privacy -> PrivacyStepNoir(ui, appState)
-            OnboardingStep.Tutorial -> TutorialStepNoir(ui, appState)
-            OnboardingStep.Dashboard -> DashboardReadyStepNoir(ui)
+        AnimatedContent(
+            targetState = ui.onboardingStep,
+            transitionSpec = {
+                val forward = targetState.ordinal >= initialState.ordinal
+                val slideDistance = if (forward) { w: Int -> w / 6 } else { w: Int -> -w / 6 }
+                (fadeIn(animationSpec = tween(220)) + slideInHorizontally(animationSpec = tween(220), initialOffsetX = slideDistance))
+                    .togetherWith(fadeOut(animationSpec = tween(150)))
+            },
+            label = "onboarding-step-transition"
+        ) { step ->
+            when (step) {
+                OnboardingStep.Welcome -> WelcomeStepNoir()
+                OnboardingStep.SelfCustody -> SelfCustodyStepNoir(ui, appState)
+                OnboardingStep.Wallet -> WalletChoiceStepNoir(ui, appState)
+                OnboardingStep.Recovery -> RecoveryRevealStepNoir(ui)
+                OnboardingStep.VerifySeed -> VerifySeedStepNoir(ui, appState)
+                OnboardingStep.Security -> CreatePasswordStepNoir(ui, appState)
+                OnboardingStep.Account -> AccountStepNoir(ui)
+                OnboardingStep.Privacy -> PrivacyStepNoir(ui, appState)
+                OnboardingStep.Tutorial -> TutorialStepNoir(ui, appState)
+                OnboardingStep.Dashboard -> DashboardReadyStepNoir(ui)
+            }
         }
     }
 }

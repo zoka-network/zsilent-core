@@ -116,37 +116,42 @@ private val DarkScheme: ColorScheme = darkColorScheme(
     surfaceContainerHighest = SurfaceHigher
 )
 
-// Smoke-gray dark scheme — minimalist, green accent, white text, no purple.
+// "Zenith" scheme — near-black, white text, pastel-green primary accent.
+// Kept as a `darkColorScheme` (Material3 plumbing) but every token below is
+// sourced from the same near-black/pastel palette used by the Noir*/Z*
+// composables, so anything reading MaterialTheme.colorScheme.* directly
+// (sync progress bars, mining screen, the Send wallet picker, etc.) matches
+// the rest of the app instead of the old smoke-gray look.
 private val LightScheme: ColorScheme = darkColorScheme(
-    primary             = Color(0xFF4ADE80),   // green accent
-    onPrimary           = Color(0xFF0A2912),
-    primaryContainer    = Color(0xFF2E4A38),
-    onPrimaryContainer  = Color(0xFFB6F3CB),
-    secondary           = Color(0xFF22C55E),
-    onSecondary         = Color(0xFF06250F),
-    secondaryContainer  = Color(0xFF274A33),
-    onSecondaryContainer= Color(0xFFC7F9D8),
-    tertiary            = Color(0xFF60A5FA),
-    onTertiary          = Color(0xFF052046),
-    error               = Color(0xFFEF5350),
-    onError             = Color(0xFF3A0A0A),
-    errorContainer      = Color(0xFF5A2424),
-    onErrorContainer    = Color(0xFFFFD9D9),
-    background          = Color(0xFF2B2D31),   // smoke gray
+    primary             = Color(0xFFA8E6B0),   // pastel green accent
+    onPrimary           = Color(0xFF0A0A0C),
+    primaryContainer    = Color(0xFF1C2B20),
+    onPrimaryContainer  = Color(0xFFA8E6B0),
+    secondary           = Color(0xFF7FCB8E),
+    onSecondary         = Color(0xFF0A0A0C),
+    secondaryContainer  = Color(0xFF1C2B20),
+    onSecondaryContainer= Color(0xFFA8E6B0),
+    tertiary            = Color(0xFF9CB8F2),
+    onTertiary          = Color(0xFF0A0A0C),
+    error               = Color(0xFFE2918F),
+    onError             = Color(0xFF2B0F0E),
+    errorContainer      = Color(0xFF3A1F1E),
+    onErrorContainer    = Color(0xFFF2D4D2),
+    background          = Color(0xFF0A0A0C),   // near black
     onBackground        = Color(0xFFFFFFFF),
-    surface             = Color(0xFF35373C),
+    surface             = Color(0xFF16171B),   // a touch lighter than bg
     onSurface           = Color(0xFFFFFFFF),
-    surfaceVariant      = Color(0xFF3C3E44),
-    onSurfaceVariant    = Color(0xFFC7C9CF),
-    outline             = Color(0xFF45474D),
-    outlineVariant      = Color(0xFF3C3E44),
+    surfaceVariant      = Color(0xFF1D1F24),
+    onSurfaceVariant    = Color(0xFFB8BCC4),
+    outline             = Color(0xFF3A3D44),
+    outlineVariant      = Color(0xFF2A2D33),
     inverseSurface      = Color(0xFFE9EAEC),
     inverseOnSurface    = Color(0xFF1F2126),
-    surfaceContainerLowest  = Color(0xFF26282C),
-    surfaceContainerLow     = Color(0xFF2F3135),
-    surfaceContainer        = Color(0xFF35373C),
-    surfaceContainerHigh    = Color(0xFF3C3E44),
-    surfaceContainerHighest = Color(0xFF45474D)
+    surfaceContainerLowest  = Color(0xFF050506),
+    surfaceContainerLow     = Color(0xFF101114),
+    surfaceContainer        = Color(0xFF16171B),
+    surfaceContainerHigh    = Color(0xFF1D1F24),
+    surfaceContainerHighest = Color(0xFF2A2D33)
 )
 
 // Premium-fintech corner radii. Cards lean large (24-28dp) so they read as

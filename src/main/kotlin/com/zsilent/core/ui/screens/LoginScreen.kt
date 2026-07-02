@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -50,18 +51,21 @@ import androidx.compose.ui.unit.sp
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
 
-// ─── Smoke-gray dark theme colors for Login ───
-private val LBg       = Color(0xFF2B2D31)   // page background — smoke gray
-private val LCard     = Color(0xFF35373C)   // card bg
-private val LBorder   = Color(0xFF45474D)   // card border
+// ─── "Zenith" theme colors for Login ───
+private val LBg       = Color(0xFF0A0A0C)   // page background — near black
+private val LCard     = Color(0xFF16171B)   // card bg — a touch lighter than bg
+private val LBorder   = Color(0xFF2A2D33)   // card border
 private val LText     = Color(0xFFFFFFFF)   // primary text — white
-private val LMuted    = Color(0xFFC7C9CF)   // secondary text
-private val LSubtle   = Color(0xFF9AA0A6)   // tertiary / placeholder
-private val LAccent   = Color(0xFF4ADE80)   // green accent
-private val LBtnBg    = Color(0xFF1C1C1E)   // button background (near-black)
+private val LMuted    = Color(0xFFB8BCC4)   // secondary text
+private val LSubtle   = Color(0xFF7A7F88)   // tertiary / placeholder
+private val LAccent   = Color(0xFFA8E6B0)   // pastel green accent
+private val LBtnBg    = Color(0xFF050506)   // button background (near-black) — stays neutral
 private val LBtnText  = Color(0xFFFFFFFF)   // button text (white)
-private val LError    = Color(0xFFEF5350)   // error
-private val LSuccess  = Color(0xFF4ADE80)   // success — green
+private val LError    = Color(0xFFE2918F)   // soft desaturated rose
+private val LSuccess  = Color(0xFFA8E6B0)   // success — pastel green
+private val LCardGradient = Brush.verticalGradient(
+    listOf(Color(0xFF1B1D22), Color(0xFF101114))
+)
 
 private fun loginWalletOptions(ui: ZSilentUiState): List<Pair<String, String>> {
     if (ui.wallets.isNotEmpty()) return ui.wallets.map { it.name to it.address }
@@ -115,28 +119,24 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         ) {
             // ── Brand ────────────────────────────────────────────────────
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .background(LBtnBg, RoundedCornerShape(18.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Outlined.Lock, null, tint = LBtnText, modifier = Modifier.size(26.dp))
-                }
+                com.zsilent.core.ui.onboarding.NoirBrandBadge(size = 60.dp)
                 Text("ZSilent Wallet", color = LText, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 Text("Enter your password to unlock", color = LMuted, fontSize = 13.sp)
             }
 
             // ── Login card ───────────────────────────────────────────────
+            val loginCardShape = RoundedCornerShape(20.dp)
             androidx.compose.material3.Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                color = LCard,
+                shape = loginCardShape,
+                color = Color.Transparent,
                 shadowElevation = 4.dp,
                 tonalElevation = 0.dp
             ) {
                 Column(
-                    modifier = Modifier.padding(28.dp),
+                    modifier = Modifier
+                        .background(LCardGradient, loginCardShape)
+                        .padding(28.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     if (showSelector) {
@@ -149,7 +149,7 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         )
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Box(Modifier.size(36.dp).background(Color(0xFF2E4A38), RoundedCornerShape(10.dp)),
+                            Box(Modifier.size(36.dp).background(Color(0xFF1C2B20), RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center) {
                                 Icon(Icons.Outlined.AccountBalanceWallet, null, tint = LAccent, modifier = Modifier.size(18.dp))
                             }
@@ -164,7 +164,7 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
                     ui.lockMessage?.takeIf { it.isNotBlank() }?.let {
                         Row(
-                            modifier = Modifier.fillMaxWidth().background(Color(0xFF3C3E44), RoundedCornerShape(10.dp)).padding(12.dp),
+                            modifier = Modifier.fillMaxWidth().background(Color(0xFF1D1F24), RoundedCornerShape(10.dp)).padding(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -193,7 +193,7 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = LText, unfocusedTextColor = LText,
-                            focusedContainerColor = Color(0xFF3C3E44), unfocusedContainerColor = Color(0xFF3C3E44),
+                            focusedContainerColor = Color(0xFF1D1F24), unfocusedContainerColor = Color(0xFF1D1F24),
                             focusedBorderColor = LAccent, unfocusedBorderColor = LBorder,
                             focusedLabelColor = LAccent, unfocusedLabelColor = LSubtle,
                             errorBorderColor = LError, errorTextColor = LText, cursorColor = LAccent
@@ -218,7 +218,7 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         colors = ButtonDefaults.buttonColors(
                             containerColor = LBtnBg,
                             contentColor = LBtnText,
-                            disabledContainerColor = Color(0xFF3A3A3C), // slightly lighter when busy
+                            disabledContainerColor = Color(0xFF2A2D33), // slightly lighter when busy
                             disabledContentColor = LBtnText
                         )
                     ) {
@@ -262,7 +262,7 @@ private fun LoginWalletSelector(
             val selected = name == activeName || (address.isNotBlank() && activeAddress.isNotBlank() && address == activeAddress)
             Row(
                 modifier = Modifier.fillMaxWidth()
-                    .background(if (selected) Color(0xFF2E4A38) else Color(0xFF3C3E44), RoundedCornerShape(10.dp))
+                    .background(if (selected) Color(0xFF1C2B20) else Color(0xFF1D1F24), RoundedCornerShape(10.dp))
                     .border(BorderStroke(1.dp, if (selected) LAccent else LBorder), RoundedCornerShape(10.dp))
                     .clickable { if (!selected) onSelect(name) }
                     .padding(12.dp),
@@ -300,7 +300,7 @@ private fun LoginResetScreen(onCancel: () -> Unit, onConfirm: () -> Unit) {
                 shape = RoundedCornerShape(10.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = LText, unfocusedTextColor = LText,
-                    focusedContainerColor = Color(0xFF3C3E44), unfocusedContainerColor = Color(0xFF3C3E44),
+                    focusedContainerColor = Color(0xFF1D1F24), unfocusedContainerColor = Color(0xFF1D1F24),
                     focusedBorderColor = if (canReset) LSuccess else LAccent, unfocusedBorderColor = LBorder,
                     cursorColor = LAccent
                 )
@@ -335,15 +335,21 @@ private fun LoginConfirmationLayout(
     confirmEnabled: Boolean, isDanger: Boolean
 ) {
     Box(Modifier.fillMaxSize().background(LBg), contentAlignment = Alignment.Center) {
+        val dialogShape = RoundedCornerShape(20.dp)
         androidx.compose.material3.Surface(
             modifier = Modifier.widthIn(min = 460.dp, max = 580.dp),
-            shape = RoundedCornerShape(20.dp), color = LCard, shadowElevation = 4.dp
+            shape = dialogShape, color = Color.Transparent, shadowElevation = 4.dp
         ) {
-            Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                Modifier
+                    .background(LCardGradient, dialogShape)
+                    .padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Text(title, color = LText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text(body, color = LMuted, fontSize = 13.sp)
                 Row(
-                    Modifier.fillMaxWidth().background(Color(0xFF3C3E44), RoundedCornerShape(10.dp)).padding(12.dp),
+                    Modifier.fillMaxWidth().background(Color(0xFF1D1F24), RoundedCornerShape(10.dp)).padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text("⚠", fontSize = 14.sp)
@@ -369,7 +375,7 @@ private fun LoginConfirmationLayout(
                     Button(
                         onClick = onCancel, modifier = Modifier.weight(1f).height(44.dp),
                         shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF45474D), contentColor = LText)
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3D44), contentColor = LText)
                     ) { Text(cancelLabel, fontWeight = FontWeight.SemiBold) }
                     Button(
                         onClick = onConfirm, enabled = confirmEnabled,

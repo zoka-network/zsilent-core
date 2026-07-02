@@ -512,6 +512,20 @@ class ZSilentAppState(
                 onboardingError = null
             )
         }
+        // Onboarding just unlocked the wallet (created or restored), but
+        // nothing has fetched its real balance/history yet — without this,
+        // the dashboard shows stale/empty data until the next periodic poll
+        // (or until the user manually locks and unlocks). Kick off a fetch
+        // immediately so a freshly restored wallet shows its real balance
+        // right away instead of requiring a relog.
+        snapshot.onboardingPassword.takeIf { it.isNotBlank() }?.let { rawPassword ->
+            refreshUnlockedWalletData(
+                snapshot.onboardingWalletAddress,
+                walletName,
+                rawPassword.toCharArray(),
+                rawPassword.toCharArray()
+            )
+        }
     }
 
     fun toggleTheme() {
@@ -543,7 +557,12 @@ class ZSilentAppState(
     fun toggleBalances() {
         val snapshot = _uiState.value
         val hidden = !snapshot.balancesHidden
-        update { it.copy(balancesHidden = hidden) }
+        // This is an explicit user interaction with the unlocked wallet, so
+        // it must count as activity — otherwise hiding the balance and then
+        // reading it for a while (with no other input) can silently trip
+        // enforceAutoLock(), and the next click on the eye icon lands on an
+        // already-locked screen, making the toggle look broken.
+        update { it.copy(balancesHidden = hidden, lastActivityMillis = System.currentTimeMillis()) }
         if (snapshot.onboardingComplete) {
             setupStore.save(
                 PersistedSetup(
@@ -1894,19 +1913,26 @@ class ZSilentAppState(
     }
 
     private fun canRunRpcSync(snapshot: ZSilentUiState): Boolean {
+        // `rpc-sync` opens the chain DB directly with its own RocksDB handle.
+        // RocksDB only allows one process to hold that DB open at a time, and
+        // the embedded fullnode (whenever it's running at all, not just while
+        // Starting/Stopping) already owns it for as long as the process is
+        // alive — including the warmup window before its own API/P2P sync has
+        // caught up. Running rpc-sync concurrently makes both sides spin on
+        // lock contention instead of progressing. Only allow it when there is
+        // no managed node process holding the DB, i.e. fully Offline.
         return cli.zoka != null &&
             !rpcSyncInProgress &&
             !snapshot.mining.running &&
             snapshot.miningStatus != ServiceStatus.Online &&
-            snapshot.nodeStatus != ServiceStatus.Starting &&
-            snapshot.nodeStatus != ServiceStatus.Stopping
+            snapshot.nodeStatus == ServiceStatus.Offline
     }
 
     private fun rpcSyncBlockedReason(snapshot: ZSilentUiState): String {
         if (cli.zoka == null) return "Cannot sync: zoka binary was not found."
         if (rpcSyncInProgress || snapshot.syncBusy) return "Sync is already running."
-        if (snapshot.nodeStatus == ServiceStatus.Starting || snapshot.nodeStatus == ServiceStatus.Stopping) {
-            return "Wait for the node to finish changing state before running direct RPC sync."
+        if (snapshot.nodeStatus != ServiceStatus.Offline) {
+            return "The full node already syncs itself while it's running; stop it before running a direct RPC sync."
         }
         if (snapshot.miningStatus == ServiceStatus.Online || snapshot.mining.running) return "Stop mining before running direct RPC sync."
         return "Sync is not available right now."
@@ -2172,6 +2198,20 @@ class ZSilentAppState(
                 balance to history
             }.onSuccess { (balance, history) ->
                 update {
+                    // Guard against a stale in-flight request: this fetch was
+                    // issued for `walletAddress`, but the user may have since
+                    // unlocked, reset, or created a different wallet while the
+                    // CLI call was running. If the active wallet changed in
+                    // the meantime, drop this result instead of overwriting
+                    // the current wallet's balance with a previous wallet's
+                    // data (e.g. "Clear all data" -> create new wallet while
+                    // an old periodic refresh was still in flight).
+                    if (walletAddress.isNotBlank() &&
+                        it.activeWalletAddress.isNotBlank() &&
+                        it.activeWalletAddress != walletAddress
+                    ) {
+                        return@update it
+                    }
                     val displayName = balance.wallet.ifBlank { walletLabel }
                     val address = balance.address.ifBlank { walletAddress.ifBlank { it.activeWalletAddress } }
                     it.copy(

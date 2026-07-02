@@ -106,6 +106,7 @@ import com.zsilent.core.ui.components.StatusPill
 import com.zsilent.core.ui.components.ThinDivider
 import com.zsilent.core.ui.components.zFieldColors
 import com.zsilent.core.ui.components.zButtonColors
+import com.zsilent.core.ui.components.zPastelButtonColors
 import com.zsilent.core.ui.components.zOutlinedButtonColors
 import kotlinx.coroutines.delay
 import java.nio.file.Path
@@ -335,21 +336,22 @@ private fun DashboardMetricStripNoir(
                 label = "Height",
                 value = heightValue.toString(),
                 samples = heightHistory,
-                accent = com.zsilent.core.ui.onboarding.NoirSilver,
+                accent = com.zsilent.core.ui.onboarding.PastelSalmon,
                 modifier = Modifier.weight(1f)
             )
             com.zsilent.core.ui.onboarding.NoirMetricCard(
                 label = "Hashrate",
                 value = formatHashrate(effectiveHashrate),
                 samples = hashrateHistory,
-                accent = Color(0xFF79A7FF),
+                accent = com.zsilent.core.ui.onboarding.PastelViolet,
                 modifier = Modifier.weight(1f)
             )
             com.zsilent.core.ui.onboarding.NoirMetricCard(
                 label = "Balance",
                 value = activeWalletTotal(ui, activeWallet),
                 samples = balanceHistory,
-                accent = Color(0xFFE2C56B),
+                accent = com.zsilent.core.ui.onboarding.PastelOrange,
+                valueColor = com.zsilent.core.ui.onboarding.PastelOrange,
                 hidden = ui.walletLocked || ui.balancesHidden,
                 modifier = Modifier.weight(1f)
             )
@@ -357,7 +359,7 @@ private fun DashboardMetricStripNoir(
                 label = "Next unlock",
                 value = if (nextUnlockBlocks == null) "—" else "${nextUnlockBlocks} blk",
                 samples = unlockHistory,
-                accent = Color(0xFFA8D58B),
+                accent = com.zsilent.core.ui.onboarding.PastelPink,
                 detail = if (nextUnlockHeight == null) "no maturing rewards" else "at height ${nextUnlockHeight}",
                 modifier = Modifier.weight(1f)
             )
@@ -365,7 +367,7 @@ private fun DashboardMetricStripNoir(
                 label = "Last block",
                 value = lastBlockText,
                 samples = lastBlockHistory,
-                accent = com.zsilent.core.ui.onboarding.NoirSilver,
+                accent = com.zsilent.core.ui.onboarding.PastelOrange,
                 detail = if (lastBlockUnix > 0L) "network heartbeat" else "no data",
                 modifier = Modifier.weight(1f)
             )
@@ -911,12 +913,14 @@ private fun WalletHeroCard(
     androidx.compose.material3.Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = shape,
-        color = Color(0xFF35373C),   // smoke-gray card
+        color = Color.Transparent,
         shadowElevation = 3.dp,
         tonalElevation = 0.dp
     ) {
     androidx.compose.foundation.layout.Column(
-        modifier = Modifier.padding(22.dp),
+        modifier = Modifier
+            .background(com.zsilent.core.ui.onboarding.NoirCardGradient, shape)
+            .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         // Top row: address + copy | refresh + add + eye (all black)
@@ -974,7 +978,7 @@ private fun WalletHeroCard(
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         whole,
-                        color = com.zsilent.core.ui.onboarding.NoirText,
+                        color = com.zsilent.core.ui.onboarding.PastelOrange,
                         fontSize = 40.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = FontFamily.Monospace,
@@ -982,14 +986,14 @@ private fun WalletHeroCard(
                     )
                     Text(
                         ".$decimals",
-                        color = com.zsilent.core.ui.onboarding.NoirTextMuted,
+                        color = com.zsilent.core.ui.onboarding.PastelOrange,
                         fontSize = 22.sp,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     Text(
                         "ZKA",
-                        color = com.zsilent.core.ui.onboarding.NoirTextSubtle,
+                        color = com.zsilent.core.ui.onboarding.PastelOrange,
                         fontSize = 13.sp,
                         letterSpacing = 1.2.sp,
                         modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
@@ -1024,7 +1028,7 @@ private fun BlackIconButton(icon: androidx.compose.ui.graphics.vector.ImageVecto
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .size(34.dp)
-            .background(androidx.compose.ui.graphics.Color(0xFF1C1C1E), shape)
+            .background(androidx.compose.ui.graphics.Color(0xFF050506), shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -1077,7 +1081,7 @@ private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
                 label    = "Spendable",
                 value    = if (hidden) "••••" else formatZkaCompact(spendableAtoms),
                 samples  = spendableHistory,
-                accent   = Color(0xFF4ADE80),
+                accent   = com.zsilent.core.ui.onboarding.PastelGreen,
                 detail   = "available now",
                 hidden   = hidden,
                 modifier = Modifier.weight(1f)
@@ -1086,7 +1090,7 @@ private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
                 label    = "Maturing",
                 value    = if (hidden) "••••" else formatZkaCompact(maturingAtoms),
                 samples  = maturingHistory,
-                accent   = Color(0xFFE2C56B),
+                accent   = com.zsilent.core.ui.onboarding.PastelOrange,
                 detail   = if (maturingAtoms > 0L) "coinbase locked" else "none locking",
                 hidden   = hidden,
                 modifier = Modifier.weight(1f)
@@ -1095,7 +1099,7 @@ private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
                 label    = "Pending",
                 value    = if (pendingCount > 0) "$pendingCount tx" else "—",
                 samples  = seedMetricHistory(pendingCount.toDouble()),
-                accent   = Color(0xFFFB923C),
+                accent   = com.zsilent.core.ui.onboarding.PastelPink,
                 detail   = if (pendingCount > 0) "queued · not mined" else "no pending sends",
                 modifier = Modifier.weight(1f)
             )
@@ -1103,7 +1107,7 @@ private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
                 label    = "Total",
                 value    = if (hidden) "••••" else formatZkaCompact(totalAtoms),
                 samples  = totalHistory,
-                accent   = com.zsilent.core.ui.onboarding.NoirSilver,
+                accent   = com.zsilent.core.ui.onboarding.PastelViolet,
                 detail   = "$txCount transactions",
                 hidden   = hidden,
                 modifier = Modifier.weight(1f)
@@ -1117,7 +1121,7 @@ private fun BreakdownChip(label: String, value: String, detail: String, modifier
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp)
     androidx.compose.foundation.layout.Column(
         modifier = modifier
-            .background(com.zsilent.core.ui.onboarding.NoirSurface, shape)
+            .background(com.zsilent.core.ui.onboarding.NoirCardGradient, shape)
             .border(
                 androidx.compose.foundation.BorderStroke(1.dp, com.zsilent.core.ui.onboarding.NoirOutline),
                 shape
@@ -1322,7 +1326,10 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                             password = ""
                         },
                         enabled = password.isNotBlank() && fee != null && !ui.sendBusy,
-                        colors = zButtonColors(), shape = MaterialTheme.shapes.small,
+                        // The one essential action of the Send flow gets a pastel
+                        // highlight — every other button on this screen stays neutral.
+                        colors = zPastelButtonColors(com.zsilent.core.ui.onboarding.PastelGreen),
+                        shape = MaterialTheme.shapes.small,
                         contentPadding = SettingsButtonPadding
                     ) {
                         Icon(Icons.Outlined.Lock, null, Modifier.size(15.dp))
@@ -1339,18 +1346,18 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     ui.wallets.forEach { wallet ->
                         val active = wallet.address == fromWallet
                         val shape  = RoundedCornerShape(12.dp)
+                        val accent = com.zsilent.core.ui.onboarding.PastelGreen
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .background(
-                                    if (active) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                    if (active) com.zsilent.core.ui.onboarding.NoirCardGradientElev
+                                    else com.zsilent.core.ui.onboarding.NoirCardGradient,
                                     shape
                                 )
                                 .border(
                                     BorderStroke(1.dp,
-                                        if (active) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.outline),
+                                        if (active) accent else com.zsilent.core.ui.onboarding.NoirOutline),
                                     shape
                                 )
                                 .clickable { fromWallet = wallet.address; appState.selectWallet(wallet.address) }
@@ -1359,11 +1366,11 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         ) {
                             Text(wallet.name,
                                 fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                                color = if (active) MaterialTheme.colorScheme.primary else com.zsilent.core.ui.onboarding.NoirText)
+                                color = if (active) accent else com.zsilent.core.ui.onboarding.NoirText)
                             Text(wallet.balance + " ZKA",
                                 fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                                color = if (active) MaterialTheme.colorScheme.primary else com.zsilent.core.ui.onboarding.NoirTextMuted)
-                            if (active) Text("SELECTED", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, letterSpacing = 1.4.sp)
+                                color = if (active) accent else com.zsilent.core.ui.onboarding.NoirTextMuted)
+                            if (active) Text("SELECTED", color = accent, fontSize = 10.sp, letterSpacing = 1.4.sp)
                         }
                     }
                 }
@@ -2511,6 +2518,7 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
 @Composable
 private fun SettingsAboutPage(ui: ZSilentUiState) {
     Panel(title = "ZSilent Core", meta = "desktop") {
+        KeyValueRow("Version", ZokaNetworkConfig.AppVersion)
         KeyValueRow("Package", "ZSilent Core")
         KeyValueRow("Runtime", "Kotlin JVM 17+")
         KeyValueRow("UI", "Compose Desktop / Material 3")

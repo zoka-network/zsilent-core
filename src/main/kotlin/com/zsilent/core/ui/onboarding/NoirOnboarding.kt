@@ -9,6 +9,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +37,8 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.ShieldMoon
 import androidx.compose.material.icons.outlined.Visibility
@@ -44,6 +47,7 @@ import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -60,12 +64,16 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -77,6 +85,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Canvas
@@ -96,21 +105,43 @@ import kotlin.math.sin
 //  PALETTE
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Premium fintech palette — deep blacks + lilac/violet accents.
-// Smoke-gray dark theme — minimalist, white text, green accent for metrics.
-internal val NoirInk = Color(0xFF2B2D31)             // section background — smoke gray
-internal val NoirSurface = Color(0xFF35373C)         // card surface — lighter smoke gray
-internal val NoirSurfaceElev = Color(0xFF3C3E44)     // input / elevated
-internal val NoirOutline = Color(0xFF45474D)         // hairline border
-internal val NoirOutlineStrong = Color(0xFF55575E)   // emphasized border
+// "Zenith" palette — near-black surfaces, white text/icons, pastel accents
+// used only as small highlights (metrics, charts, the one essential button
+// per screen) rather than as a dominant section color.
+internal val NoirInk = Color(0xFF0A0A0C)             // app background — near black
+internal val NoirSurface = Color(0xFF16171B)         // card surface — a touch lighter than bg
+internal val NoirSurfaceElev = Color(0xFF1D1F24)     // input / elevated
+internal val NoirOutline = Color(0xFF2A2D33)         // hairline border
+internal val NoirOutlineStrong = Color(0xFF3A3D44)   // emphasized border
 internal val NoirText = Color(0xFFFFFFFF)            // primary text — WHITE
-internal val NoirTextMuted = Color(0xFFC7C9CF)       // secondary text
-internal val NoirTextSubtle = Color(0xFF9AA0A6)      // tertiary
-internal val NoirSilver = Color(0xFF4ADE80)          // green for labels/metrics
-internal val NoirAccent = Color(0xFF4ADE80)          // green accent
-internal val NoirSuccess = Color(0xFF4ADE80)         // green
-internal val NoirError = Color(0xFFEF5350)           // error red
-internal val NoirInfo = Color(0xFF60A5FA)            // soft blue for info
+internal val NoirTextMuted = Color(0xFFB8BCC4)       // secondary text
+internal val NoirTextSubtle = Color(0xFF7A7F88)      // tertiary
+
+// Pastel accent family — desaturated, used sparingly as detail color only.
+internal val PastelGreen = Color(0xFFA8E6B0)         // balance / success
+internal val PastelSalmon = Color(0xFFF2A99A)
+internal val PastelOrange = Color(0xFFF4C28A)
+internal val PastelViolet = Color(0xFFC3A8F2)
+internal val PastelPink = Color(0xFFF2A8D0)
+
+internal val NoirSilver = PastelGreen                // green for labels/metrics
+internal val NoirAccent = PastelGreen                // green accent
+internal val NoirSuccess = PastelGreen               // green
+internal val NoirError = Color(0xFFE2918F)           // soft desaturated rose
+internal val NoirInfo = Color(0xFF9CB8F2)            // soft pastel blue for info
+
+// Subtle top-to-bottom gradient used to give flat cards a touch of depth so
+// they "pop" against the near-black background, without introducing a new
+// brightness level that would clash with NoirSurface elsewhere.
+internal val NoirCardGradient = Brush.verticalGradient(
+    listOf(Color(0xFF1B1D22), Color(0xFF101114))
+)
+
+// Slightly brighter variant (based on NoirSurfaceElev) for cards that need to
+// read as "elevated/selected" while still getting the same depth treatment.
+internal val NoirCardGradientElev = Brush.verticalGradient(
+    listOf(Color(0xFF22242B), Color(0xFF16181D))
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  BACKGROUND
@@ -141,10 +172,14 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     loading: Boolean = false,
+    // Optional pastel highlight for the one essential action on a screen
+    // (e.g. "Send", "Confirm transfer", "Unlock"). Leave null for the
+    // default off-white button used everywhere else.
+    accentColor: Color? = null,
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(10.dp)
-    val bg = if (enabled) Color(0xFFE8EAEE) else Color(0xFF24292F)
+    val bg = if (!enabled) Color(0xFF24292F) else accentColor ?: Color(0xFFE8EAEE)
     val fg = if (enabled) NoirInk else NoirTextSubtle
     Row(
         modifier = modifier
@@ -222,12 +257,25 @@ fun NoirCard(
     val shape = RoundedCornerShape(26.dp)
     Box(
         modifier = modifier
-            .background(NoirSurface, shape)
+            .background(NoirCardGradient, shape)
             .border(BorderStroke(1.dp, NoirOutline), shape)
             .padding(contentPadding)
     ) {
         content()
     }
+}
+
+/** ZSC / Zoka Network mark — used wherever the app previously showed a plain "Z" badge. */
+@Composable
+fun NoirBrandBadge(modifier: Modifier = Modifier, size: Dp = 34.dp) {
+    Image(
+        painter = painterResource("zsilent-logo.png"),
+        contentDescription = "ZSilent",
+        contentScale = ContentScale.Fit,
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(size / 4))
+    )
 }
 
 @Composable
@@ -286,15 +334,7 @@ fun OnboardingShell(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .background(NoirSurface, RoundedCornerShape(9.dp))
-                            .border(BorderStroke(1.dp, NoirOutlineStrong), RoundedCornerShape(9.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Z", color = NoirText, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    }
+                    NoirBrandBadge(size = 34.dp)
                     Column {
                         Text("ZSILENT WALLET", color = NoirText, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, fontSize = 13.sp)
                         Text("Zoka private gateway", color = NoirTextMuted, fontSize = 11.sp, letterSpacing = 0.4.sp)
@@ -304,6 +344,19 @@ fun OnboardingShell(
             }
 
             Spacer(Modifier.height(28.dp))
+
+            if (step == OnboardingStep.Welcome) {
+                Image(
+                    painter = painterResource("welcome-banner.png"),
+                    contentDescription = "Zoka Network",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .widthIn(min = 520.dp, max = 760.dp)
+                        .fillMaxWidth()
+                        .height(168.dp)
+                )
+                Spacer(Modifier.height(20.dp))
+            }
 
             Box(
                 modifier = Modifier
@@ -728,11 +781,12 @@ fun WordChip(
 @Composable
 fun WelcomeStepNoir() {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        ScreenEyebrow("Welcome")
-        ScreenTitle("Your private gateway to Zoka.")
+        ScreenEyebrow("Welcome · Zenith mainnet")
+        ScreenTitle("Your private gateway to the Zoka Network.")
         ScreenBody(
-            "Create, restore and protect your wallet locally. Your keys never leave this device. " +
-                "ZSilent runs the full node, mining engine and zero-knowledge transfer flow under your sole control."
+            "Create, restore and protect your wallet locally for the Zenith mainnet of Zoka Network. " +
+                "Your keys never leave this device. ZSilent runs the full node, mining engine and " +
+                "zero-knowledge transfer flow under your sole control."
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
@@ -887,7 +941,7 @@ private fun ChoiceCard(
     val border = if (selected) NoirAccent else NoirOutline
     Column(
         modifier = modifier
-            .background(if (selected) NoirSurfaceElev else NoirSurface, shape)
+            .background(if (selected) NoirCardGradientElev else NoirCardGradient, shape)
             .border(BorderStroke(1.dp, border), shape)
             .clickable(onClick = onClick)
             .padding(16.dp),
@@ -1452,12 +1506,14 @@ fun NoirStatusPill(
     androidx.compose.material3.Surface(
         modifier = modifier,
         shape = shape,
-        color = NoirSurface,
+        color = Color.Transparent,
         shadowElevation = 2.dp,
         tonalElevation = 0.dp
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .background(NoirCardGradient, shape)
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1481,22 +1537,28 @@ fun NoirMetricCard(
     accent: Color = NoirAccent,
     hidden: Boolean = false,
     detail: String? = null,
+    // Overrides the value text color (default stays NoirText/white). Use
+    // sparingly — only the single most important metric on a screen (e.g.
+    // "Balance") should get a colored number.
+    valueColor: Color? = null,
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(16.dp)
     androidx.compose.material3.Surface(
         modifier = modifier,
         shape = shape,
-        color = NoirSurface,
+        color = Color.Transparent,
         shadowElevation = 2.dp,
         tonalElevation = 0.dp
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        Column(modifier = Modifier
+            .background(NoirCardGradient, shape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label.uppercase(), color = NoirTextSubtle, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 if (hidden) "••••" else value,
-                color = NoirText, fontWeight = FontWeight.Bold,
+                color = valueColor ?: NoirText, fontWeight = FontWeight.Bold,
                 fontSize = 20.sp, fontFamily = FontFamily.Monospace, maxLines = 1
             )
             if (detail != null) Text(detail, color = NoirTextSubtle, fontSize = 10.sp)
@@ -1579,12 +1641,14 @@ fun NoirSection(
     androidx.compose.material3.Surface(
         modifier = modifier.fillMaxWidth(),
         shape = shape,
-        color = NoirSurface,
+        color = Color.Transparent,
         shadowElevation = 2.dp,
         tonalElevation = 0.dp
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier
+                .background(NoirCardGradient, shape)
+                .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Row(
@@ -1613,12 +1677,13 @@ fun NoirKeyValue(label: String, value: String, mono: Boolean = false) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (icon != null) Icon(icon, null, tint = NoirTextMuted, modifier = Modifier.size(14.dp))
-            Text(label, color = NoirTextMuted, fontSize = 12.sp)
+            Text(label, color = NoirTextMuted, fontSize = 11.sp)
         }
         Text(
             value,
             color = NoirText,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
             fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default
         )
     }
