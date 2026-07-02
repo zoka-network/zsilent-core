@@ -8,6 +8,7 @@ import java.io.File
 @Serializable
 data class ZokaNetworkSettings(
     val network: String = "",
+    val appMode: String = "",
     val chainId: String = "",
     val status: String = "",
     val localRpcUrl: String = "",
@@ -54,6 +55,7 @@ object ZokaNetworkConfig {
     private const val DEFAULT_REMOTE_RPC_URL = "http://159.223.119.216:3000"
     private const val DEFAULT_CHAIN_ID = "zoka-mainnet-zenith-v1"
     private const val DEFAULT_NETWORK = "mainnet"
+    private const val DEFAULT_APP_MODE = "miner"
 
     /** App version, injected at build time via -Dzsilent.version (see build.gradle.kts). */
     val AppVersion: String = System.getProperty("zsilent.version")?.takeIf { it.isNotBlank() } ?: "dev"
@@ -67,6 +69,12 @@ object ZokaNetworkConfig {
 
     val Network: String
         get() = current.network
+    val AppMode: String
+        get() = current.appMode.ifBlank { DEFAULT_APP_MODE }
+    val WalletMode: Boolean
+        get() = AppMode.equals("wallet", ignoreCase = true)
+    val MinerMode: Boolean
+        get() = !WalletMode
     val LocalRpcUrl: String
         get() = current.localRpcUrl
     val RemoteRpcUrl: String
@@ -129,6 +137,11 @@ object ZokaNetworkConfig {
                 chainId.contains("mainnet", ignoreCase = true) -> "mainnet"
                 else -> DEFAULT_NETWORK
             }
+        val appMode = envOrProperty("ZSILENT_APP_MODE", "zsilent.appMode")
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it == "wallet" || it == "miner" }
+            ?: DEFAULT_APP_MODE
         val remoteRpc = envOrProperty("ZSILENT_REMOTE_RPC_URL", "zsilent.remoteRpcUrl")
             ?: activeRpc.takeIf { it.isNotBlank() }
             ?: DEFAULT_REMOTE_RPC_URL
@@ -139,6 +152,7 @@ object ZokaNetworkConfig {
 
         return ZokaNetworkSettings(
             network = network,
+            appMode = appMode,
             chainId = chainId,
             status = manifest?.status.orEmpty(),
             localRpcUrl = localRpc.trimEnd('/'),

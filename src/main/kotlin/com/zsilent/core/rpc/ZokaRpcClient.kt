@@ -2,6 +2,7 @@ package com.zsilent.core.rpc
 
 import com.zsilent.core.models.ChainHeightResponse
 import com.zsilent.core.models.NodeStats
+import com.zsilent.core.models.NodeSyncStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
@@ -38,6 +39,12 @@ class ZokaRpcClient(val baseUrl: String) {
         require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
         val text = client.get("$baseUrl/stats").bodyAsText()
         return codec.decodeFromString<NodeStats>(text)
+    }
+
+    suspend fun syncStatus(): NodeSyncStatus {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val text = client.get("$baseUrl/sync/status").bodyAsText()
+        return codec.decodeFromString<NodeSyncStatus>(text)
     }
 
     suspend fun startMining(threads: Int) {

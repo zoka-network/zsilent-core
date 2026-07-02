@@ -78,12 +78,20 @@ class WalletService(private val cli: ZokaCli) {
 
     fun available(): Boolean = cli.zoka?.exists() == true
 
+    private fun walletReadArgs(args: List<String>): List<String> {
+        return if (ZokaNetworkConfig.WalletMode && "--rpc-only" !in args) {
+            args + "--rpc-only"
+        } else {
+            args
+        }
+    }
+
     suspend fun listWallets(
         password: CharArray? = null,
         network: String = ZokaNetworkConfig.Network
     ): WalletListResponse = withContext(Dispatchers.IO) {
         runWalletJsonCommand(
-            args = listOf("wallet-list", "--network", network, "--json"),
+            args = walletReadArgs(listOf("wallet-list", "--network", network, "--json")),
             password = password
         )
     }
@@ -95,7 +103,7 @@ class WalletService(private val cli: ZokaCli) {
     ): WalletBalance = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
         runWalletJsonCommand(
-            args = listOf("wallet-balance", "--address", wallet, "--network", network, "--json"),
+            args = walletReadArgs(listOf("wallet-balance", "--address", wallet, "--network", network, "--json")),
             password = password
         )
     }
@@ -108,12 +116,14 @@ class WalletService(private val cli: ZokaCli) {
     ): WalletHistory = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
         runWalletJsonCommand(
-            args = listOf(
-                "wallet-history",
-                "--address", wallet,
-                "--network", network,
-                "--limit", limit.coerceIn(1, 100).toString(),
-                "--json"
+            args = walletReadArgs(
+                listOf(
+                    "wallet-history",
+                    "--address", wallet,
+                    "--network", network,
+                    "--limit", limit.coerceIn(1, 100).toString(),
+                    "--json"
+                )
             ),
             password = password
         )

@@ -1,6 +1,7 @@
 package com.zsilent.core.core.mining
 
 import com.zsilent.core.models.MiningSnapshot
+import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.RuntimeLog
 import com.zsilent.core.models.ServiceStatus
@@ -53,6 +54,9 @@ class MiningController(private val cli: ZokaCli) {
     private val _pendingTransfers = MutableStateFlow(PendingPrivateTransfers())
     val pendingTransfers: StateFlow<PendingPrivateTransfers> = _pendingTransfers
 
+    private val _syncStatus = MutableStateFlow(NodeSyncStatus())
+    val syncStatus: StateFlow<NodeSyncStatus> = _syncStatus
+
     private val _controlledByApp = MutableStateFlow(false)
     val controlledByApp: StateFlow<Boolean> = _controlledByApp
 
@@ -101,6 +105,19 @@ class MiningController(private val cli: ZokaCli) {
         scope.launch {
             _status.value = ServiceStatus.Starting
             stopRequested = false
+            val sync = readSyncStatus().getOrElse { error ->
+                _controlledByApp.value = false
+                _status.value = ServiceStatus.Error
+                _logs.tryEmit(RuntimeLog("mining", "Cannot start mining: local node sync-status is unavailable (${sanitize(error.message ?: "unknown error")})."))
+                return@launch
+            }
+            _syncStatus.value = sync
+            if (!sync.readyToMine) {
+                _controlledByApp.value = false
+                _status.value = ServiceStatus.Error
+                _logs.tryEmit(RuntimeLog("mining", sync.miningGateReason()))
+                return@launch
+            }
             // Toggle the running node's IN-PROCESS miner via its /mining RPC. No
             // separate `zoka mine` process → no RocksDB lock fight with the node,
             // and the node stays online + synced while mining starts/stops.
@@ -113,7 +130,7 @@ class MiningController(private val cli: ZokaCli) {
             } else {
                 _controlledByApp.value = false
                 _status.value = ServiceStatus.Error
-                _logs.tryEmit(RuntimeLog("mining", "Could not start mining — is the node running? (mining-control RPC unreachable)"))
+                _logs.tryEmit(RuntimeLog("mining", "Could not start mining after sync gate passed: mining-control RPC rejected or was unreachable."))
             }
         }
     }
@@ -150,6 +167,23 @@ class MiningController(private val cli: ZokaCli) {
         code in 200..299
     }.getOrElse { false }
 
+    private fun readSyncStatus(): Result<NodeSyncStatus> = runCatching {
+        val rpc = ZokaNetworkConfig.LocalRpcUrl.ifBlank { "http://127.0.0.1:3000" }.trimEnd('/')
+        val conn = java.net.URL("$rpc/sync/status").openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 2500
+        conn.readTimeout = 2500
+        val code = conn.responseCode
+        val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()
+            ?.use { it.readText() }
+            .orEmpty()
+        if (code !in 200..299) {
+            error("sync-status RPC returned HTTP $code")
+        }
+        codec.decodeFromString<NodeSyncStatus>(body)
+    }
+
     fun close() {
         ZokaProcessKiller.terminate(process)
         ZokaProcessKiller.terminateManagedZokaProcesses(cli)
@@ -158,6 +192,10 @@ class MiningController(private val cli: ZokaCli) {
     }
 
     private suspend fun refresh(network: String = ZokaNetworkConfig.Network) {
+        readSyncStatus().onSuccess { sync ->
+            _syncStatus.value = sync
+        }
+
         readSnapshot(network).onSuccess { mining ->
             snapshotFailures = 0
             _snapshot.value = mining

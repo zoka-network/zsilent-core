@@ -74,6 +74,75 @@ data class NodeStats(
 )
 
 @Serializable
+data class NodeSyncStatus(
+    val status: String = "unknown",
+    val mode: String = "unknown",
+    @SerialName("ready_to_mine")
+    val readyToMine: Boolean = false,
+    @SerialName("local_height")
+    val localHeight: Long = 0,
+    @SerialName("target_height")
+    val targetHeight: Long = 0,
+    val lag: Long = 0,
+    @SerialName("connected_peers")
+    val connectedPeers: Long = 0,
+    @SerialName("min_peers")
+    val minPeers: Long = 0,
+    @SerialName("startup_ready")
+    val startupReady: Boolean = false,
+    @SerialName("startup_phase")
+    val startupPhase: String = "",
+    @SerialName("rpc_fallback_active")
+    val rpcFallbackActive: Boolean = false,
+    @SerialName("last_sync_source")
+    val lastSyncSource: String? = null,
+    @SerialName("last_sync_event")
+    val lastSyncEvent: String? = null,
+    @SerialName("last_sync_error")
+    val lastSyncError: String? = null,
+    @SerialName("last_block_at")
+    val lastBlockAt: Long = 0,
+    @SerialName("last_updated")
+    val lastUpdated: Long = 0,
+    @SerialName("gossip_rx_block_response")
+    val gossipRxBlockResponse: Long = 0,
+    @SerialName("gossip_publish_err")
+    val gossipPublishErr: Long = 0
+) {
+    fun hasNodeSignal(): Boolean {
+        return status != "unknown" ||
+            mode != "unknown" ||
+            startupReady ||
+            lastUpdated > 0 ||
+            localHeight > 0 ||
+            targetHeight > 0 ||
+            connectedPeers > 0 ||
+            minPeers > 0
+    }
+
+    fun miningGateReason(): String {
+        if (readyToMine) return "Node is ready to mine."
+        if (!startupReady) {
+            val phase = startupPhase.ifBlank { mode.ifBlank { "starting" } }
+            return "Mining blocked: local node is still starting ($phase)."
+        }
+        if (status == "isolated" || connectedPeers < minPeers) {
+            return "Mining blocked: local node has $connectedPeers/$minPeers required peer(s)."
+        }
+        if (status == "syncing" || lag > 0) {
+            return "Mining blocked: local node is $lag block(s) behind the network tip."
+        }
+        if (status == "error" || mode == "error") {
+            return "Mining blocked: local sync is in error: ${lastSyncError ?: lastSyncEvent ?: "unknown error"}."
+        }
+        if (mode == "loading") {
+            return "Mining blocked: local node is loading chain state."
+        }
+        return "Mining blocked: local node is not ready (${status.ifBlank { mode.ifBlank { "unknown" } }})."
+    }
+}
+
+@Serializable
 data class WalletSyncStatus(
     val wallet: String = "",
     @SerialName("chain_height")

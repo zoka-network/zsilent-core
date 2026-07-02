@@ -82,7 +82,7 @@ class NodeController(private val cli: ZokaCli) {
             "--power", power,
             "--allow-isolated-start",
             "--sync-warmup-secs", "30",
-            "--sync-rebroadcast-recent-blocks", "32"
+            "--sync-rebroadcast-recent-blocks", "0"
         )
         if (ZokaNetworkConfig.ManifestPath.isNotBlank()) {
             command += listOf("--network-config", ZokaNetworkConfig.ManifestPath)
@@ -158,14 +158,17 @@ class NodeController(private val cli: ZokaCli) {
             return
         }
         restartAttempt += 1
-        if (restartAttempt > 5) {
-            _logs.tryEmit(RuntimeLog("node", "Node exited unexpectedly $restartAttempt times in a row; giving up auto-restart. Toggle the node again from the panel."))
-            _status.value = ServiceStatus.Error
-            restartAttempt = 0
-            return
+        val backoffSeconds = if (restartAttempt <= 5) {
+            (2 * restartAttempt).coerceAtMost(30).toLong()
+        } else {
+            60L
         }
-        val backoffSeconds = (2 * restartAttempt).coerceAtMost(30).toLong()
-        _logs.tryEmit(RuntimeLog("node", "Node exited unexpectedly (code=$exitCode). Auto-restart attempt $restartAttempt in ${backoffSeconds}s..."))
+        val repairNote = if (restartAttempt == 6) {
+            " Node keeps failing; continuing background repair retries instead of giving up."
+        } else {
+            ""
+        }
+        _logs.tryEmit(RuntimeLog("node", "Node exited unexpectedly (code=$exitCode). Auto-restart attempt $restartAttempt in ${backoffSeconds}s.$repairNote"))
         _status.value = ServiceStatus.Starting
         kotlinx.coroutines.delay(backoffSeconds * 1000L)
         if (stopRequested) {

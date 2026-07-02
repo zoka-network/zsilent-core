@@ -17,6 +17,7 @@ import com.zsilent.core.models.LocalChainHeightResponse
 import com.zsilent.core.models.LocalWallet
 import com.zsilent.core.models.MiningSnapshot
 import com.zsilent.core.models.NodeStats
+import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.OnboardingStep
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.PersistedSetup
@@ -125,12 +126,14 @@ data class ZSilentUiState(
     val miningDiagnostic: String? = null,
     val localMiningEnabled: Boolean = false,
     val syncBusy: Boolean = false,
+    val appMode: String = ZokaNetworkConfig.AppMode,
     val localRpcOnline: Boolean = false,
     val networkRpcUrl: String = ZokaNetworkConfig.RemoteRpcUrl,
     val localRpcUrl: String = ZokaNetworkConfig.LocalRpcUrl,
     val bootstrapPeer: String = ZokaNetworkConfig.BootstrapMultiaddr,
     val syncStatusMessage: String = "Waiting for network status.",
     val stats: NodeStats = NodeStats(),
+    val nodeSyncStatus: NodeSyncStatus = NodeSyncStatus(),
     val mining: MiningSnapshot = MiningSnapshot(),
     val pendingPrivateTransfers: PendingPrivateTransfers = PendingPrivateTransfers(),
     val miningControlledByApp: Boolean = false,
@@ -164,6 +167,8 @@ class ZSilentAppState(
     private var sessionPassword: CharArray? = null
     private var integratedMiningRequested = false
     private var lastMiningThreads = 0
+    private var lastMiningIntentLogMessage = ""
+    private var lastMiningIntentLogMillis = 0L
     private var lastLocalHeightReadMillis = 0L
     @Volatile private var blockPushInProgress = false
     private var lastPushedRemoteHeight = 0L
@@ -273,6 +278,11 @@ class ZSilentAppState(
             }
         }
         scope.launch {
+            miningController.syncStatus.collectLatest { sync ->
+                update { it.copy(nodeSyncStatus = sync) }
+            }
+        }
+        scope.launch {
             miningController.controlledByApp.collectLatest { controlled ->
                 update { it.copy(miningControlledByApp = controlled) }
             }
@@ -310,12 +320,29 @@ class ZSilentAppState(
     private suspend fun reconcileMiningIfNeeded() {
         if (!integratedMiningRequested) return
         val s = _uiState.value
-        if (s.nodeStatus != ServiceStatus.Online || !s.networkSynced) return
-        val stats = runCatching { localRpc.stats() }.getOrNull() ?: return
-        val actuallyMining = stats.localMining || stats.reportedHashrateHps > 0
-        if (actuallyMining) return
         val threads = (if (lastMiningThreads > 0) lastMiningThreads else s.mining.availableCpuThreads).coerceAtLeast(1)
-        appendLog(RuntimeLog("mining", "Mining is on but the node isn't mining; re-applying mining control with $threads thread(s)."))
+        if (s.nodeStatus != ServiceStatus.Online) {
+            queueMiningIntent("Mining queued: local node is ${s.nodeStatus.name.lowercase()} and ZSilent is repairing it.", threads)
+            return
+        }
+        if (!s.networkSynced) {
+            queueMiningIntent("Mining queued until sync completes: node height ${s.chainHeight}, network height ${s.networkHeight}, remaining ${s.syncRemainingBlocks}.", threads)
+            return
+        }
+        if (s.localRpcOnline && s.nodeSyncStatus.hasNodeSignal() && !s.nodeSyncStatus.readyToMine) {
+            queueMiningIntent(s.nodeSyncStatus.miningGateReason(), threads)
+            return
+        }
+        val stats = runCatching { localRpc.stats() }.getOrNull() ?: run {
+            queueMiningIntent("Mining queued: local node RPC is not reporting stats yet.", threads)
+            return
+        }
+        val actuallyMining = stats.localMining || stats.reportedHashrateHps > 0
+        if (actuallyMining) {
+            update { it.copy(miningStatus = ServiceStatus.Online, miningBlockReason = null, miningDiagnostic = null, localMiningEnabled = true) }
+            return
+        }
+        emitMiningIntentLog("Mining is on but the node is not mining; re-applying mining control with $threads thread(s).")
         enableLocalNodeMining(threads, quiet = true)
     }
 
@@ -1582,9 +1609,10 @@ class ZSilentAppState(
             return
         }
         if (autoMine && !snapshot.networkSynced) {
-            appendLog(RuntimeLog("mining", "Mining locked until sync completes: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks}. Starting node-only sync."))
+            queueMiningIntent("Mining queued until sync completes: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks}. Starting node-only sync.", threads ?: snapshot.mining.availableCpuThreads.coerceAtLeast(1))
+        } else if (autoMine) {
+            queueMiningIntent("Mining queued: waiting for local node control to become ready.", threads ?: snapshot.mining.availableCpuThreads.coerceAtLeast(1))
         }
-        integratedMiningRequested = autoMine && snapshot.networkSynced
         try {
             nodeController.start(
                 password = String(password),
@@ -1608,10 +1636,7 @@ class ZSilentAppState(
                     }
                 }
                 if (!enabled) {
-                    integratedMiningRequested = false
-                    val message = "Node started, but mining control was not reachable yet. Node remains online; enable mining manually after RPC is ready."
-                    update { it.copy(miningStatus = ServiceStatus.Error, miningDiagnostic = message, localMiningEnabled = false) }
-                    appendLog(RuntimeLog("mining", message))
+                    queueMiningIntent("Mining remains queued: local node mining control is not reachable yet. ZSilent will retry when the node is ready.", threads ?: snapshot.mining.availableCpuThreads.coerceAtLeast(1))
                 }
             }
         }
@@ -1636,6 +1661,10 @@ class ZSilentAppState(
     }
 
     fun startMining(threads: Int) {
+        if (ZokaNetworkConfig.WalletMode) {
+            rejectMiningRequest("Mining requires miner mode. Restart ZSilent with ZSILENT_APP_MODE=miner to run and gate a local node.")
+            return
+        }
         val snapshot = _uiState.value
         val password = copySessionPassword()
         if (password == null || password.isEmpty()) {
@@ -1645,12 +1674,20 @@ class ZSilentAppState(
         }
         if (!snapshot.networkSynced) {
             password.fill('\u0000')
-            rejectMiningRequest("Mining blocked until the node is synced with the network bootstrap: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks}. Start the node first and wait for OK synced.")
+            queueMiningIntent("Mining queued until the node is synced with the network bootstrap: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks}.", threads)
+            if (snapshot.nodeStatus == ServiceStatus.Offline) {
+                startNode(autoMine = false, threads = threads)
+            }
             return
         }
         if (snapshot.nodeStatus == ServiceStatus.Starting || snapshot.nodeStatus == ServiceStatus.Stopping) {
             password.fill('\u0000')
-            rejectMiningRequest("Node is still changing state. Wait for it to finish before enabling mining.")
+            queueMiningIntent("Mining queued: node is ${snapshot.nodeStatus.name.lowercase()} and will retry when stable.", threads)
+            return
+        }
+        if (snapshot.localRpcOnline && snapshot.nodeSyncStatus.hasNodeSignal() && !snapshot.nodeSyncStatus.readyToMine) {
+            password.fill('\u0000')
+            queueMiningIntent(snapshot.nodeSyncStatus.miningGateReason(), threads)
             return
         }
         if (snapshot.mining.running) {
@@ -1687,10 +1724,7 @@ class ZSilentAppState(
                 }
             }
             if (!enabled) {
-                integratedMiningRequested = false
-                val message = "Could not reach local node mining control after startup. Node remains independent; try mining again once Node is online."
-                update { it.copy(miningStatus = ServiceStatus.Error, miningDiagnostic = message, localMiningEnabled = false) }
-                appendLog(RuntimeLog("mining", message))
+                queueMiningIntent("Mining remains queued: local node mining control is not reachable yet. ZSilent will retry when the node is ready.", threads)
             }
         }
     }
@@ -1730,6 +1764,16 @@ class ZSilentAppState(
     private suspend fun enableLocalNodeMining(threads: Int, quiet: Boolean = false): Boolean {
         lastMiningThreads = threads.coerceAtLeast(1)
         return runCatching {
+            val sync = localRpc.syncStatus()
+            update {
+                it.copy(
+                    nodeSyncStatus = sync,
+                    miningBlockReason = if (sync.readyToMine) null else sync.miningGateReason()
+                )
+            }
+            if (!sync.readyToMine) {
+                error(sync.miningGateReason())
+            }
             localRpc.startMining(threads)
         }.onSuccess {
             update { it.copy(miningStatus = ServiceStatus.Starting, miningDiagnostic = null, localMiningEnabled = true) }
@@ -1738,9 +1782,14 @@ class ZSilentAppState(
             }
         }.onFailure { error ->
             if (!quiet) {
-                integratedMiningRequested = false
-                update { it.copy(miningStatus = ServiceStatus.Error, miningDiagnostic = safeLogMessage(error), localMiningEnabled = false) }
-                appendLog(RuntimeLog("mining", "Could not enable mining via local node RPC: ${safeLogMessage(error)}"))
+                val message = safeLogMessage(error)
+                if (isTransientMiningStartFailure(message)) {
+                    queueMiningIntent("Mining remains queued: $message", threads)
+                } else {
+                    integratedMiningRequested = false
+                    update { it.copy(miningStatus = ServiceStatus.Error, miningDiagnostic = message, localMiningEnabled = false) }
+                    appendLog(RuntimeLog("mining", "Could not enable mining via local node RPC: $message"))
+                }
             }
         }.isSuccess
     }
@@ -1765,8 +1814,9 @@ class ZSilentAppState(
 
     private suspend fun pollRpc() {
         val snapshot = _uiState.value
+        val localSyncStatus = runCatching { localRpc.syncStatus() }.getOrNull()
         val localStats = runCatching { localRpc.stats() }.getOrNull()
-        val localRpcHeight = localStats?.height ?: runCatching { localRpc.height() }.getOrNull()
+        val localRpcHeight = localStats?.height ?: localSyncStatus?.localHeight ?: runCatching { localRpc.height() }.getOrNull()
         val mayReadDbDirectly = localRpcHeight == null &&
             snapshot.nodeStatus == ServiceStatus.Offline &&
             snapshot.miningStatus == ServiceStatus.Offline
@@ -1781,7 +1831,7 @@ class ZSilentAppState(
             maxOf(snapshot.chainHeight, snapshot.mining.chainHeight)
         }
         val localHeight = maxOf(localDbHeight, localRpcHeight ?: 0L, snapshot.mining.chainHeight)
-        val localRpcOnline = localRpcHeight != null
+        val localRpcOnline = localRpcHeight != null || localSyncStatus != null
         val localRpcMining = localStats?.let { it.localMining || it.reportedHashrateHps > 0 } == true
         val miningDiagnostic = snapshot.miningDiagnostic
 
@@ -1822,6 +1872,12 @@ class ZSilentAppState(
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
                     chainHeight = localHeight,
+                    nodeSyncStatus = localSyncStatus ?: it.nodeSyncStatus,
+                    miningBlockReason = when {
+                        localSyncStatus == null -> it.miningBlockReason
+                        localSyncStatus.readyToMine -> null
+                        else -> localSyncStatus.miningGateReason()
+                    },
                     networkHeight = networkHeight,
                     syncRemainingBlocks = remaining,
                     syncProgressPercent = syncProgressPercent(localHeight, networkHeight),
@@ -1857,6 +1913,12 @@ class ZSilentAppState(
                     },
                     localMiningEnabled = localRpcMining,
                     chainHeight = localHeight,
+                    nodeSyncStatus = localSyncStatus ?: it.nodeSyncStatus,
+                    miningBlockReason = when {
+                        localSyncStatus == null -> it.miningBlockReason
+                        localSyncStatus.readyToMine -> null
+                        else -> localSyncStatus.miningGateReason()
+                    },
                     networkSynced = false,
                     syncStatusMessage = "Network bootstrap RPC is offline or unreachable."
                 )
@@ -1866,7 +1928,8 @@ class ZSilentAppState(
         // the remote RPC is offline so mining rewards appear without restarting.
         val balRefNow = System.currentTimeMillis()
         val balRefSnap = _uiState.value
-        if (!balRefSnap.walletLocked && !balRefSnap.walletBusy && localRpcOnline &&
+        val walletReadOnline = localRpcOnline || (ZokaNetworkConfig.WalletMode && balRefSnap.rpcOnline)
+        if (!balRefSnap.walletLocked && !balRefSnap.walletBusy && walletReadOnline &&
             balRefNow - lastBalanceRefreshMillis > 30_000L) {
             lastBalanceRefreshMillis = balRefNow
             val balRefPwd = copySessionPassword()
@@ -1894,6 +1957,7 @@ class ZSilentAppState(
     }
 
     private fun canRunRpcSync(snapshot: ZSilentUiState): Boolean {
+        if (ZokaNetworkConfig.WalletMode) return false
         return cli.zoka != null &&
             !rpcSyncInProgress &&
             !snapshot.mining.running &&
@@ -1903,6 +1967,7 @@ class ZSilentAppState(
     }
 
     private fun rpcSyncBlockedReason(snapshot: ZSilentUiState): String {
+        if (ZokaNetworkConfig.WalletMode) return "Wallet mode uses remote RPC for wallet queries and does not sync a local node DB."
         if (cli.zoka == null) return "Cannot sync: zoka binary was not found."
         if (rpcSyncInProgress || snapshot.syncBusy) return "Sync is already running."
         if (snapshot.nodeStatus == ServiceStatus.Starting || snapshot.nodeStatus == ServiceStatus.Stopping) {
@@ -2272,6 +2337,38 @@ class ZSilentAppState(
         update { current ->
             current.copy(logs = (listOf(log) + current.logs).take(400))
         }
+    }
+
+    private fun queueMiningIntent(reason: String, threads: Int? = null) {
+        integratedMiningRequested = true
+        threads?.let { lastMiningThreads = it.coerceAtLeast(1) }
+        update {
+            it.copy(
+                miningStatus = ServiceStatus.Starting,
+                miningBlockReason = reason,
+                miningDiagnostic = null,
+                localMiningEnabled = false
+            )
+        }
+        emitMiningIntentLog(reason)
+    }
+
+    private fun emitMiningIntentLog(message: String) {
+        val now = System.currentTimeMillis()
+        if (message == lastMiningIntentLogMessage && now - lastMiningIntentLogMillis < 30_000L) return
+        lastMiningIntentLogMessage = message
+        lastMiningIntentLogMillis = now
+        appendLog(RuntimeLog("mining", message))
+    }
+
+    private fun isTransientMiningStartFailure(message: String): Boolean {
+        return message.contains("Mining blocked", ignoreCase = true) ||
+            message.contains("queued", ignoreCase = true) ||
+            message.contains("sync-status", ignoreCase = true) ||
+            message.contains("unreachable", ignoreCase = true) ||
+            message.contains("connection", ignoreCase = true) ||
+            message.contains("timed out", ignoreCase = true) ||
+            message.contains("refused", ignoreCase = true)
     }
 
     private fun rejectMiningRequest(reason: String) {
