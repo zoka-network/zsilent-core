@@ -1847,6 +1847,13 @@ class ZSilentAppState(
                         difficultyBits = (localStats?.difficulty ?: it.mining.difficultyBits.toLong()).toInt(),
                         hashrateHps = maxOf(it.mining.hashrateHps, localStats?.reportedHashrateHps ?: 0L)
                     )
+                } else if (localRpcOnline && !it.miningControlledByApp && it.mining.running) {
+                    // The node is reachable and reports it is NOT mining:
+                    // clear the integrated-mining snapshot. Without this, one
+                    // poll that catches the node still draining a stopped
+                    // batch re-marks running=true and nothing ever unsets it,
+                    // leaving the mining switch stuck ON after a stop.
+                    it.mining.copy(running = false, hashrateHps = 0)
                 } else {
                     it.mining
                 }
@@ -1861,6 +1868,13 @@ class ZSilentAppState(
                     miningStatus = when {
                         localRpcMining && !miningDiagnostic.isNullOrBlank() -> ServiceStatus.Error
                         localRpcMining -> ServiceStatus.Online
+                        // Same one-way stickiness fix: only downgrade a
+                        // previously-confirmed Online once the node itself
+                        // says mining is off. Starting/Stopping/Error are
+                        // left alone so startup warmup and error surfacing
+                        // keep working.
+                        localRpcOnline && !it.miningControlledByApp &&
+                            it.miningStatus == ServiceStatus.Online -> ServiceStatus.Offline
                         else -> it.miningStatus
                     },
                     mining = reconciledMining,
