@@ -121,6 +121,13 @@ data class ZSilentUiState(
     val syncRemainingBlocks: Long = 0,
     val syncProgressPercent: Double = 0.0,
     val networkSynced: Boolean = false,
+    // Mining gate: true when the node is close enough to the network head to
+    // mine competitively. Looser than networkSynced (which stays exact for
+    // sync display): allows a small block tolerance, and falls back to the
+    // local node's own P2P-mesh sync view when the bootstrap RPC is
+    // saturated or unreachable, so ZSilent miners aren't locked out while
+    // CLI miners (which have no such gate) keep mining.
+    val miningSyncReady: Boolean = false,
     val miningBlockReason: String? = null,
     val miningDiagnostic: String? = null,
     val localMiningEnabled: Boolean = false,
@@ -139,6 +146,20 @@ data class ZSilentUiState(
     val zokaReady: Boolean = false,
     val lastBalanceRefreshedAt: Long = 0L
 )
+
+// Mining may start while trailing the observed network head by up to this
+// many blocks. Transient bootstrap saturation or gossip lag must not lock
+// ZSilent miners out while CLI miners (no gate) keep mining; fork-choice by
+// cumulative work resolves any short-lived side branch this can produce.
+// Keep this small: mining far behind the head only wastes CPU on blocks
+// that will be orphaned.
+private const val MINING_SYNC_TOLERANCE_BLOCKS = 2L
+
+// When falling back to the local node's own P2P view (bootstrap RPC down),
+// require at least this many connected peers before trusting its lag as a
+// mining-readiness signal. Matches the node's own mesh-health threshold for
+// preferring P2P sync over RPC.
+private const val MIN_MESH_PEERS_FOR_MINING = 2L
 
 class ZSilentAppState(
     val cli: ZokaCli,
@@ -310,7 +331,7 @@ class ZSilentAppState(
     private suspend fun reconcileMiningIfNeeded() {
         if (!integratedMiningRequested) return
         val s = _uiState.value
-        if (s.nodeStatus != ServiceStatus.Online || !s.networkSynced) return
+        if (s.nodeStatus != ServiceStatus.Online || !s.miningSyncReady) return
         val stats = runCatching { localRpc.stats() }.getOrNull() ?: return
         val actuallyMining = stats.localMining || stats.reportedHashrateHps > 0
         if (actuallyMining) return
@@ -1600,10 +1621,10 @@ class ZSilentAppState(
             appendLog(RuntimeLog("node", "Mining is already active and owns the chain state. Stop that miner first, or start node + mining as one integrated session."))
             return
         }
-        if (autoMine && !snapshot.networkSynced) {
+        if (autoMine && !snapshot.miningSyncReady) {
             appendLog(RuntimeLog("mining", "Mining locked until sync completes: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks}. Starting node-only sync."))
         }
-        integratedMiningRequested = autoMine && snapshot.networkSynced
+        integratedMiningRequested = autoMine && snapshot.miningSyncReady
         try {
             nodeController.start(
                 password = String(password),
@@ -1617,7 +1638,7 @@ class ZSilentAppState(
         } finally {
             password.fill('\u0000')
         }
-        if (autoMine && snapshot.networkSynced) {
+        if (autoMine && snapshot.miningSyncReady) {
             scope.launch {
                 var enabled = false
                 repeat(30) {
@@ -1662,9 +1683,9 @@ class ZSilentAppState(
             rejectMiningRequest("Unlock the wallet session before enabling mining. ZSilent will reuse the in-memory session password for rewards.")
             return
         }
-        if (!snapshot.networkSynced) {
+        if (!snapshot.miningSyncReady) {
             password.fill('\u0000')
-            rejectMiningRequest("Mining blocked until the node is synced with the network bootstrap: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks}. Start the node first and wait for OK synced.")
+            rejectMiningRequest("Mining blocked until the node is close to the network head: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks} (tolerance $MINING_SYNC_TOLERANCE_BLOCKS block(s)). Start the node first and let it sync.")
             return
         }
         if (snapshot.nodeStatus == ServiceStatus.Starting || snapshot.nodeStatus == ServiceStatus.Stopping) {
@@ -1814,6 +1835,10 @@ class ZSilentAppState(
             // otherwise mining stays locked forever on a brand-new chain.
             // The RPC-offline case is handled in the onFailure branch below.
             val synced = localHeight >= networkHeight
+            // Mining unlocks a little earlier than the exact-sync banner:
+            // trailing the head by a couple of blocks is normal gossip lag,
+            // not a reason to keep the miner cold.
+            val miningReady = remaining <= MINING_SYNC_TOLERANCE_BLOCKS
             update {
                 val reconciledMining = if (localRpcMining) {
                     it.mining.copy(
@@ -1845,6 +1870,7 @@ class ZSilentAppState(
                     syncRemainingBlocks = remaining,
                     syncProgressPercent = syncProgressPercent(localHeight, networkHeight),
                     networkSynced = synced,
+                    miningSyncReady = miningReady,
                     syncStatusMessage = if (synced) {
                         "OK synced with network bootstrap."
                     } else if (it.syncBusy) {
@@ -1865,6 +1891,20 @@ class ZSilentAppState(
                 }
             }
         }.onFailure {
+            // Bootstrap RPC unreachable — fall back to the local node's own
+            // sync view, which is fed by its P2P mesh. A node that reports a
+            // healthy mesh and near-zero lag is safe to mine from even while
+            // the centralized bootstrap endpoint is saturated; otherwise
+            // (isolated node, real lag, node offline) mining stays locked.
+            val localSync = if (localRpcOnline) {
+                runCatching { localRpc.syncStatus() }.getOrNull()
+            } else {
+                null
+            }
+            val meshPeers = localSync?.connectedPeers ?: 0L
+            val meshMiningReady = localSync != null &&
+                meshPeers >= maxOf(localSync.minPeers, MIN_MESH_PEERS_FOR_MINING) &&
+                localSync.lag <= MINING_SYNC_TOLERANCE_BLOCKS
             update {
                 it.copy(
                     rpcOnline = false,
@@ -1877,7 +1917,12 @@ class ZSilentAppState(
                     localMiningEnabled = localRpcMining,
                     chainHeight = localHeight,
                     networkSynced = false,
-                    syncStatusMessage = "Network bootstrap RPC is offline or unreachable."
+                    miningSyncReady = meshMiningReady,
+                    syncStatusMessage = if (meshMiningReady) {
+                        "Bootstrap RPC unreachable; node is synced with $meshPeers P2P peer(s), mining stays available."
+                    } else {
+                        "Network bootstrap RPC is offline or unreachable."
+                    }
                 )
             }
         }
@@ -1989,6 +2034,7 @@ class ZSilentAppState(
                     syncRemainingBlocks = (it.networkHeight - response.endHeight).coerceAtLeast(0),
                     syncProgressPercent = syncProgressPercent(response.endHeight, it.networkHeight),
                     networkSynced = response.endHeight >= it.networkHeight,
+                    miningSyncReady = response.endHeight + MINING_SYNC_TOLERANCE_BLOCKS >= it.networkHeight,
                     syncStatusMessage = if (response.imported > 0) {
                         "Imported ${response.imported} block(s) from network bootstrap."
                     } else {

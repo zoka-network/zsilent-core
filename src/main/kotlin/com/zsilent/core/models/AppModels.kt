@@ -51,6 +51,26 @@ data class ChainHeightResponse(
     val height: Long = 0
 )
 
+// Local node's own view of its sync state (GET /sync/status). Unlike
+// NodeStats from the bootstrap RPC, target_height/lag here are fed by the
+// node's combined P2P-mesh + RPC sync machinery, so they stay meaningful
+// even when the centralized bootstrap endpoint is saturated or offline.
+@Serializable
+data class NodeSyncStatus(
+    val status: String = "",
+    @SerialName("ready_to_mine")
+    val readyToMine: Boolean = false,
+    @SerialName("local_height")
+    val localHeight: Long = 0,
+    @SerialName("target_height")
+    val targetHeight: Long = 0,
+    val lag: Long = 0,
+    @SerialName("connected_peers")
+    val connectedPeers: Long = 0,
+    @SerialName("min_peers")
+    val minPeers: Long = 0
+)
+
 @Serializable
 data class NodeStats(
     val height: Long = 0,

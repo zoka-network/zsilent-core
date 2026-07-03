@@ -1730,7 +1730,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             RuntimeProgressPanel(
                 title = "Node startup",
                 phase = if (ui.nodeStatus == ServiceStatus.Starting) "Launching node process" else "Waiting for RPC",
-                detail = if (ui.networkSynced) "Node chain is matched with the network. Mining can be enabled." else "The process is alive; ZSilent is waiting for node RPC, peer warmup and chain sync.",
+                detail = if (ui.miningSyncReady) "Node chain is close enough to the network head. Mining can be enabled." else "The process is alive; ZSilent is waiting for node RPC, peer warmup and chain sync.",
                 startedAtMillis = nodeProgressStartedAt,
                 rows = listOf(
                     "Node RPC" to if (ui.localRpcOnline) "online" else "waiting",
@@ -1763,7 +1763,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
             Panel(title = "Network state", meta = ZokaNetworkConfig.Network, modifier = Modifier.weight(1f)) {
                 KeyValueRow("Bootstrap RPC", if (ui.rpcOnline) ZokaNetworkConfig.displayUrl(ui.networkRpcUrl) else "offline")
-                KeyValueRow("Sync gate", if (ui.networkSynced) "mining enabled" else "mining locked")
+                KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
                 KeyValueRow("Connected peers", ui.stats.connectedPeers.toString())
                 KeyValueRow("Online miners", ui.stats.minersOnline.toString())
                 KeyValueRow("Emission", "%.4f ZKA".format(ui.stats.emissionZka))
@@ -1801,7 +1801,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         rewardAddress.startsWith("zka1") &&
         ui.sessionUnlocked &&
         parsedThreads != null &&
-        ui.networkSynced &&
+        ui.miningSyncReady &&
         ui.miningStatus != ServiceStatus.Starting &&
         !ui.mining.running &&
         !nodeChangingState
@@ -1831,7 +1831,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 )
             val miningOn = miningFullyOn || miningWarming
             val nodeOnline = ui.nodeStatus == ServiceStatus.Online
-            val miningPrereqs = nodeOnline && ui.networkSynced
+            val miningPrereqs = nodeOnline && ui.miningSyncReady
             val miningSwitchEnabled = if (miningOn) canStopMining else (canStart && miningPrereqs)
             val dotColorOn = Color(0xFF22C55E)
             val dotColorWarming = Color(0xFFEAB308)
@@ -1901,7 +1901,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 miningFullyOn && miningMeasuring -> "Mining is running. Measuring hashrate; the first sample lands after the first PoW solve. Switch off to return to node-only mode."
                 miningFullyOn -> "Mining is running with the node (integrated). Switch off to return to node-only mode."
                 !nodeOnline -> "Start the Node first in the Node section. Mining unlocks when the node is online."
-                !ui.networkSynced -> "Wait for node sync (${ui.syncRemainingBlocks} block(s) remaining). Mining unlocks when synced."
+                !ui.miningSyncReady -> "Wait for node sync (${ui.syncRemainingBlocks} block(s) remaining). Mining unlocks when the node is near the network head."
                 !rewardAddress.startsWith("zka1") -> "Pick a wallet with a zka1 address before mining."
                 !ui.sessionUnlocked -> "Unlock the wallet session first. ZSilent will reuse it for mining rewards."
                 parsedThreads == null -> "Set a valid number of mining threads."
@@ -1960,7 +1960,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             StatusCard(
                 "Status",
                 ui.miningStatus.name,
-                if (!ui.networkSynced) "sync locked" else if (miningFaulted) "check logs" else if (ui.miningControlledByApp) "ZSilent miner" else if (ui.localMiningEnabled || ui.mining.running) "node or external miner" else "idle",
+                if (!ui.miningSyncReady) "sync locked" else if (miningFaulted) "check logs" else if (ui.miningControlledByApp) "ZSilent miner" else if (ui.localMiningEnabled || ui.mining.running) "node or external miner" else "idle",
                 Modifier.weight(1f)
             )
             StatusCard("Hashrate", formatHashrate(effectiveHashrate), ui.mining.algorithm.ifBlank { "waiting" }, Modifier.weight(1f))
@@ -2530,7 +2530,7 @@ private fun SettingsAboutPage(ui: ZSilentUiState) {
         KeyValueRow("Node RPC", if (ui.localRpcOnline) "${ZokaNetworkConfig.displayUrl(ui.localRpcUrl)} online" else "offline")
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Network height", ui.networkHeight.toString())
-        KeyValueRow("Sync gate", if (ui.networkSynced) "mining enabled" else "mining locked")
+        KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
         KeyValueRow("Tor policy", if (ui.torOnly) "Tor-only" else if (ui.torEnabled) "Tor preferred" else "direct")
     }
 }
