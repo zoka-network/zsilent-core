@@ -133,6 +133,10 @@ data class ZSilentUiState(
     val localMiningEnabled: Boolean = false,
     val syncBusy: Boolean = false,
     val localRpcOnline: Boolean = false,
+    // Peers of THIS node (from the local node's /stats), distinct from
+    // `stats.connectedPeers` which is the bootstrap seed's peer count. The
+    // Node section shows this so "Connected peers" reflects your own node.
+    val localConnectedPeers: Long = 0,
     val networkRpcUrl: String = ZokaNetworkConfig.RemoteRpcUrl,
     val localRpcUrl: String = ZokaNetworkConfig.LocalRpcUrl,
     val bootstrapPeer: String = ZokaNetworkConfig.BootstrapMultiaddr,
@@ -1879,6 +1883,7 @@ class ZSilentAppState(
                     },
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
+                    localConnectedPeers = localStats?.connectedPeers ?: it.localConnectedPeers,
                     chainHeight = localHeight,
                     networkHeight = networkHeight,
                     syncRemainingBlocks = remaining,
@@ -1929,6 +1934,7 @@ class ZSilentAppState(
                         else -> it.nodeStatus
                     },
                     localMiningEnabled = localRpcMining,
+                    localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
                     chainHeight = localHeight,
                     networkSynced = false,
                     miningSyncReady = meshMiningReady,

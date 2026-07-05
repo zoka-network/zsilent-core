@@ -1764,7 +1764,8 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             Panel(title = "Network state", meta = ZokaNetworkConfig.Network, modifier = Modifier.weight(1f)) {
                 KeyValueRow("Bootstrap RPC", if (ui.rpcOnline) ZokaNetworkConfig.displayUrl(ui.networkRpcUrl) else "offline")
                 KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
-                KeyValueRow("Connected peers", ui.stats.connectedPeers.toString())
+                KeyValueRow("Your node peers", ui.localConnectedPeers.toString())
+                KeyValueRow("Network peers", ui.stats.connectedPeers.toString())
                 KeyValueRow("Online miners", ui.stats.minersOnline.toString())
                 KeyValueRow("Emission", "%.4f ZKA".format(ui.stats.emissionZka))
                 KeyValueRow("Miner state blocks", ui.mining.blocksMined.toString())
@@ -2510,7 +2511,7 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
     Panel(title = "Local node", meta = if (ui.localRpcOnline) "online" else "offline") {
         KeyValueRow("Local RPC", if (ui.localRpcOnline) "${ZokaNetworkConfig.displayUrl(ui.localRpcUrl)} online" else "offline")
         CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
-        KeyValueRow("Connected peers", ui.stats.connectedPeers.toString())
+        KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
         KeyValueRow("Network miners", ui.stats.minersOnline.toString())
     }
 }
