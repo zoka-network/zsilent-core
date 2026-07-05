@@ -13,11 +13,11 @@ on:
       node_version:
         description: "ZokaNetwork/ZokaNetwork release tag whose verified binaries to embed"
         required: false
-        default: "v1.6.0"
+        default: "v1.6.1"
       release_tag:
         description: "ZSilent release tag to (re)publish the artifacts to"
         required: false
-        default: "v1.6.0"
+        default: "v1.6.1"
 
 permissions:
   contents: write
@@ -49,7 +49,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ZokaNetwork/ZokaNetwork
-          ref: ${{ github.event.inputs.node_version || 'v1.6.0' }}
+          ref: ${{ github.event.inputs.node_version || 'v1.6.1' }}
           path: zoka-network
 
       # Embed the exact, verified binaries published in the ZokaNetwork release
@@ -63,15 +63,15 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          NODE_VERSION: ${{ github.event.inputs.node_version || 'v1.6.0' }}
+          NODE_VERSION: ${{ github.event.inputs.node_version || 'v1.6.1' }}
         run: |
           mkdir -p zoka-network/target/release
           cd zoka-network/target/release
           gh release download "$NODE_VERSION" --repo ZokaNetwork/ZokaNetwork \
             --pattern 'zoka.exe' --pattern 'zokahd.exe' --clobber
-          # Pinned v1.6.0 checksums — update these together with NODE_VERSION.
-          echo "6fc3de8feead8cced6a67f25e67aa68259c249e1e90621d6a3a844c55a31019e  zoka.exe"   | sha256sum -c -
-          echo "41bde12c97fa76caa2c5a1925aa659c38e63930e8d0cbe56dcb2d2478b780542  zokahd.exe" | sha256sum -c -
+          # Pinned v1.6.1 checksums — update these together with NODE_VERSION.
+          echo "00b2225bf469b44864b1532ba92580efc38bbec3d78917ee0021d966c532005f  zoka.exe"   | sha256sum -c -
+          echo "202fadd60f6eb81bc6b9adecf306821e9a301298e981c6f4ea8c82641e95b553  zokahd.exe" | sha256sum -c -
 
       # Linux publishes only `zoka` (no `zokahd`) as a release asset, while the
       # packaging requires both. Build both from the pinned release tag checked
