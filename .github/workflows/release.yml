@@ -1,19 +1,23 @@
 name: Release
 
+# Manual-dispatch only. A `push: tags` trigger used to auto-run this on every
+# vX.Y.Z tag and REBUILD the installers in CI, clobbering release assets that
+# were built + tested locally and uploaded by hand — and, worse, embedding the
+# node binary pinned by the default below (which lagged the app version). For a
+# release where the exact tested MSI must ship byte-for-byte, upload it by hand
+# and do NOT let a tag push silently rebuild it. Run this manually only when a
+# clean CI build is explicitly wanted.
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       node_version:
         description: "ZokaNetwork/ZokaNetwork release tag whose verified binaries to embed"
         required: false
-        default: "v1.5.0"
+        default: "v1.6.0"
       release_tag:
         description: "ZSilent release tag to (re)publish the artifacts to"
         required: false
-        default: "v1.5.0"
+        default: "v1.6.0"
 
 permissions:
   contents: write
@@ -45,7 +49,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ZokaNetwork/ZokaNetwork
-          ref: ${{ github.event.inputs.node_version || 'v1.5.0' }}
+          ref: ${{ github.event.inputs.node_version || 'v1.6.0' }}
           path: zoka-network
 
       # Embed the exact, verified binaries published in the ZokaNetwork release
@@ -59,15 +63,15 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          NODE_VERSION: ${{ github.event.inputs.node_version || 'v1.5.0' }}
+          NODE_VERSION: ${{ github.event.inputs.node_version || 'v1.6.0' }}
         run: |
           mkdir -p zoka-network/target/release
           cd zoka-network/target/release
           gh release download "$NODE_VERSION" --repo ZokaNetwork/ZokaNetwork \
             --pattern 'zoka.exe' --pattern 'zokahd.exe' --clobber
-          # Pinned v1.5.0 checksums — update these together with NODE_VERSION.
-          echo "c8df298cc7cd31da384534467eec042ce24fdd29a1f8b713cb4bed3fdf7767d4  zoka.exe"   | sha256sum -c -
-          echo "eda80eef674788617fa20808c72004623d860ba5910ef7a788916beadf18bc0e  zokahd.exe" | sha256sum -c -
+          # Pinned v1.6.0 checksums — update these together with NODE_VERSION.
+          echo "6fc3de8feead8cced6a67f25e67aa68259c249e1e90621d6a3a844c55a31019e  zoka.exe"   | sha256sum -c -
+          echo "41bde12c97fa76caa2c5a1925aa659c38e63930e8d0cbe56dcb2d2478b780542  zokahd.exe" | sha256sum -c -
 
       # Linux publishes only `zoka` (no `zokahd`) as a release asset, while the
       # packaging requires both. Build both from the pinned release tag checked
