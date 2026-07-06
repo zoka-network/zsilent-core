@@ -77,6 +77,12 @@ class NodeController(private val cli: ZokaCli) {
         _status.value = ServiceStatus.Starting
         val command = mutableListOf(
             "fullnode",
+            // The node defaults to a fluid streaming console (as of the
+            // ZokaNetwork node build that follows v1.6.1); ZSilent parses
+            // stdout for its own log panel (see streamLogs/DASHBOARD_NOISE
+            // below), which is tuned to the older full-screen dashboard's
+            // line format, so keep requesting that explicitly here.
+            "--dashboard",
             "--network", network,
             "--password-env", "ZSILENT_NODE_PASSWORD",
             "--power", power,
