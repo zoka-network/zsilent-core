@@ -24,6 +24,12 @@ val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
 val networkManifest = nodeRepoRoot.file("docs/mainnet-network.v1.json")
 val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
 val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")
+val torBundleDir = (findProperty("zsilent.torBundleDir") as String?)
+    ?.let { file(it) }
+    ?: nodeRepoRoot.dir("third_party/tor/windows-x86_64").asFile
+val requireTorBundle = (findProperty("zsilent.requireTorBundle") as String?)
+    ?.toBooleanStrictOrNull()
+    ?: false
 val windowsMsvcRuntimeDlls = listOf(
     "concrt140.dll",
     "msvcp140.dll",
@@ -71,6 +77,24 @@ val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
                     "Regenerate trusted setup before packaging."
             )
         }
+        if (hostOs.isWindows) {
+            val torExeCandidates = listOf(
+                File(torBundleDir, "tor.exe"),
+                File(torBundleDir, "Tor/tor.exe"),
+                File(torBundleDir, "tor/tor.exe"),
+                File(torBundleDir, "bin/tor.exe")
+            )
+            val hasTor = torExeCandidates.any { it.isFile }
+            if (requireTorBundle && !hasTor) {
+                throw GradleException(
+                    "Missing Tor Expert Bundle at ${torBundleDir.absolutePath}. " +
+                        "Prepare it first or pass -Pzsilent.torBundleDir=<dir>."
+                )
+            }
+            if (!hasTor) {
+                logger.warn("Tor Expert Bundle not found at ${torBundleDir.absolutePath}; managed Tor will require ZSILENT_TOR_BIN in this build.")
+            }
+        }
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     into(packageResourcesRoot.map { it.dir("common") })
@@ -79,6 +103,11 @@ val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
     if (hostOs.isWindows) {
         from(windowsMsvcRuntimeDlls.mapNotNull { dll -> windowsSystem32?.resolve(dll) }.filter { it.isFile }) {
             into("bin")
+        }
+        if (torBundleDir.exists()) {
+            from(torBundleDir) {
+                into("tor/windows-x86_64")
+            }
         }
     }
     from(networkManifest) { into("docs") }

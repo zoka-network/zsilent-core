@@ -270,8 +270,11 @@ data class PersistedSetup(
     val balancesHidden: Boolean = false,
     val autoLockMinutes: Int = 10,
     val darkTheme: Boolean = true,
-    val torEnabled: Boolean = false,
+    val torEnabled: Boolean = true,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",
-    val torSocksPort: Int = 9050
+    val torSocksPort: Int = 19050,
+    val managedTorEnabled: Boolean = true,
+    val onionSeedEnabled: Boolean = false,
+    val managedTorSocksPort: Int = 19050
 )

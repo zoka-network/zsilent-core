@@ -2028,14 +2028,17 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     var hostText by remember(ui.torSocksHost) { mutableStateOf(ui.torSocksHost) }
     var portText by remember(ui.torSocksPort) { mutableStateOf(ui.torSocksPort.toString()) }
     ScreenScaffold("Privacy", "Privacy controls for secrets, logs and display safety.") {
-        Panel(title = "Tor privacy", meta = if (ui.torOnly) "tor-only" else if (ui.torEnabled) "enabled" else "off") {
+        Panel(title = "Tor privacy", meta = if (ui.torOnly) "tor-only" else if (ui.torEnabled) ui.torStatus.name.lowercase() else "off") {
             ToggleRow("Enable Tor proxy for node networking", ui.torEnabled, appState::setTorEnabled)
+            ToggleRow("Managed Tor bundled with ZSilent", ui.managedTorEnabled, appState::setManagedTorEnabled)
             ToggleRow("Require Tor-only seed connections", ui.torOnly, appState::setTorOnly)
+            ToggleRow("Publish this node as an onion seed", ui.onionSeedEnabled, appState::setOnionSeedEnabled)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = hostText,
                     onValueChange = { hostText = it; appState.setTorSocksHost(it) },
                     label = { Text("SOCKS host") }, singleLine = true,
+                    enabled = !ui.managedTorEnabled,
                     colors = zFieldColors(), modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
@@ -2045,7 +2048,22 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     colors = zFieldColors(), modifier = Modifier.weight(1f)
                 )
             }
+            KeyValueRow("Managed Tor", ui.torStatus.name.lowercase())
+            ui.torError?.takeIf { it.isNotBlank() }?.let { ErrorText(it) }
+            if (ui.torOnionHost.isNotBlank()) {
+                CopyableKeyValueRow("Onion host", ui.torOnionHost)
+            } else {
+                KeyValueRow("Onion host", "not created")
+            }
+            if (ui.torSeedAddress.isNotBlank()) {
+                CopyableKeyValueRow("Seed address", ui.torSeedAddress)
+            } else if (ui.torOnionMultiaddr.isNotBlank()) {
+                CopyableKeyValueRow("Onion address", ui.torOnionMultiaddr)
+            } else {
+                KeyValueRow("Seed address", "waiting for node")
+            }
             KeyValueRow("Launch flag", if (ui.torEnabled) "--tor-proxy ${ui.torSocksHost}:${ui.torSocksPort}" else "not used")
+            KeyValueRow("External address", ui.torOnionMultiaddr.ifBlank { "not advertised" })
             KeyValueRow("Clearnet seeds", if (ui.torOnly) "blocked by policy" else "allowed by node config")
         }
         Panel(title = "Display privacy", meta = if (ui.balancesHidden) "hidden" else "visible") {

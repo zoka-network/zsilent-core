@@ -23,6 +23,7 @@ class NodeController(private val cli: ZokaCli) {
     private var stopRequested = false
     private var lastStartParams: StartParams? = null
     private var restartAttempt = 0
+    val readyFile: File = File(cli.dataRoot, "zsilent/fullnode-ready.json")
 
     private data class StartParams(
         val password: String,
@@ -32,7 +33,8 @@ class NodeController(private val cli: ZokaCli) {
         val autoMine: Boolean,
         val threads: Int?,
         val torProxy: String,
-        val torOnly: Boolean
+        val torOnly: Boolean,
+        val externalAddrs: List<String>
     )
 
     private val _status = MutableStateFlow(ServiceStatus.Offline)
@@ -49,7 +51,8 @@ class NodeController(private val cli: ZokaCli) {
         autoMine: Boolean = false,
         threads: Int? = null,
         torProxy: String = "",
-        torOnly: Boolean = false
+        torOnly: Boolean = false,
+        externalAddrs: List<String> = emptyList()
     ) {
         val binary = cli.zoka
         if (process?.isAlive == true) {
@@ -71,10 +74,18 @@ class NodeController(private val cli: ZokaCli) {
             _logs.tryEmit(RuntimeLog("node", "This zokahd binary does not support Tor flags. Rebuild with cargo build --release --features randomx."))
             return
         }
+        val cleanExternalAddrs = externalAddrs.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        if (cleanExternalAddrs.isNotEmpty() && !supportsExternalAddrFlag(binary)) {
+            _status.value = ServiceStatus.Error
+            _logs.tryEmit(RuntimeLog("node", "This zoka binary does not support --external-addr. Rebuild the Rust node before enabling managed onion reachability."))
+            return
+        }
 
         stopRequested = false
-        lastStartParams = StartParams(password, address, network, power, autoMine, threads, torProxy, torOnly)
+        lastStartParams = StartParams(password, address, network, power, autoMine, threads, torProxy, torOnly, cleanExternalAddrs)
         _status.value = ServiceStatus.Starting
+        readyFile.parentFile?.mkdirs()
+        if (readyFile.exists()) readyFile.delete()
         val command = mutableListOf(
             "fullnode",
             // The node defaults to a fluid streaming console (as of the
@@ -88,7 +99,8 @@ class NodeController(private val cli: ZokaCli) {
             "--power", power,
             "--allow-isolated-start",
             "--sync-warmup-secs", "30",
-            "--sync-rebroadcast-recent-blocks", "32"
+            "--sync-rebroadcast-recent-blocks", "32",
+            "--ready-file", readyFile.absolutePath
         )
         if (ZokaNetworkConfig.ManifestPath.isNotBlank()) {
             command += listOf("--network-config", ZokaNetworkConfig.ManifestPath)
@@ -113,6 +125,9 @@ class NodeController(private val cli: ZokaCli) {
         }
         if (torOnly) {
             command += "--tor-only"
+        }
+        cleanExternalAddrs.forEach { addr ->
+            command += listOf("--external-addr", addr)
         }
         val builder = cli.processBuilder(binary, command)
         builder.environment()["ZSILENT_NODE_PASSWORD"] = password
@@ -186,7 +201,8 @@ class NodeController(private val cli: ZokaCli) {
             autoMine = params.autoMine,
             threads = params.threads,
             torProxy = params.torProxy,
-            torOnly = params.torOnly
+            torOnly = params.torOnly,
+            externalAddrs = params.externalAddrs
         )
     }
 
@@ -274,6 +290,19 @@ class NodeController(private val cli: ZokaCli) {
 
     private fun supportsTorFlags(binary: File): Boolean {
         return helpContainsTorFlags(binary, listOf("fullnode", "--help"))
+    }
+
+    private fun supportsExternalAddrFlag(binary: File): Boolean {
+        return runCatching {
+            cli.withZokaCommandLock {
+                val child = cli.processBuilder(binary, listOf("fullnode", "--help"))
+                    .redirectErrorStream(true)
+                    .start()
+                val output = child.inputStream.bufferedReader().readText()
+                child.waitFor()
+                output.contains("--external-addr")
+            }
+        }.getOrDefault(false)
     }
 
     private fun helpContainsTorFlags(binary: File, args: List<String> = listOf("--help")): Boolean {

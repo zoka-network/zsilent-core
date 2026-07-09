@@ -6,6 +6,8 @@ import com.zsilent.core.core.mining.MiningController
 import com.zsilent.core.core.privacy.PrivacyGuards
 import com.zsilent.core.core.process.ZokaProcessKiller
 import com.zsilent.core.core.storage.SetupStore
+import com.zsilent.core.core.tor.TorLaunchConfig
+import com.zsilent.core.core.tor.TorSupervisor
 import com.zsilent.core.core.wallet.WalletService
 import com.zsilent.core.core.wallet.WalletBackupResult
 import com.zsilent.core.core.wallet.WalletCreationResult
@@ -40,6 +42,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.RandomAccessFile
@@ -74,10 +80,18 @@ data class ZSilentUiState(
     val loginBusy: Boolean = false,
     val loginError: String? = null,
     val lockMessage: String? = null,
-    val torEnabled: Boolean = false,
+    val torEnabled: Boolean = true,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",
-    val torSocksPort: Int = 9050,
+    val torSocksPort: Int = 19050,
+    val managedTorEnabled: Boolean = true,
+    val onionSeedEnabled: Boolean = false,
+    val managedTorSocksPort: Int = 19050,
+    val torStatus: ServiceStatus = ServiceStatus.Offline,
+    val torOnionHost: String = "",
+    val torOnionMultiaddr: String = "",
+    val torSeedAddress: String = "",
+    val torError: String? = null,
     val lastActivityMillis: Long = System.currentTimeMillis(),
     val nodeStatus: ServiceStatus = ServiceStatus.Offline,
     val miningStatus: ServiceStatus = ServiceStatus.Offline,
@@ -171,6 +185,7 @@ class ZSilentAppState(
     val localRpc: ZokaRpcClient,
     val nodeController: NodeController,
     val miningController: MiningController,
+    val torSupervisor: TorSupervisor = TorSupervisor(cli),
     val walletService: WalletService = WalletService(cli),
     private val setupStore: SetupStore = SetupStore.default()
 ) {
@@ -229,6 +244,9 @@ class ZSilentAppState(
                     torOnly = setup.torOnly,
                     torSocksHost = setup.torSocksHost,
                     torSocksPort = setup.torSocksPort,
+                    managedTorEnabled = setup.managedTorEnabled,
+                    onionSeedEnabled = setup.onionSeedEnabled,
+                    managedTorSocksPort = setup.managedTorSocksPort,
                     appLocked = true,
                     walletLocked = true,
                     lockMessage = "Unlock ${defaultWallet} to continue.",
@@ -256,6 +274,26 @@ class ZSilentAppState(
         }
         scope.launch {
             nodeController.logs.collect { log ->
+                appendLog(log)
+            }
+        }
+        scope.launch {
+            torSupervisor.state.collectLatest { tor ->
+                update {
+                    val managedOrActive = it.managedTorEnabled || tor.status != ServiceStatus.Offline
+                    it.copy(
+                        torStatus = tor.status,
+                        torSocksHost = if (managedOrActive) tor.socksHost else it.torSocksHost,
+                        torSocksPort = if (managedOrActive) tor.socksPort else it.torSocksPort,
+                        torOnionHost = tor.onionHost,
+                        torOnionMultiaddr = tor.onionMultiaddr,
+                        torError = tor.error
+                    )
+                }
+            }
+        }
+        scope.launch {
+            torSupervisor.logs.collect { log ->
                 appendLog(log)
             }
         }
@@ -424,7 +462,10 @@ class ZSilentAppState(
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
-                    torSocksPort = snapshot.torSocksPort
+                    torSocksPort = snapshot.torSocksPort,
+                    managedTorEnabled = snapshot.managedTorEnabled,
+                    onionSeedEnabled = snapshot.onionSeedEnabled,
+                    managedTorSocksPort = snapshot.managedTorSocksPort
                 )
             )
         }
@@ -509,7 +550,10 @@ class ZSilentAppState(
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost,
-                torSocksPort = snapshot.torSocksPort
+                torSocksPort = snapshot.torSocksPort,
+                managedTorEnabled = snapshot.managedTorEnabled,
+                onionSeedEnabled = snapshot.onionSeedEnabled,
+                managedTorSocksPort = snapshot.managedTorSocksPort
             )
         )
         update {
@@ -573,7 +617,10 @@ class ZSilentAppState(
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
-                    torSocksPort = snapshot.torSocksPort
+                    torSocksPort = snapshot.torSocksPort,
+                    managedTorEnabled = snapshot.managedTorEnabled,
+                    onionSeedEnabled = snapshot.onionSeedEnabled,
+                    managedTorSocksPort = snapshot.managedTorSocksPort
                 )
             )
         }
@@ -604,7 +651,10 @@ class ZSilentAppState(
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
-                    torSocksPort = snapshot.torSocksPort
+                    torSocksPort = snapshot.torSocksPort,
+                    managedTorEnabled = snapshot.managedTorEnabled,
+                    onionSeedEnabled = snapshot.onionSeedEnabled,
+                    managedTorSocksPort = snapshot.managedTorSocksPort
                 )
             )
         }
@@ -615,8 +665,12 @@ class ZSilentAppState(
             it.copy(
                 torEnabled = enabled,
                 torOnly = if (enabled) it.torOnly else false,
+                onionSeedEnabled = if (enabled) it.onionSeedEnabled else false,
                 lastActivityMillis = System.currentTimeMillis()
             )
+        }
+        if (!enabled) {
+            torSupervisor.stop()
         }
         persistCurrentSetup()
         appendLog(RuntimeLog("privacy", if (enabled) "Tor routing preference enabled." else "Tor routing preference disabled."))
@@ -634,6 +688,39 @@ class ZSilentAppState(
         appendLog(RuntimeLog("privacy", if (enabled) "Tor-only network policy enabled." else "Tor-only network policy disabled."))
     }
 
+    fun setManagedTorEnabled(enabled: Boolean) {
+        update {
+            it.copy(
+                managedTorEnabled = enabled,
+                torEnabled = if (enabled) true else it.torEnabled,
+                torSocksHost = if (enabled) "127.0.0.1" else it.torSocksHost,
+                torSocksPort = if (enabled) it.managedTorSocksPort else it.torSocksPort,
+                onionSeedEnabled = if (enabled) it.onionSeedEnabled else false,
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        if (!enabled) {
+            torSupervisor.stop()
+        }
+        persistCurrentSetup()
+        appendLog(RuntimeLog("privacy", if (enabled) "Managed Tor enabled." else "Managed Tor disabled; external SOCKS settings will be used if Tor stays enabled."))
+    }
+
+    fun setOnionSeedEnabled(enabled: Boolean) {
+        update {
+            it.copy(
+                torEnabled = if (enabled) true else it.torEnabled,
+                managedTorEnabled = if (enabled) true else it.managedTorEnabled,
+                onionSeedEnabled = enabled,
+                torSocksHost = if (enabled) "127.0.0.1" else it.torSocksHost,
+                torSocksPort = if (enabled) it.managedTorSocksPort else it.torSocksPort,
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        persistCurrentSetup()
+        appendLog(RuntimeLog("privacy", if (enabled) "Onion seed opt-in enabled." else "Onion seed opt-in disabled."))
+    }
+
     fun setTorSocksHost(host: String) {
         update {
             it.copy(
@@ -649,6 +736,7 @@ class ZSilentAppState(
         update {
             it.copy(
                 torSocksPort = parsed,
+                managedTorSocksPort = if (it.managedTorEnabled) parsed else it.managedTorSocksPort,
                 lastActivityMillis = System.currentTimeMillis()
             )
         }
@@ -827,7 +915,10 @@ class ZSilentAppState(
                     torEnabled = current.torEnabled,
                     torOnly = current.torOnly,
                     torSocksHost = current.torSocksHost,
-                    torSocksPort = current.torSocksPort
+                    torSocksPort = current.torSocksPort,
+                    managedTorEnabled = current.managedTorEnabled,
+                    onionSeedEnabled = current.onionSeedEnabled,
+                    managedTorSocksPort = current.managedTorSocksPort
                 )
             )
         }
@@ -959,7 +1050,10 @@ class ZSilentAppState(
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
-                        torSocksPort = current.torSocksPort
+                        torSocksPort = current.torSocksPort,
+                        managedTorEnabled = current.managedTorEnabled,
+                        onionSeedEnabled = current.onionSeedEnabled,
+                        managedTorSocksPort = current.managedTorSocksPort
                     )
                 )
                 update {
@@ -1103,7 +1197,10 @@ class ZSilentAppState(
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
-                        torSocksPort = current.torSocksPort
+                        torSocksPort = current.torSocksPort,
+                        managedTorEnabled = current.managedTorEnabled,
+                        onionSeedEnabled = current.onionSeedEnabled,
+                        managedTorSocksPort = current.managedTorSocksPort
                     )
                 )
                 update {
@@ -1471,6 +1568,7 @@ class ZSilentAppState(
 
     fun resetSetup() {
         clearSessionPassword()
+        torSupervisor.stop()
         setupStore.clear()
         update {
             ZSilentUiState(
@@ -1486,6 +1584,7 @@ class ZSilentAppState(
         return runCatching {
             integratedMiningRequested = false
             nodeController.stop()
+            torSupervisor.stop()
             miningController.close()
             clearSessionPassword()
             setupStore.clear()
@@ -1629,21 +1728,75 @@ class ZSilentAppState(
             appendLog(RuntimeLog("mining", "Mining locked until sync completes: node height ${snapshot.chainHeight}, network height ${snapshot.networkHeight}, remaining ${snapshot.syncRemainingBlocks}. Starting node-only sync."))
         }
         integratedMiningRequested = autoMine && snapshot.miningSyncReady
-        try {
+        val passwordText = try {
+            String(password)
+        } finally {
+            password.fill('\u0000')
+        }
+        scope.launch {
+            var torProxy = if (snapshot.torEnabled) "${snapshot.torSocksHost}:${snapshot.torSocksPort}" else ""
+            var externalAddrs = emptyList<String>()
+
+            if (snapshot.torEnabled && snapshot.managedTorEnabled) {
+                val torResult = runCatching {
+                    torSupervisor.start(
+                        TorLaunchConfig(
+                            socksHost = "127.0.0.1",
+                            socksPort = snapshot.managedTorSocksPort.coerceIn(1, 65535)
+                        )
+                    )
+                }
+
+                torResult.onSuccess { tor ->
+                    torProxy = "${tor.socksHost}:${tor.socksPort}"
+                    externalAddrs = listOf(tor.onionMultiaddr)
+                    update {
+                        it.copy(
+                            torEnabled = true,
+                            torSocksHost = tor.socksHost,
+                            torSocksPort = tor.socksPort,
+                            managedTorSocksPort = tor.socksPort,
+                            torOnionHost = tor.onionHost,
+                            torOnionMultiaddr = tor.onionMultiaddr,
+                            torSeedAddress = tor.onionMultiaddr,
+                            torError = null
+                        )
+                    }
+                }.onFailure { error ->
+                    val message = safeLogMessage(error)
+                    update { it.copy(torStatus = ServiceStatus.Error, torError = message) }
+                    appendLog(RuntimeLog("tor", "Managed Tor failed: $message"))
+                    if (snapshot.torOnly || snapshot.onionSeedEnabled) {
+                        integratedMiningRequested = false
+                        update {
+                            it.copy(
+                                nodeStatus = ServiceStatus.Error,
+                                miningStatus = if (autoMine) ServiceStatus.Error else it.miningStatus
+                            )
+                        }
+                        appendLog(RuntimeLog("node", "Node start blocked because Tor is required by the active privacy/seed policy."))
+                        return@launch
+                    }
+                    torProxy = ""
+                    externalAddrs = emptyList()
+                    appendLog(RuntimeLog("node", "Continuing in direct TCP mode because managed Tor is optional in hybrid mode."))
+                }
+            }
+
             nodeController.start(
-                password = String(password),
+                password = passwordText,
                 address = resolveActiveWalletAddress(snapshot),
                 network = ZokaNetworkConfig.Network,
                 autoMine = false,
                 threads = threads,
-                torProxy = if (snapshot.torEnabled) "${snapshot.torSocksHost}:${snapshot.torSocksPort}" else "",
-                torOnly = snapshot.torOnly
+                torProxy = torProxy,
+                torOnly = snapshot.torOnly,
+                externalAddrs = externalAddrs
             )
-        } finally {
-            password.fill('\u0000')
-        }
-        if (autoMine && snapshot.miningSyncReady) {
-            scope.launch {
+            if (externalAddrs.isNotEmpty()) {
+                watchNodeReadySeedAddress()
+            }
+            if (autoMine && snapshot.miningSyncReady) {
                 var enabled = false
                 repeat(30) {
                     if (!enabled) {
@@ -1665,6 +1818,37 @@ class ZSilentAppState(
         integratedMiningRequested = false
         update { it.copy(localMiningEnabled = false, miningDiagnostic = null) }
         nodeController.stop()
+        if (_uiState.value.managedTorEnabled) {
+            torSupervisor.stop()
+        }
+    }
+
+    private fun watchNodeReadySeedAddress() {
+        scope.launch {
+            repeat(180) {
+                val seedAddress = readOnionSeedAddress(nodeController.readyFile)
+                if (seedAddress.isNotBlank()) {
+                    update { it.copy(torSeedAddress = seedAddress) }
+                    appendLog(RuntimeLog("tor", "Onion seed address ready."))
+                    return@launch
+                }
+                delay(500)
+            }
+        }
+    }
+
+    private fun readOnionSeedAddress(file: File): String {
+        if (!file.isFile) return ""
+        return runCatching {
+            val root = json.parseToJsonElement(file.readText()).jsonObject
+            val seedAddresses = root["seed_addresses"]
+                ?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                .orEmpty()
+            seedAddresses.firstOrNull { it.startsWith("/onion3/") }
+                ?: root["seed_address"]?.jsonPrimitive?.contentOrNull?.takeIf { it.startsWith("/onion3/") }
+                ?: ""
+        }.getOrDefault("")
     }
 
     fun syncNow() {
@@ -1793,6 +1977,7 @@ class ZSilentAppState(
         clearSessionPassword()
         miningController.close()
         nodeController.close()
+        torSupervisor.stop()
         ZokaProcessKiller.terminateManagedZokaProcesses(cli)
         rpc.close()
         localRpc.close()
@@ -2151,6 +2336,7 @@ class ZSilentAppState(
         // Kill all processes when closing wallet session
         miningController.close()
         nodeController.close()
+        torSupervisor.stop()
         ZokaProcessKiller.terminateManagedZokaProcesses(cli)
         update {
             it.copy(
@@ -2440,7 +2626,10 @@ class ZSilentAppState(
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost.ifBlank { "127.0.0.1" },
-                torSocksPort = snapshot.torSocksPort.coerceIn(1, 65535)
+                torSocksPort = snapshot.torSocksPort.coerceIn(1, 65535),
+                managedTorEnabled = snapshot.managedTorEnabled,
+                onionSeedEnabled = snapshot.onionSeedEnabled,
+                managedTorSocksPort = snapshot.managedTorSocksPort.coerceIn(1, 65535)
             )
         )
     }
