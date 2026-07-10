@@ -67,7 +67,7 @@ class TorSupervisor(private val cli: ZokaCli) {
         val dataDir = File(torRoot, "data").apply { mkdirs() }
         val hiddenServiceDir = File(torRoot, "zoka-p2p").apply { mkdirs() }
         val torrc = File(torRoot, "torrc")
-        writeTorrc(torrc, dataDir, hiddenServiceDir, config)
+        writeTorrc(torrc, dataDir, hiddenServiceDir, config, torExe.parentFile)
 
         stopProcessOnly()
         bootstrapped = false
@@ -192,19 +192,52 @@ class TorSupervisor(private val cli: ZokaCli) {
         torrc: File,
         dataDir: File,
         hiddenServiceDir: File,
-        config: TorLaunchConfig
+        config: TorLaunchConfig,
+        bundleDir: File?
     ) {
         torrc.parentFile?.mkdirs()
-        torrc.writeText(
-            """
-            SocksPort ${config.socksHost}:${config.socksPort}
-            DataDirectory ${torPath(dataDir)}
-            HiddenServiceDir ${torPath(hiddenServiceDir)}
-            HiddenServiceVersion 3
-            HiddenServicePort ${config.hiddenServiceVirtualPort} ${config.hiddenServiceTargetHost}:${config.hiddenServiceTargetPort}
-            Log notice stdout
-            """.trimIndent() + "\n"
-        )
+        torrc.writeText(buildTorrcContent(dataDir, hiddenServiceDir, config, bundleDir))
+    }
+
+    companion object {
+        /// Pure torrc builder, split out from the file write so it can be
+        /// unit-tested without launching Tor.
+        internal fun buildTorrcContent(
+            dataDir: File,
+            hiddenServiceDir: File,
+            config: TorLaunchConfig,
+            bundleDir: File?
+        ): String {
+            // The Expert Bundle ships geoip/geoip6 next to tor.exe. Point Tor
+            // at them explicitly: otherwise it resolves the default GeoIPFile
+            // path relative to the working directory, fails to find it, and
+            // logs a warning on every start. Only emitted when the files are
+            // actually present so a geoip-less bundle still produces a valid
+            // torrc.
+            val geoipLines = buildString {
+                bundleDir?.let { dir ->
+                    File(dir, "geoip").takeIf { it.isFile }?.let {
+                        append("GeoIPFile ${torPath(it)}\n")
+                    }
+                    File(dir, "geoip6").takeIf { it.isFile }?.let {
+                        append("GeoIPv6File ${torPath(it)}\n")
+                    }
+                }
+            }
+            return """
+                SocksPort ${config.socksHost}:${config.socksPort}
+                DataDirectory ${torPath(dataDir)}
+                HiddenServiceDir ${torPath(hiddenServiceDir)}
+                HiddenServiceVersion 3
+                HiddenServicePort ${config.hiddenServiceVirtualPort} ${config.hiddenServiceTargetHost}:${config.hiddenServiceTargetPort}
+                Log notice stdout
+            """.trimIndent() + "\n" + geoipLines
+        }
+
+        private fun torPath(file: File): String {
+            val path = file.absolutePath.replace("\\", "/")
+            return if (path.any { it.isWhitespace() }) "\"$path\"" else path
+        }
     }
 
     private suspend fun streamLogs(child: Process) {
@@ -244,11 +277,6 @@ class TorSupervisor(private val cli: ZokaCli) {
                 socket.connect(InetSocketAddress(host, port), 350)
             }
         }.isSuccess
-    }
-
-    private fun torPath(file: File): String {
-        val path = file.absolutePath.replace("\\", "/")
-        return if (path.any { it.isWhitespace() }) "\"$path\"" else path
     }
 
     private fun File.readTextIfExists(): String? {

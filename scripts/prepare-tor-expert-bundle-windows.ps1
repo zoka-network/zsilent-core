@@ -18,7 +18,14 @@ if ([string]::IsNullOrWhiteSpace($OutDir)) {
     $OutDir = Join-Path $PSScriptRoot "..\..\third_party\tor\windows-x86_64"
 }
 
-$resolvedOut = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutDir))
+# Resolve OutDir whether it was passed absolute or relative. Joining an
+# already-absolute path onto the CWD produces an invalid path (e.g.
+# C:\cwd\C:\dest), so anchor on the CWD only for relative inputs.
+if ([System.IO.Path]::IsPathRooted($OutDir)) {
+    $resolvedOut = [System.IO.Path]::GetFullPath($OutDir)
+} else {
+    $resolvedOut = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutDir))
+}
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("zsilent-tor-" + [Guid]::NewGuid().ToString("N"))
 $archive = Join-Path $work "tor-expert-bundle.tar.gz"
 $extract = Join-Path $work "extract"
@@ -53,7 +60,12 @@ try {
         Write-Host "GPG signature verified."
     }
 
-    tar -xzf $archive -C $extract
+    # Use Windows' native bsdtar (System32\tar.exe) explicitly. A Git-Bash /
+    # MSYS `tar` earlier on PATH chokes on Windows-style extract paths, so
+    # don't rely on bare `tar` resolution.
+    $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
+    if (-not (Test-Path $tarExe)) { $tarExe = "tar" }
+    & $tarExe -xzf $archive -C $extract
     if ($LASTEXITCODE -ne 0) {
         throw "tar extraction failed"
     }
@@ -70,6 +82,19 @@ try {
 
     $bundleRoot = $torExe.Directory.FullName
     Copy-Item -Path (Join-Path $bundleRoot "*") -Destination $resolvedOut -Recurse -Force
+
+    # The Expert Bundle ships geoip/geoip6 in a sibling `data/` folder next to
+    # `tor/`. Tor runs without them but logs "Unable to open GEOIP file" and
+    # disables geoip features; copy them alongside tor.exe so the managed
+    # instance starts clean. torrc-defaults is intentionally skipped -- the
+    # supervisor passes its own -f torrc.
+    $dataDir = Join-Path (Split-Path $bundleRoot -Parent) "data"
+    foreach ($geo in @("geoip", "geoip6")) {
+        $src = Join-Path $dataDir $geo
+        if (Test-Path $src) {
+            Copy-Item -Path $src -Destination (Join-Path $resolvedOut $geo) -Force
+        }
+    }
     Write-Host "Prepared Tor bundle at $resolvedOut"
 }
 finally {

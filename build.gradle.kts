@@ -132,6 +132,12 @@ dependencies {
 
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.zxing:javase:3.5.3")
+
+    testImplementation(kotlin("test"))
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
 }
 
 compose.desktop {
@@ -139,7 +145,10 @@ compose.desktop {
         mainClass = "com.zsilent.core.MainKt"
         jvmArgs += listOf(
             "-Dzsilent.version=$releaseVersion",
-            "-Dzsilent.bootstrapMultiaddr=/ip4/159.223.119.216/tcp/28080"
+            // DNS seed, not a hardcoded IP -- the old DigitalOcean seed IP was
+            // decommissioned 2026-07-09; DNS lets the seed host rotate without
+            // a rebuild.
+            "-Dzsilent.bootstrapMultiaddr=/dns4/seed1.zoka.network/tcp/28080"
         )
 
         nativeDistributions {
