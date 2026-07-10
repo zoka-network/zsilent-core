@@ -224,6 +224,13 @@ class NodeController(private val cli: ZokaCli) {
     private suspend fun streamLogs(child: Process) {
         BufferedReader(InputStreamReader(child.inputStream)).useLines { lines ->
             lines.forEach { line ->
+                // Drop repetitive network churn (failed seed dials, transport
+                // negotiation, warmup retries) BEFORE sanitizing. In a hybrid
+                // Tor+TCP node these fire many times a second while peers are
+                // still being found and flooded the panel; sanitize() also
+                // rewrites anything with "seed" to a redaction marker, so
+                // filtering after it can't tell noise apart.
+                if (isNetworkChurn(line)) return@forEach
                 val clean = sanitize(line)
                 if (clean.isNotBlank() && !shouldDropLine(clean)) {
                     _logs.tryEmit(RuntimeLog("node", clean))
@@ -234,12 +241,21 @@ class NodeController(private val cli: ZokaCli) {
 
     private fun sanitize(line: String): String {
         val noAnsi = line.replace(Regex("\\[[;?0-9]*[ -/]*[@-~]"), "")
-        val sensitive = listOf("seed", "mnemonic", "private key", "spending", "password", "secret")
+        val sensitive = listOf(
+            "seed phrase", "recovery phrase", "mnemonic",
+            "private key", "spend key", "scan key", "spending key",
+            "password", "secret"
+        )
         return if (sensitive.any { noAnsi.contains(it, ignoreCase = true) }) {
             "[redacted sensitive log line]"
         } else {
             noAnsi.trim()
         }
+    }
+
+    private fun isNetworkChurn(rawLine: String): Boolean {
+        val stripped = rawLine.replace(Regex("\\[[;?0-9]*[ -/]*[@-~]"), "")
+        return NETWORK_CHURN_MARKERS.any { stripped.contains(it, ignoreCase = true) }
     }
 
     private fun shouldDropLine(line: String): Boolean {
@@ -249,6 +265,24 @@ class NodeController(private val cli: ZokaCli) {
     }
 
     companion object {
+        // Repetitive, non-actionable p2p connection churn. Dropped from the
+        // panel entirely (the fluid mining console / dashboard summary line
+        // still shows the aggregate peer count and last event).
+        private val NETWORK_CHURN_MARKERS = listOf(
+            "seed reconnect dial failed",
+            "seed reconnect warmup failed",
+            "seed dial started",
+            "Tor mode only allows",
+            "Outgoing peer connection error",
+            "Incoming peer connection error",
+            "Failed to negotiate transport",
+            "Unsupported resolved address",
+            "failed to add Kademlia peer",
+            "connection closed while pumping",
+            "keep-alive timeout",
+            "tried to dial local peer"
+        )
+
         private val DASHBOARD_NOISE = listOf(
             "ZOKA Fullnode",
             "Session uptime",

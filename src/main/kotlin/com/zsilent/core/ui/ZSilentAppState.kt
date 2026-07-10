@@ -677,19 +677,23 @@ class ZSilentAppState(
     }
 
     /// Master switch for the simplified Privacy UI: a single "connect over Tor
-    /// (.onion)" toggle. ON enables managed Tor AND tor-only, so the node
-    /// bootstraps purely over onion and never interleaves failed clearnet dial
-    /// attempts into the mining console (the mixed onion+TCP output was the
-    /// noise the user asked us to remove). OFF turns Tor off entirely and
-    /// falls back to plain clearnet/TCP. The old per-flag toggles and the
-    /// manual SOCKS host/port fields are gone from the UI; managed Tor always
+    /// (.onion)" toggle. ON enables managed Tor in HYBRID mode -- the node is
+    /// reachable over its onion (no open port) AND can still dial clearnet/TCP
+    /// seeds, so it isn't left isolated when the only onion seed on the network
+    /// is itself (the case while the network is small). Deliberately NOT
+    /// tor-only: tor-only left the node unable to reach any peer and, combined
+    /// with the managed-Tor bootstrap gate, blocked the node from starting at
+    /// all. The mixed onion+TCP dial noise that tor-only was meant to hide is
+    /// instead filtered out of the log panel (see NodeController.isNetworkChurn).
+    /// OFF turns Tor off entirely and falls back to plain clearnet/TCP. The old
+    /// per-flag toggles and manual SOCKS fields are gone; managed Tor always
     /// uses 127.0.0.1:<managedTorSocksPort>.
     fun setTorOnionMode(enabled: Boolean) {
         update {
             it.copy(
                 torEnabled = enabled,
                 managedTorEnabled = enabled,
-                torOnly = enabled,
+                torOnly = false,
                 torSocksHost = "127.0.0.1",
                 torSocksPort = if (enabled) it.managedTorSocksPort else it.torSocksPort,
                 onionSeedEnabled = if (enabled) it.onionSeedEnabled else false,
@@ -703,7 +707,7 @@ class ZSilentAppState(
         appendLog(
             RuntimeLog(
                 "privacy",
-                if (enabled) "Tor onion mode enabled (managed Tor, onion-only)."
+                if (enabled) "Tor onion mode enabled (managed Tor, hybrid onion + clearnet)."
                 else "Tor onion mode disabled (direct clearnet)."
             )
         )
@@ -1796,23 +1800,19 @@ class ZSilentAppState(
                         )
                     }
                 }.onFailure { error ->
+                    // Never block node startup on Tor. Hybrid mode means the
+                    // node can run over clearnet even if managed Tor didn't come
+                    // up (Tor bootstrap can be slow or the network overloaded);
+                    // it just won't advertise its onion this run. Previously a
+                    // Tor failure with tor-only/onion-seed set aborted startup
+                    // entirely, leaving the node switch stuck in Error -- the
+                    // node must always at least start.
                     val message = safeLogMessage(error)
                     update { it.copy(torStatus = ServiceStatus.Error, torError = message) }
                     appendLog(RuntimeLog("tor", "Managed Tor failed: $message"))
-                    if (snapshot.torOnly || snapshot.onionSeedEnabled) {
-                        integratedMiningRequested = false
-                        update {
-                            it.copy(
-                                nodeStatus = ServiceStatus.Error,
-                                miningStatus = if (autoMine) ServiceStatus.Error else it.miningStatus
-                            )
-                        }
-                        appendLog(RuntimeLog("node", "Node start blocked because Tor is required by the active privacy/seed policy."))
-                        return@launch
-                    }
                     torProxy = ""
                     externalAddrs = emptyList()
-                    appendLog(RuntimeLog("node", "Continuing in direct TCP mode because managed Tor is optional in hybrid mode."))
+                    appendLog(RuntimeLog("node", "Starting the node over direct clearnet; onion will be unavailable until Tor recovers."))
                 }
             }
 
