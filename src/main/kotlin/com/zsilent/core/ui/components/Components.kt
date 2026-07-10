@@ -454,6 +454,11 @@ fun ErrorText(text: String) {
 }
 
 @Composable
+fun HintText(text: String) {
+    Text(text, color = ZTextMuted, style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
 fun ThinDivider() {
     HorizontalDivider(color = ZOutline, thickness = DividerDefaults.Thickness)
 }

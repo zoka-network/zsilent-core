@@ -51,7 +51,10 @@ private data class DesktopConfig(
 )
 
 object ZokaNetworkConfig {
-    private const val DEFAULT_REMOTE_RPC_URL = "http://159.223.119.216:3000"
+    // Fallback only: the real RPC comes from the packaged manifest
+    // (rpc.zoka.network). The old DigitalOcean IP was decommissioned
+    // 2026-07-09; use the DNS name so the host can rotate without a rebuild.
+    private const val DEFAULT_REMOTE_RPC_URL = "http://rpc.zoka.network:3000"
     private const val DEFAULT_CHAIN_ID = "zoka-mainnet-zenith-v1"
     private const val DEFAULT_NETWORK = "mainnet"
 

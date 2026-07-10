@@ -676,6 +676,39 @@ class ZSilentAppState(
         appendLog(RuntimeLog("privacy", if (enabled) "Tor routing preference enabled." else "Tor routing preference disabled."))
     }
 
+    /// Master switch for the simplified Privacy UI: a single "connect over Tor
+    /// (.onion)" toggle. ON enables managed Tor AND tor-only, so the node
+    /// bootstraps purely over onion and never interleaves failed clearnet dial
+    /// attempts into the mining console (the mixed onion+TCP output was the
+    /// noise the user asked us to remove). OFF turns Tor off entirely and
+    /// falls back to plain clearnet/TCP. The old per-flag toggles and the
+    /// manual SOCKS host/port fields are gone from the UI; managed Tor always
+    /// uses 127.0.0.1:<managedTorSocksPort>.
+    fun setTorOnionMode(enabled: Boolean) {
+        update {
+            it.copy(
+                torEnabled = enabled,
+                managedTorEnabled = enabled,
+                torOnly = enabled,
+                torSocksHost = "127.0.0.1",
+                torSocksPort = if (enabled) it.managedTorSocksPort else it.torSocksPort,
+                onionSeedEnabled = if (enabled) it.onionSeedEnabled else false,
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        if (!enabled) {
+            torSupervisor.stop()
+        }
+        persistCurrentSetup()
+        appendLog(
+            RuntimeLog(
+                "privacy",
+                if (enabled) "Tor onion mode enabled (managed Tor, onion-only)."
+                else "Tor onion mode disabled (direct clearnet)."
+            )
+        )
+    }
+
     fun setTorOnly(enabled: Boolean) {
         update {
             it.copy(

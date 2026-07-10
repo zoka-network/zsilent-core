@@ -95,6 +95,7 @@ import com.zsilent.core.ui.components.CopyIconButton
 import com.zsilent.core.ui.components.CopyableKeyValueRow
 import com.zsilent.core.ui.components.EmptyState
 import com.zsilent.core.ui.components.ErrorText
+import com.zsilent.core.ui.components.HintText
 import com.zsilent.core.ui.components.KeyValueRow
 import com.zsilent.core.ui.components.MonoText
 import com.zsilent.core.ui.components.Panel
@@ -2025,46 +2026,53 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
 @Composable
 fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
-    var hostText by remember(ui.torSocksHost) { mutableStateOf(ui.torSocksHost) }
-    var portText by remember(ui.torSocksPort) { mutableStateOf(ui.torSocksPort.toString()) }
     ScreenScaffold("Privacy", "Privacy controls for secrets, logs and display safety.") {
-        Panel(title = "Tor privacy", meta = if (ui.torOnly) "tor-only" else if (ui.torEnabled) ui.torStatus.name.lowercase() else "off") {
-            ToggleRow("Enable Tor proxy for node networking", ui.torEnabled, appState::setTorEnabled)
-            ToggleRow("Managed Tor bundled with ZSilent", ui.managedTorEnabled, appState::setManagedTorEnabled)
-            ToggleRow("Require Tor-only seed connections", ui.torOnly, appState::setTorOnly)
-            ToggleRow("Publish this node as an onion seed", ui.onionSeedEnabled, appState::setOnionSeedEnabled)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = hostText,
-                    onValueChange = { hostText = it; appState.setTorSocksHost(it) },
-                    label = { Text("SOCKS host") }, singleLine = true,
-                    enabled = !ui.managedTorEnabled,
-                    colors = zFieldColors(), modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = portText,
-                    onValueChange = { portText = it.filter(Char::isDigit).take(5); appState.setTorSocksPort(portText) },
-                    label = { Text("SOCKS port") }, singleLine = true,
-                    colors = zFieldColors(), modifier = Modifier.weight(1f)
-                )
-            }
-            KeyValueRow("Managed Tor", ui.torStatus.name.lowercase())
+        Panel(
+            title = "Tor network",
+            meta = if (ui.torEnabled) ui.torStatus.name.lowercase() else "off"
+        ) {
+            ToggleRow(
+                "Connect over Tor (.onion)",
+                ui.torEnabled,
+                appState::setTorOnionMode
+            )
+            HintText(
+                if (ui.torEnabled)
+                    "Your node bootstraps and syncs only over Tor onion routes. No open ports needed, your IP stays hidden, and the mining console stays clean (no mixed clearnet dial attempts)."
+                else
+                    "Off: the node connects over plain clearnet TCP. Turn this on to route the network through Tor (recommended, and required if you're behind CGNAT)."
+            )
+            KeyValueRow("Tor process", ui.torStatus.name.lowercase())
             ui.torError?.takeIf { it.isNotBlank() }?.let { ErrorText(it) }
-            if (ui.torOnionHost.isNotBlank()) {
-                CopyableKeyValueRow("Onion host", ui.torOnionHost)
-            } else {
-                KeyValueRow("Onion host", "not created")
+            if (ui.torEnabled) {
+                if (ui.torOnionHost.isNotBlank()) {
+                    CopyableKeyValueRow("Your onion host", ui.torOnionHost)
+                } else {
+                    KeyValueRow("Your onion host", if (ui.torStatus == ServiceStatus.Starting) "starting Tor…" else "created on first start")
+                }
             }
+        }
+        Panel(
+            title = "Onion seed",
+            meta = if (ui.onionSeedEnabled) "publishing" else "private"
+        ) {
+            ToggleRow(
+                "Publish my node as an onion seed",
+                ui.onionSeedEnabled,
+                appState::setOnionSeedEnabled
+            )
+            HintText(
+                "When on, other people can bootstrap the network through your node using your onion address below — without you opening any port. Share it or send it to the network operator to be added to the seed list. Turning this on also enables Tor above."
+            )
             if (ui.torSeedAddress.isNotBlank()) {
-                CopyableKeyValueRow("Seed address", ui.torSeedAddress)
+                CopyableKeyValueRow("Your seed address", ui.torSeedAddress)
             } else if (ui.torOnionMultiaddr.isNotBlank()) {
-                CopyableKeyValueRow("Onion address", ui.torOnionMultiaddr)
+                CopyableKeyValueRow("Your onion address", ui.torOnionMultiaddr)
+            } else if (ui.onionSeedEnabled) {
+                KeyValueRow("Your seed address", if (ui.torStatus == ServiceStatus.Starting) "waiting for Tor…" else "waiting for node")
             } else {
-                KeyValueRow("Seed address", "waiting for node")
+                KeyValueRow("Your seed address", "enable to generate")
             }
-            KeyValueRow("Launch flag", if (ui.torEnabled) "--tor-proxy ${ui.torSocksHost}:${ui.torSocksPort}" else "not used")
-            KeyValueRow("External address", ui.torOnionMultiaddr.ifBlank { "not advertised" })
-            KeyValueRow("Clearnet seeds", if (ui.torOnly) "blocked by policy" else "allowed by node config")
         }
         Panel(title = "Display privacy", meta = if (ui.balancesHidden) "hidden" else "visible") {
             ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
@@ -2075,7 +2083,7 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             KeyValueRow("Private keys in logs", "blocked")
             KeyValueRow("Encrypted exports", "required")
             KeyValueRow("Auto-lock", "${ui.onboardingAutoLockMinutes} min")
-            KeyValueRow("Network privacy", if (ui.torOnly) "Tor-only" else if (ui.torEnabled) "Tor preferred" else "direct")
+            KeyValueRow("Network privacy", if (ui.torEnabled) "Tor onion" else "direct clearnet")
         }
     }
 }
@@ -2550,7 +2558,7 @@ private fun SettingsAboutPage(ui: ZSilentUiState) {
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Network height", ui.networkHeight.toString())
         KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
-        KeyValueRow("Tor policy", if (ui.torOnly) "Tor-only" else if (ui.torEnabled) "Tor preferred" else "direct")
+        KeyValueRow("Tor policy", if (ui.torEnabled) "Tor onion (only)" else "direct clearnet")
     }
 }
 
