@@ -85,12 +85,22 @@ class TorSupervisor(private val cli: ZokaCli) {
         process = child
         logJob = scope.launch { streamLogs(child) }
 
+        // Readiness gate: the onion hostname exists AND the SOCKS port accepts
+        // connections. Deliberately NOT gated on seeing "Bootstrapped 100%" in
+        // the log stream -- that marker can be missed (log buffering, or a
+        // warm DataDirectory that reconnects without re-emitting it), which
+        // used to hang this for the full timeout and block the node from
+        // starting at all. Once the hidden service descriptor exists and SOCKS
+        // is up, hand back the onion; the node runs over clearnet in the
+        // meantime and its onion dials start succeeding as Tor finishes
+        // building circuits. Timeout shortened so a genuinely stuck Tor falls
+        // back to the node's clearnet startup quickly.
         val hostnameFile = File(hiddenServiceDir, "hostname")
-        val deadline = System.currentTimeMillis() + 90_000L
+        val deadline = System.currentTimeMillis() + 40_000L
         while (System.currentTimeMillis() < deadline) {
             if (!child.isAlive) {
                 val exit = runCatching { child.exitValue() }.getOrDefault(-1)
-                val message = "Tor stopped before bootstrap (exit=$exit)."
+                val message = "Tor stopped before it was ready (exit=$exit)."
                 _state.value = _state.value.copy(status = ServiceStatus.Error, error = message)
                 throw IllegalStateException(message)
             }
@@ -101,7 +111,7 @@ class TorSupervisor(private val cli: ZokaCli) {
                 ?.firstOrNull { it.endsWith(".onion") }
                 .orEmpty()
             val socksReady = canConnect(config.socksHost, config.socksPort)
-            if (onionHost.isNotBlank() && socksReady && (bootstrapped || _state.value.status == ServiceStatus.Online)) {
+            if (onionHost.isNotBlank() && socksReady) {
                 val onionId = onionHost.removeSuffix(".onion")
                 val onionMultiaddr = "/onion3/$onionId:${config.hiddenServiceVirtualPort}"
                 val result = TorLaunchResult(
@@ -125,7 +135,7 @@ class TorSupervisor(private val cli: ZokaCli) {
             delay(500)
         }
 
-        val message = "Tor did not finish bootstrap or create hostname within 90 seconds."
+        val message = "Tor SOCKS/onion was not ready within 40 seconds; starting the node without Tor for now."
         _state.value = _state.value.copy(status = ServiceStatus.Error, error = message)
         throw IllegalStateException(message)
     }
