@@ -117,6 +117,12 @@ class NodeController(private val cli: ZokaCli) {
             command += listOf("--threads", threads.toString())
         }
         command += listOf("--min-mine-peers", "1")
+        // Every ZSilent node automatically serves its chain as an iroh snapshot
+        // (QUIC + NAT hole-punching, no open port) so fresh nodes can bootstrap
+        // in one transfer instead of crawling block-by-block IBD. Fully guarded
+        // node-side: it never blocks startup. Fresh-node auto-fetch is on by
+        // default in the binary, so the whole flow needs no user action.
+        command += "--serve-iroh-snapshot"
         if (address.isNotBlank()) {
             command += listOf("--address", address)
         }
@@ -273,9 +279,6 @@ class NodeController(private val cli: ZokaCli) {
             "seed reconnect warmup failed",
             "seed dial started",
             "Tor mode only allows",
-            "Outgoing peer connection error",
-            "Incoming peer connection error",
-            "Failed to negotiate transport",
             "Unsupported resolved address",
             "failed to add Kademlia peer",
             "connection closed while pumping",
@@ -323,13 +326,20 @@ class NodeController(private val cli: ZokaCli) {
     }
 
     private fun supportsTorFlags(binary: File): Boolean {
-        return helpContainsTorFlags(binary, listOf("fullnode", "--help"))
+        // "fullnode --help" is not recognized by this CLI's per-subcommand
+        // handler -- it silently ignores --help and actually tries to launch
+        // a fullnode (failing on the missing password) without ever printing
+        // flag names, which made this probe always return false regardless
+        // of the binary's real capability. The bare top-level --help banner
+        // does list every subcommand's flags (including --tor-proxy /
+        // --tor-only / --external-addr) and exits immediately, so use that.
+        return helpContainsTorFlags(binary, listOf("--help"))
     }
 
     private fun supportsExternalAddrFlag(binary: File): Boolean {
         return runCatching {
             cli.withZokaCommandLock {
-                val child = cli.processBuilder(binary, listOf("fullnode", "--help"))
+                val child = cli.processBuilder(binary, listOf("--help"))
                     .redirectErrorStream(true)
                     .start()
                 val output = child.inputStream.bufferedReader().readText()
