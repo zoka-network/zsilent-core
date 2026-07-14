@@ -173,12 +173,6 @@ data class ZSilentUiState(
 // that will be orphaned.
 private const val MINING_SYNC_TOLERANCE_BLOCKS = 2L
 
-// When falling back to the local node's own P2P view (bootstrap RPC down),
-// require at least this many connected peers before trusting its lag as a
-// mining-readiness signal. Matches the node's own mesh-health threshold for
-// preferring P2P sync over RPC.
-private const val MIN_MESH_PEERS_FOR_MINING = 2L
-
 class ZSilentAppState(
     val cli: ZokaCli,
     val rpc: ZokaRpcClient,
@@ -919,6 +913,17 @@ class ZSilentAppState(
             appendLog(RuntimeLog("node", "Auto-start skipped: external miner already owns the node."))
             return
         }
+        // Onion is this network's default transport. Bring managed Tor up
+        // automatically so the Privacy panel and the Node come online together
+        // on launch, with no switches to flip. setTorOnionMode is idempotent
+        // and hybrid (onion + clearnet): an already-on Tor stays on, and if
+        // managed Tor is slow to bootstrap the node still starts over clearnet
+        // (startNode never blocks on Tor). This is what makes "connect on
+        // launch" fully automatic end to end.
+        if (!(snapshot.torEnabled && snapshot.managedTorEnabled)) {
+            appendLog(RuntimeLog("privacy", "Auto-enabling Tor onion mode before node start."))
+            setTorOnionMode(true)
+        }
         appendLog(RuntimeLog("node", "Auto-starting full node after wallet unlock."))
         startNode(autoMine = snapshot.onboardingMiningEnabled)
     }
@@ -1343,6 +1348,11 @@ class ZSilentAppState(
                 unlockPassword.fill('\u0000')
                 appendLog(RuntimeLog("wallet", "Unlocked wallet '${selected.name}'"))
                 refreshUnlockedWalletData(selected.address, selected.name, balancePassword, historyPassword)
+                // Re-unlocking the session (after auto-lock, or via the Node
+                // panel's "Wallet session" switch) also brings the network back
+                // automatically. Guarded/idempotent: skips if the node is
+                // already online or a miner owns the state.
+                maybeAutoStartNode()
             }.onFailure { error ->
                 sessionPasswordCandidate.fill('\u0000')
                 unlockPassword.fill('\u0000')
@@ -2139,9 +2149,16 @@ class ZSilentAppState(
                 null
             }
             val meshPeers = localSync?.connectedPeers ?: 0L
-            val meshMiningReady = localSync != null &&
-                meshPeers >= maxOf(localSync.minPeers, MIN_MESH_PEERS_FOR_MINING) &&
-                localSync.lag <= MINING_SYNC_TOLERANCE_BLOCKS
+            // Serverless (no bootstrap RPC): trust the node's own P2P sync view.
+            // - ready_to_mine is the node's authoritative gate (caught up to the
+            //   P2P head with at least its min_mine_peers). The old
+            //   MIN_MESH_PEERS_FOR_MINING=2 UI gate blocked a bootstrapping
+            //   2-node network (each node sees only 1 peer) from ever mining.
+            // - target_height is the P2P-derived network head, so the UI shows a
+            //   real "network block" instead of 0 (which came from the dead RPC).
+            val meshMiningReady = localSync?.readyToMine == true
+            val meshNetworkHeight = localSync?.targetHeight?.coerceAtLeast(localHeight) ?: 0L
+            val meshSynced = localSync != null && localSync.lag <= MINING_SYNC_TOLERANCE_BLOCKS
             update {
                 it.copy(
                     rpcOnline = false,
@@ -2154,12 +2171,14 @@ class ZSilentAppState(
                     localMiningEnabled = localRpcMining,
                     localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
                     chainHeight = localHeight,
-                    networkSynced = false,
+                    networkHeight = if (meshNetworkHeight > 0) meshNetworkHeight else it.networkHeight,
+                    networkSynced = meshSynced,
                     miningSyncReady = meshMiningReady,
-                    syncStatusMessage = if (meshMiningReady) {
-                        "Bootstrap RPC unreachable; node is synced with $meshPeers P2P peer(s), mining stays available."
-                    } else {
-                        "Network bootstrap RPC is offline or unreachable."
+                    syncStatusMessage = when {
+                        meshMiningReady -> "Synced over P2P with $meshPeers peer(s) (serverless); mining available."
+                        meshSynced -> "Synced with $meshPeers peer(s); mining unlocks at ${localSync?.minPeers ?: 1} peer(s)."
+                        localSync != null -> "Syncing over P2P mesh: $meshPeers peer(s), ${localSync.lag} block(s) behind."
+                        else -> "Waiting for the local node's P2P sync view."
                     }
                 )
             }
