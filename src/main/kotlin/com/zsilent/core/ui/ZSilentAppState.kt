@@ -2054,7 +2054,15 @@ class ZSilentAppState(
         }
         val localHeight = maxOf(localDbHeight, localRpcHeight ?: 0L, snapshot.mining.chainHeight)
         val localRpcOnline = localRpcHeight != null
-        val localRpcMining = localStats?.let { it.localMining || it.reportedHashrateHps > 0 } == true
+        // Sticky mining indicator: a failed/timed-out local stats poll (the node
+        // is briefly busy hashing) must NOT be read as "not mining", or the UI
+        // flickers between ON and WARMING every time a poll misses. Only a
+        // successful poll that actually reports no mining turns it off.
+        val localRpcMining = if (localStats != null) {
+            localStats.localMining || localStats.reportedHashrateHps > 0
+        } else {
+            snapshot.localMiningEnabled
+        }
         val miningDiagnostic = snapshot.miningDiagnostic
 
         runCatching {
@@ -2160,6 +2168,21 @@ class ZSilentAppState(
             val meshNetworkHeight = localSync?.targetHeight?.coerceAtLeast(localHeight) ?: 0L
             val meshSynced = localSync != null && localSync.lag <= MINING_SYNC_TOLERANCE_BLOCKS
             update {
+                // Mirror the RPC-online branch's mining reconciliation so the
+                // hashrate/difficulty/running state track the node in serverless
+                // mode too (previously only localMiningEnabled was set here).
+                val reconciledMining = if (localRpcMining) {
+                    it.mining.copy(
+                        running = true,
+                        chainHeight = maxOf(it.mining.chainHeight, localStats?.height ?: 0L, localHeight),
+                        difficultyBits = (localStats?.difficulty ?: it.mining.difficultyBits.toLong()).toInt(),
+                        hashrateHps = maxOf(it.mining.hashrateHps, localStats?.reportedHashrateHps ?: 0L)
+                    )
+                } else if (localRpcOnline && localStats != null && !it.miningControlledByApp && it.mining.running) {
+                    it.mining.copy(running = false, hashrateHps = 0)
+                } else {
+                    it.mining
+                }
                 it.copy(
                     rpcOnline = false,
                     localRpcOnline = localRpcOnline,
@@ -2168,12 +2191,26 @@ class ZSilentAppState(
                         localRpcOnline -> ServiceStatus.Online
                         else -> it.nodeStatus
                     },
+                    miningStatus = when {
+                        localRpcMining && !miningDiagnostic.isNullOrBlank() -> ServiceStatus.Error
+                        localRpcMining -> ServiceStatus.Online
+                        localRpcOnline && localStats != null && !it.miningControlledByApp &&
+                            it.miningStatus == ServiceStatus.Online -> ServiceStatus.Offline
+                        else -> it.miningStatus
+                    },
+                    mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
                     localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
                     chainHeight = localHeight,
                     networkHeight = if (meshNetworkHeight > 0) meshNetworkHeight else it.networkHeight,
+                    syncRemainingBlocks = localSync?.lag ?: it.syncRemainingBlocks,
                     networkSynced = meshSynced,
                     miningSyncReady = meshMiningReady,
+                    // Serverless: feed the network stat displays (difficulty,
+                    // emission, connected peers, hashrate) from the LOCAL node's
+                    // /stats instead of the decommissioned bootstrap RPC, so the
+                    // UI shows real values instead of 0/offline everywhere.
+                    stats = localStats ?: it.stats,
                     syncStatusMessage = when {
                         meshMiningReady -> "Synced over P2P with $meshPeers peer(s) (serverless); mining available."
                         meshSynced -> "Synced with $meshPeers peer(s); mining unlocks at ${localSync?.minPeers ?: 1} peer(s)."

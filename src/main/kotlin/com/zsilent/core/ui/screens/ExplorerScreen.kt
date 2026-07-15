@@ -38,7 +38,7 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard("Height", ui.chainHeight.toString(), "current node tip", Modifier.weight(1f))
-            StatusCard("Bootstrap RPC", if (ui.rpcOnline) "Online" else "Offline", ZokaNetworkConfig.displayUrl(ui.networkRpcUrl), Modifier.weight(1f))
+            StatusCard("Peers", ui.localConnectedPeers.toString(), if (ui.localConnectedPeers > 0) "connected via p2p" else "isolated", Modifier.weight(1f))
             StatusCard("Sync", if (ui.networkSynced) "OK" else ui.syncRemainingBlocks.toString(), "blocks remaining", Modifier.weight(1f))
             StatusCard("Pending", ui.pendingPrivateTransfers.count.toString(), "private tx queue", Modifier.weight(1f))
         }

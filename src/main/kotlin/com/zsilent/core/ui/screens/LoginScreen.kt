@@ -241,10 +241,12 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 }
             }
 
-            // Network status dot
+            // Readiness dot. Serverless: there is no pre-unlock network to ping
+            // (the node connects over P2P/Tor/iroh after unlock), so show whether
+            // the node is ready to start instead of a dead RPC's reachability.
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(7.dp).background(if (ui.rpcOnline) LSuccess else LError.copy(alpha = 0.5f), CircleShape))
-                Text(if (ui.rpcOnline) "Network reachable" else "Network unreachable", color = LSubtle, fontSize = 11.sp)
+                Box(Modifier.size(7.dp).background(if (ui.zokaReady) LSuccess else LError.copy(alpha = 0.5f), CircleShape))
+                Text(if (ui.zokaReady) "Ready to connect (P2P)" else "Node binaries missing", color = LSubtle, fontSize = 11.sp)
             }
         }
     }

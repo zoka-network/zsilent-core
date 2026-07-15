@@ -214,18 +214,18 @@ fun DashboardScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Transactions", (activeWallet?.txCount ?: ui.walletHistory.count).toString())
             }
 
+            val netLive = ui.localRpcOnline && (ui.stats.connectedPeers > 0 || ui.networkSynced)
             com.zsilent.core.ui.onboarding.NoirSection(
-                title = "Network snapshot",
-                meta = if (ui.rpcOnline) "linked" else "offline",
+                title = "Network",
+                meta = if (netLive) "connected (p2p)" else if (ui.localRpcOnline) "node online" else "offline",
                 modifier = Modifier.weight(1f)
             ) {
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Bootstrap RPC", if (ui.rpcOnline) "online" else "offline")
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Endpoint", ZokaNetworkConfig.displayUrl(ui.networkRpcUrl), mono = true)
+                com.zsilent.core.ui.onboarding.NoirKeyValue("Reachability", if (netLive) "live via P2P mesh" else "isolated")
+                com.zsilent.core.ui.onboarding.NoirKeyValue("Connected peers", ui.stats.connectedPeers.toString(), mono = true)
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Node height", ui.chainHeight.toString(), mono = true)
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Network height", ui.networkHeight.toString(), mono = true)
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Difficulty", ui.stats.difficulty.toString(), mono = true)
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Total emission", "%.4f ZKA".format(ui.stats.emissionZka), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Miners on net", ui.stats.minersOnline.toString())
                 ui.miningDiagnostic?.takeIf { it.isNotBlank() }?.let { diagnostic ->
                     Text(diagnostic, color = com.zsilent.core.ui.onboarding.NoirError, fontSize = 11.sp)
                 }
@@ -326,7 +326,7 @@ private fun DashboardMetricStripNoir(
                 letterSpacing = 1.8.sp
             )
             Text(
-                if (ui.rpcOnline) "LIVE NETWORK" else "LOCAL SNAPSHOT",
+                if (ui.localRpcOnline && (ui.stats.connectedPeers > 0 || ui.networkSynced)) "LIVE NETWORK" else "LOCAL SNAPSHOT",
                 color = com.zsilent.core.ui.onboarding.NoirTextSubtle,
                 fontSize = 11.sp,
                 letterSpacing = 1.8.sp
@@ -433,11 +433,11 @@ private fun NetworkSyncPanel(ui: ZSilentUiState, modifier: Modifier = Modifier, 
             syncSamples = (syncSamples + SyncSample(ui.chainHeight, ui.syncProgressPercent, now)).takeLast(18)
         }
     }
-    val etaLabel = syncEtaLabel(syncSamples, ui.syncRemainingBlocks, ui.networkSynced, ui.rpcOnline)
+    val etaLabel = syncEtaLabel(syncSamples, ui.syncRemainingBlocks, ui.networkSynced, ui.localRpcOnline)
     val speedLabel = syncSpeedLabel(syncSamples, ui.networkSynced)
     Panel(
         title = "Network sync",
-        meta = if (ui.networkSynced) "ok synced" else if (ui.syncBusy) "importing" else if (ui.rpcOnline) "syncing" else "offline",
+        meta = if (ui.networkSynced) "ok synced" else if (ui.syncBusy) "importing" else if (ui.localRpcOnline) "syncing" else "offline",
         modifier = modifier
     ) {
         LinearProgressIndicator(
@@ -1735,7 +1735,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 startedAtMillis = nodeProgressStartedAt,
                 rows = listOf(
                     "Node RPC" to if (ui.localRpcOnline) "online" else "waiting",
-                    "Bootstrap RPC" to if (ui.rpcOnline) "online" else "waiting",
+                    "P2P peers" to ui.localConnectedPeers.toString(),
                     "Node height" to ui.chainHeight.toString(),
                     "Network height" to ui.networkHeight.toString(),
                     "Remaining" to ui.syncRemainingBlocks.toString(),
@@ -1763,11 +1763,11 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             }
 
             Panel(title = "Network state", meta = ZokaNetworkConfig.Network, modifier = Modifier.weight(1f)) {
-                KeyValueRow("Bootstrap RPC", if (ui.rpcOnline) ZokaNetworkConfig.displayUrl(ui.networkRpcUrl) else "offline")
+                KeyValueRow("P2P mesh", if (ui.localConnectedPeers > 0) "connected" else "isolated")
                 KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
-                KeyValueRow("Your node peers", ui.localConnectedPeers.toString())
-                KeyValueRow("Network peers", ui.stats.connectedPeers.toString())
-                KeyValueRow("Online miners", ui.stats.minersOnline.toString())
+                KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
+                KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
+                KeyValueRow("Difficulty", ui.stats.difficulty.toString())
                 KeyValueRow("Emission", "%.4f ZKA".format(ui.stats.emissionZka))
                 KeyValueRow("Miner state blocks", ui.mining.blocksMined.toString())
                 KeyValueRow("Miner state rewards", "${ui.mining.totalRewards} ZKA")
@@ -1966,7 +1966,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 Modifier.weight(1f)
             )
             StatusCard("Hashrate", formatHashrate(effectiveHashrate), ui.mining.algorithm.ifBlank { "waiting" }, Modifier.weight(1f))
-            StatusCard("Miners", ui.stats.minersOnline.toString(), "online", Modifier.weight(1f))
+            StatusCard("Peers", ui.localConnectedPeers.toString(), "connected via p2p", Modifier.weight(1f))
             StatusCard("Height", ui.chainHeight.toString(), "network ${ui.networkHeight}", Modifier.weight(1f))
         }
 
@@ -1976,7 +1976,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 CopyableKeyValueRow("Address", activeWallet?.address ?: rewardAddress.ifBlank { "not selected" })
                 KeyValueRow("Available CPU", ui.mining.availableCpuThreads.coerceAtLeast(1).toString())
                 KeyValueRow("Mode", ui.mining.mode.ifBlank { "pow-${ZokaNetworkConfig.Network}" })
-                KeyValueRow("Network miners", ui.stats.minersOnline.toString())
+                KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
                 KeyValueRow("Reported network hashrate", formatHashrate(maxOf(ui.stats.reportedHashrateHps, effectiveHashrate)))
                 if (!rewardAddress.startsWith("zka1")) {
                     ErrorText("Select a wallet with a full zka1 address before mining.")
@@ -2263,9 +2263,9 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
             )
             SettingsMenuCard(
                 title = "Network",
-                detail = if (ui.rpcOnline) "RPC online" else "RPC offline",
+                detail = if (ui.localRpcOnline && ui.localConnectedPeers > 0) "p2p connected" else if (ui.localRpcOnline) "node online" else "offline",
                 icon = Icons.Outlined.Sync,
-                meta = "rpc",
+                meta = "p2p",
                 modifier = Modifier.weight(1f),
                 onClick = { onOpen(SettingsPage.Network) }
             )
@@ -2527,9 +2527,11 @@ private fun SettingsSecurityPage(
 
 @Composable
 private fun SettingsNetworkPage(ui: ZSilentUiState) {
-    Panel(title = "RPC endpoint", meta = if (ui.rpcOnline) "online" else "offline") {
-        CopyableKeyValueRow("Endpoint", ZokaNetworkConfig.displayUrl(ui.networkRpcUrl))
-        KeyValueRow("Status", if (ui.rpcOnline) "connected" else "unreachable")
+    val netLive = ui.localRpcOnline && (ui.localConnectedPeers > 0 || ui.networkSynced)
+    Panel(title = "Network", meta = if (netLive) "live (p2p)" else if (ui.localRpcOnline) "node online" else "offline") {
+        KeyValueRow("Transport", "P2P mesh — Tor onion + iroh (serverless)")
+        KeyValueRow("Reachability", if (netLive) "connected via peers" else "isolated")
+        KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
         KeyValueRow("Network height", ui.networkHeight.toString())
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Sync gate", if (ui.networkSynced) "synced" else "syncing")
@@ -2538,7 +2540,7 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
         KeyValueRow("Local RPC", if (ui.localRpcOnline) "${ZokaNetworkConfig.displayUrl(ui.localRpcUrl)} online" else "offline")
         CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
         KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
-        KeyValueRow("Network miners", ui.stats.minersOnline.toString())
+        KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
     }
 }
 
@@ -2553,7 +2555,7 @@ private fun SettingsAboutPage(ui: ZSilentUiState) {
     }
     Panel(title = "Details", meta = if (ui.zokaReady) "ready" else "missing") {
         KeyValueRow("Zoka binaries", if (ui.zokaReady) "detected" else "not detected")
-        KeyValueRow("Bootstrap RPC", if (ui.rpcOnline) "${ZokaNetworkConfig.displayUrl(ui.networkRpcUrl)} online" else "offline")
+        KeyValueRow("Network", if (ui.localRpcOnline && ui.localConnectedPeers > 0) "p2p mesh (${ui.localConnectedPeers} peer(s))" else "isolated")
         KeyValueRow("Node RPC", if (ui.localRpcOnline) "${ZokaNetworkConfig.displayUrl(ui.localRpcUrl)} online" else "offline")
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Network height", ui.networkHeight.toString())
@@ -2696,7 +2698,7 @@ private fun syncEtaLabel(
     rpcOnline: Boolean
 ): String {
     if (synced) return "complete"
-    if (!rpcOnline) return "waiting for bootstrap"
+    if (!rpcOnline) return "waiting for node"
     if (remainingBlocks <= 0L) return "almost ready"
     val rate = syncBlocksPerSecond(samples)
     if (rate <= 0.0) return "calculating"
