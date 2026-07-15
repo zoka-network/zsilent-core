@@ -94,6 +94,30 @@ data class NodeStats(
 )
 
 @Serializable
+data class PeerInfo(
+    @SerialName("peer_id")
+    val peerId: String = "",
+    val transport: String = "unknown",
+    val address: String? = null
+)
+
+@Serializable
+data class PeerTransportCounts(
+    val tor: Long = 0,
+    val direct: Long = 0,
+    val other: Long = 0
+)
+
+@Serializable
+data class PeersResponse(
+    @SerialName("connected_peers")
+    val connectedPeers: Long = 0,
+    @SerialName("by_transport")
+    val byTransport: PeerTransportCounts = PeerTransportCounts(),
+    val peers: List<PeerInfo> = emptyList()
+)
+
+@Serializable
 data class WalletSyncStatus(
     val wallet: String = "",
     @SerialName("chain_height")
@@ -197,6 +221,12 @@ data class RuntimeLog(
 @Serializable
 data class LocalChainHeightResponse(
     val height: Long = 0
+)
+
+@Serializable
+data class IrohIdResponse(
+    @SerialName("iroh_endpoint_id")
+    val irohEndpointId: String = ""
 )
 
 @Serializable

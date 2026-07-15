@@ -3,6 +3,7 @@ package com.zsilent.core.rpc
 import com.zsilent.core.models.ChainHeightResponse
 import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
+import com.zsilent.core.models.PeersResponse
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
@@ -47,6 +48,15 @@ class ZokaRpcClient(val baseUrl: String) {
         require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
         val text = client.get("$baseUrl/sync/status").bodyAsText()
         return codec.decodeFromString<NodeSyncStatus>(text)
+    }
+
+    // The local node's live mesh view: which p2p peers it is connected to and
+    // over which transport (Tor onion / direct). Serverless replacement for a
+    // central "who's online" directory — a node only knows its own peers.
+    suspend fun peers(): PeersResponse {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val text = client.get("$baseUrl/peers").bodyAsText()
+        return codec.decodeFromString<PeersResponse>(text)
     }
 
     suspend fun startMining(threads: Int) {

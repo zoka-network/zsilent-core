@@ -1775,6 +1775,54 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 KeyValueRow("Pending queue DB", ui.pendingPrivateTransfers.db.ifBlank { ".zoka/${ZokaNetworkConfig.Network}/blockchain.db" })
             }
         }
+
+        Panel(title = "Peers", meta = "${ui.peers.size} connected · live mesh") {
+            Text(
+                "Who this node is actually talking to over the P2P mesh, and how. Serverless: there is no central directory — this is your own node's view.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                StatusCard("Tor", ui.peerTorCount.toString(), "onion", Modifier.weight(1f))
+                StatusCard("Direct", ui.peerDirectCount.toString(), "clearnet", Modifier.weight(1f))
+                StatusCard("Total", ui.localConnectedPeers.toString(), "p2p mesh", Modifier.weight(1f))
+            }
+            if (ui.peers.isEmpty()) {
+                Text(
+                    if (ui.localRpcOnline) "No connected peers yet — dialing the seed and mesh over Tor/iroh."
+                    else "Start the node to see connected peers.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                ui.peers.take(24).forEach { peer ->
+                    val label = when (peer.transport) {
+                        "tor" -> "Tor onion"
+                        "direct" -> "Direct"
+                        "unknown" -> "Peer"
+                        else -> peer.transport.replaceFirstChar { it.uppercase() }
+                    }
+                    CopyableKeyValueRow(label, peer.peerId)
+                }
+            }
+        }
+
+        Panel(title = "Seed · bootstrap", meta = "help fresh nodes join") {
+            Text(
+                "Share these so a new node can bootstrap directly from you — no open port, no central server. iroh pulls a full snapshot in ~90s; the onion is your reachable p2p address.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (ui.irohEndpointId.isNotBlank()) {
+                CopyableKeyValueRow("iroh EndpointId", ui.irohEndpointId)
+            } else {
+                KeyValueRow("iroh EndpointId", if (ui.localRpcOnline) "resolving…" else "start the node to view")
+            }
+            if (ui.torOnionMultiaddr.isNotBlank()) {
+                CopyableKeyValueRow("Onion address", ui.torOnionMultiaddr)
+            } else {
+                KeyValueRow("Onion address", if (ui.onionSeedEnabled) "waiting for Tor…" else "enable the onion seed in Settings")
+            }
+        }
     }
 }
 

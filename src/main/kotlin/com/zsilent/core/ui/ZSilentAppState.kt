@@ -15,10 +15,12 @@ import com.zsilent.core.core.wallet.WalletImportResult
 import com.zsilent.core.core.wallet.WalletPassphraseChangeResult
 import com.zsilent.core.models.AppSection
 import com.zsilent.core.models.FeeEstimate
+import com.zsilent.core.models.IrohIdResponse
 import com.zsilent.core.models.LocalChainHeightResponse
 import com.zsilent.core.models.LocalWallet
 import com.zsilent.core.models.MiningSnapshot
 import com.zsilent.core.models.NodeStats
+import com.zsilent.core.models.PeerInfo
 import com.zsilent.core.models.OnboardingStep
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.PersistedSetup
@@ -151,6 +153,15 @@ data class ZSilentUiState(
     // `stats.connectedPeers` which is the bootstrap seed's peer count. The
     // Node section shows this so "Connected peers" reflects your own node.
     val localConnectedPeers: Long = 0,
+    // Live mesh view from the local node's /peers: which peers this node is
+    // actually connected to and over which transport (Tor/direct). Serverless
+    // replacement for a central "who's online" directory.
+    val peers: List<PeerInfo> = emptyList(),
+    val peerTorCount: Long = 0,
+    val peerDirectCount: Long = 0,
+    // This node's own iroh snapshot-seed EndpointId (from `zoka iroh-id`), so
+    // it can be advertised to help fresh nodes bootstrap. Fetched once.
+    val irohEndpointId: String = "",
     val networkRpcUrl: String = ZokaNetworkConfig.RemoteRpcUrl,
     val localRpcUrl: String = ZokaNetworkConfig.LocalRpcUrl,
     val bootstrapPeer: String = ZokaNetworkConfig.BootstrapMultiaddr,
@@ -199,6 +210,9 @@ class ZSilentAppState(
     private var integratedMiningRequested = false
     private var lastMiningThreads = 0
     private var lastLocalHeightReadMillis = 0L
+    // Guards the one-shot iroh EndpointId fetch so a transient failure doesn't
+    // spawn a fresh `zoka iroh-id` subprocess on every poll tick.
+    @Volatile private var irohIdFetchInFlight = false
     @Volatile private var blockPushInProgress = false
     private var lastPushedRemoteHeight = 0L
     private var lastBalanceRefreshMillis = 0L
@@ -2065,6 +2079,29 @@ class ZSilentAppState(
         }
         val miningDiagnostic = snapshot.miningDiagnostic
 
+        // Live mesh view (serverless): who this node is connected to + transport.
+        val localPeers = if (localRpcOnline) {
+            runCatching { localRpc.peers() }.getOrNull()
+        } else {
+            null
+        }
+        // This node's iroh snapshot-seed EndpointId is derived from a persistent
+        // key, so it never changes — fetch it once (a short zoka subprocess),
+        // in the background so it never blocks the poll.
+        if (snapshot.irohEndpointId.isBlank() && localRpcOnline && !irohIdFetchInFlight) {
+            irohIdFetchInFlight = true
+            scope.launch {
+                try {
+                    val id = readIrohEndpointId().getOrNull()
+                    if (!id.isNullOrBlank()) {
+                        update { it.copy(irohEndpointId = id) }
+                    }
+                } finally {
+                    irohIdFetchInFlight = false
+                }
+            }
+        }
+
         runCatching {
             val stats = rpc.stats()
             val networkHeight = stats.height.coerceAtLeast(0)
@@ -2120,6 +2157,9 @@ class ZSilentAppState(
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
                     localConnectedPeers = localStats?.connectedPeers ?: it.localConnectedPeers,
+                    peers = localPeers?.peers ?: it.peers,
+                    peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,
+                    peerDirectCount = localPeers?.byTransport?.direct ?: it.peerDirectCount,
                     chainHeight = localHeight,
                     networkHeight = networkHeight,
                     syncRemainingBlocks = remaining,
@@ -2201,6 +2241,9 @@ class ZSilentAppState(
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
                     localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
+                    peers = localPeers?.peers ?: it.peers,
+                    peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,
+                    peerDirectCount = localPeers?.byTransport?.direct ?: it.peerDirectCount,
                     chainHeight = localHeight,
                     networkHeight = if (meshNetworkHeight > 0) meshNetworkHeight else it.networkHeight,
                     syncRemainingBlocks = localSync?.lag ?: it.syncRemainingBlocks,
@@ -2387,6 +2430,34 @@ class ZSilentAppState(
                     error(PrivacyGuards.redactForLog(output.ifBlank { "zoka height exited with code $exit" }))
                 }
                 json.decodeFromString<LocalChainHeightResponse>(output.trim()).height
+            }
+        }
+    }
+
+    // This node's iroh snapshot-seed EndpointId (base32 public key derived from
+    // the persistent iroh key). Same value the node advertises so fresh nodes
+    // can bootstrap from it. Short-lived zoka subprocess, read once.
+    private suspend fun readIrohEndpointId(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val zoka = cli.zoka ?: error("zoka binary not found")
+            cli.withZokaCommandLock {
+                val child = cli.processBuilder(
+                    zoka,
+                    listOf("iroh-id", "--json")
+                )
+                    .redirectErrorStream(true)
+                    .start()
+                val finished = child.waitFor(6, TimeUnit.SECONDS)
+                if (!finished) {
+                    child.destroyForcibly()
+                    error("iroh-id read timed out")
+                }
+                val output = child.inputStream.bufferedReader().readText()
+                val exit = child.exitValue()
+                if (exit != 0) {
+                    error(PrivacyGuards.redactForLog(output.ifBlank { "zoka iroh-id exited with code $exit" }))
+                }
+                json.decodeFromString<IrohIdResponse>(output.trim()).irohEndpointId
             }
         }
     }
