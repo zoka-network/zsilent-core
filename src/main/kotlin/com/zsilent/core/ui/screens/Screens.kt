@@ -172,6 +172,13 @@ fun DashboardScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 modifier = Modifier.weight(1f)
             )
             com.zsilent.core.ui.onboarding.NoirStatusPill(
+                label = "Nodes",
+                value = (ui.localConnectedPeers + 1).toString(),
+                detail = if (ui.localConnectedPeers >= 1L) "on the network" else "just this node",
+                tone = if (ui.localConnectedPeers >= 1L) com.zsilent.core.ui.onboarding.NoirStatusTone.Ok else com.zsilent.core.ui.onboarding.NoirStatusTone.Warn,
+                modifier = Modifier.weight(1f)
+            )
+            com.zsilent.core.ui.onboarding.NoirStatusPill(
                 label = "Mining",
                 value = if (ui.mining.running) formatHashrate(effectiveHashrate) else "off",
                 detail = miningDetail,
@@ -221,7 +228,7 @@ fun DashboardScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 modifier = Modifier.weight(1f)
             ) {
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Reachability", if (netLive) "live via P2P mesh" else "isolated")
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Connected peers", ui.stats.connectedPeers.toString(), mono = true)
+                com.zsilent.core.ui.onboarding.NoirKeyValue("Connected peers", ui.localConnectedPeers.toString(), mono = true)
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Node height", ui.chainHeight.toString(), mono = true)
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Network height", ui.networkHeight.toString(), mono = true)
                 com.zsilent.core.ui.onboarding.NoirKeyValue("Difficulty", ui.stats.difficulty.toString(), mono = true)
