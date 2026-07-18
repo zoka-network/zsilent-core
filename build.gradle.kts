@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "1.8.0"
+val releaseVersion = "1.8.1"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
