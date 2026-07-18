@@ -14,8 +14,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
+import java.io.BufferedWriter
 import java.io.File
+import java.io.FileWriter
 import java.io.InputStreamReader
+import java.io.Writer
 
 class NodeController(private val cli: ZokaCli) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -24,6 +27,12 @@ class NodeController(private val cli: ZokaCli) {
     private var lastStartParams: StartParams? = null
     private var restartAttempt = 0
     val readyFile: File = File(cli.dataRoot, "zsilent/fullnode-ready.json")
+
+    /// Full node output persisted to disk. The in-app panel is capped and
+    /// filtered; this is the complete record, and the path users can be
+    /// pointed at when reporting a problem.
+    val logFile: File = File(cli.dataRoot, "logs/node.log")
+    private var logWriter: Writer? = null
 
     private data class StartParams(
         val password: String,
@@ -228,20 +237,93 @@ class NodeController(private val cli: ZokaCli) {
     }
 
     private suspend fun streamLogs(child: Process) {
-        BufferedReader(InputStreamReader(child.inputStream)).useLines { lines ->
-            lines.forEach { line ->
-                // Drop repetitive network churn (failed seed dials, transport
-                // negotiation, warmup retries) BEFORE sanitizing. In a hybrid
-                // Tor+TCP node these fire many times a second while peers are
-                // still being found and flooded the panel; sanitize() also
-                // rewrites anything with "seed" to a redaction marker, so
-                // filtering after it can't tell noise apart.
-                if (isNetworkChurn(line)) return@forEach
-                val clean = sanitize(line)
-                if (clean.isNotBlank() && !shouldDropLine(clean)) {
-                    _logs.tryEmit(RuntimeLog("node", clean))
+        openLogFile()
+        try {
+            BufferedReader(InputStreamReader(child.inputStream)).useLines { lines ->
+                lines.forEach { line ->
+                    val clean = sanitize(line)
+
+                    // Everything goes to the log file, including the churn the
+                    // panel drops. The in-app panel keeps only the last few
+                    // hundred lines and scrolls far too fast to read while
+                    // mining, which made real diagnosis impossible -- the file
+                    // is the copy you can actually grep after the fact.
+                    // Sanitized, not raw: this lands on disk and may get
+                    // shared when asking for help.
+                    if (clean.isNotBlank()) writeLogLine(clean)
+
+                    // Drop repetitive network churn (failed seed dials,
+                    // transport negotiation, warmup retries) BEFORE
+                    // sanitizing. In a hybrid Tor+TCP node these fire many
+                    // times a second while peers are still being found and
+                    // flooded the panel; sanitize() also rewrites anything
+                    // with "seed" to a redaction marker, so filtering after it
+                    // can't tell noise apart.
+                    if (isNetworkChurn(line)) return@forEach
+                    if (clean.isNotBlank() && !shouldDropLine(clean)) {
+                        _logs.tryEmit(RuntimeLog("node", clean))
+                    }
                 }
             }
+        } finally {
+            closeLogFile()
+        }
+    }
+
+    @Synchronized
+    private fun openLogFile() {
+        closeLogFile()
+        try {
+            logFile.parentFile?.mkdirs()
+            rotateLogIfOversized()
+            logWriter = BufferedWriter(FileWriter(logFile, true))
+            writeLogLine("--- node session started ---")
+            // Surface the path in the panel too, so it's discoverable without
+            // knowing where the data directory lives.
+            _logs.tryEmit(RuntimeLog("node", "Full node log: ${logFile.absolutePath}"))
+        } catch (_: Exception) {
+            // Logging to disk is a diagnostic aid, never a reason to fail to
+            // run the node.
+            logWriter = null
+        }
+    }
+
+    @Synchronized
+    private fun writeLogLine(line: String) {
+        val writer = logWriter ?: return
+        try {
+            writer.write("${LOG_TIMESTAMP.format(java.time.Instant.now())} $line")
+            writer.write("\n")
+            // Flushed per line on purpose: the lines worth having are the ones
+            // written just before a crash or a hang.
+            writer.flush()
+        } catch (_: Exception) {
+            logWriter = null
+        }
+    }
+
+    @Synchronized
+    private fun closeLogFile() {
+        try {
+            logWriter?.flush()
+            logWriter?.close()
+        } catch (_: Exception) {
+            // nothing useful to do while tearing down
+        }
+        logWriter = null
+    }
+
+    /// Keep at most one previous log around, so a long-running node can't
+    /// quietly fill the disk.
+    private fun rotateLogIfOversized() {
+        try {
+            if (logFile.exists() && logFile.length() > MAX_LOG_BYTES) {
+                val previous = File(logFile.parentFile, "${logFile.name}.1")
+                if (previous.exists()) previous.delete()
+                logFile.renameTo(previous)
+            }
+        } catch (_: Exception) {
+            // A rotation failure must not stop logging.
         }
     }
 
@@ -271,6 +353,15 @@ class NodeController(private val cli: ZokaCli) {
     }
 
     companion object {
+        /// Rotate the node log past this size, keeping one previous file, so
+        /// a node left running for weeks can't fill the disk.
+        private const val MAX_LOG_BYTES = 8L * 1024 * 1024
+
+        private val LOG_TIMESTAMP: java.time.format.DateTimeFormatter =
+            java.time.format.DateTimeFormatter
+                .ofPattern("yyyy-MM-dd HH:mm:ss")
+                .withZone(java.time.ZoneId.systemDefault())
+
         // Repetitive, non-actionable p2p connection churn. Dropped from the
         // panel entirely (the fluid mining console / dashboard summary line
         // still shows the aggregate peer count and last event).
