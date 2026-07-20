@@ -1,27 +1,39 @@
 package com.zsilent.core.core.mining
 
 import com.zsilent.core.models.MiningSnapshot
+import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.RuntimeLog
 import com.zsilent.core.models.ServiceStatus
 import com.zsilent.core.config.ZokaNetworkConfig
 import com.zsilent.core.core.process.ZokaProcessKiller
 import com.zsilent.core.services.ZokaCli
+import com.zsilent.core.rpc.ZokaRpcClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
-class MiningController(private val cli: ZokaCli) {
+internal const val MINING_POLL_INTERVAL_MS = 10_000L
+internal const val MINING_CLI_FALLBACK_INTERVAL_MS = 15L * 60L * 1_000L
+
+class MiningController(
+    private val cli: ZokaCli,
+    private val localRpc: ZokaRpcClient,
+    private val clockMillis: () -> Long = System::currentTimeMillis
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val codec = Json {
         ignoreUnknownKeys = true
@@ -32,6 +44,8 @@ class MiningController(private val cli: ZokaCli) {
     private var stopRequested = false
     private var snapshotFailures = 0
     private var lastMetricsWarningMillis = 0L
+    private val refreshMutex = Mutex()
+    private val cliFallbackThrottle = PollingThrottle(MINING_CLI_FALLBACK_INTERVAL_MS)
 
     @Volatile
     private var pollingPaused = false
@@ -67,7 +81,7 @@ class MiningController(private val cli: ZokaCli) {
                 if (!pollingPaused) {
                     refresh()
                 }
-                delay(2_000)
+                delay(MINING_POLL_INTERVAL_MS)
             }
         }
     }
@@ -151,40 +165,68 @@ class MiningController(private val cli: ZokaCli) {
     }.getOrElse { false }
 
     fun close() {
+        scope.cancel()
         ZokaProcessKiller.terminate(process)
         ZokaProcessKiller.terminateManagedZokaProcesses(cli)
         process = null
         _controlledByApp.value = false
     }
 
-    private suspend fun refresh(network: String = ZokaNetworkConfig.Network) {
-        readSnapshot(network).onSuccess { mining ->
-            snapshotFailures = 0
-            _snapshot.value = mining
-            _status.value = when {
-                process?.isAlive == true -> ServiceStatus.Online
-                mining.running -> ServiceStatus.Online
-                else -> ServiceStatus.Offline
-            }
-        }.onFailure { error ->
-            snapshotFailures += 1
-            val processAlive = process?.isAlive == true
-            val previous = _snapshot.value
-            if (processAlive) {
-                _snapshot.value = previous.copy(running = true)
-                _status.value = ServiceStatus.Online
-                emitMetricsWarning("Mining metrics are temporarily unavailable while the miner is running: ${sanitize(error.message ?: "unknown error")}")
-            } else {
-                _snapshot.value = previous.copy(running = false, hashrateHps = 0)
-                _status.value = ServiceStatus.Offline
-                if (snapshotFailures >= 3) {
-                    emitMetricsWarning("Mining metrics were refreshed as offline after repeated read failures: ${sanitize(error.message ?: "unknown error")}")
-                }
-            }
+    private suspend fun refresh(network: String = ZokaNetworkConfig.Network) = refreshMutex.withLock {
+        // The running node already owns RocksDB and exposes the equivalent live
+        // data. Prefer those endpoints so a UI poll does not create two short-
+        // lived zoka processes (and a new RocksDB LOG.old) every few seconds.
+        val rpcStats = runCatching { localRpc.stats() }
+        rpcStats.onSuccess(::applyRpcStats)
+
+        val rpcPending = runCatching { localRpc.pendingPrivateTransfers() }
+        rpcPending.onSuccess { _pendingTransfers.value = it }
+
+        if (rpcStats.isSuccess && rpcPending.isSuccess) return@withLock
+
+        // Compatibility/offline fallback for an older or unavailable local
+        // RPC. Results stay cached between attempts, and the mutex ensures
+        // start/stop/manual refreshes cannot overlap this expensive DB open.
+        if (!cliFallbackThrottle.tryAcquire(clockMillis())) return@withLock
+
+        if (rpcStats.isFailure) {
+            readSnapshot(network).onSuccess { mining ->
+                snapshotFailures = 0
+                _snapshot.value = mining
+                _status.value = if (mining.running) ServiceStatus.Online else ServiceStatus.Offline
+            }.onFailure(::applySnapshotFailure)
         }
 
-        readPendingTransfers(network).onSuccess {
-            _pendingTransfers.value = it
+        if (rpcPending.isFailure) {
+            readPendingTransfers(network).onSuccess { _pendingTransfers.value = it }
+        }
+    }
+
+    private fun applyRpcStats(stats: NodeStats) {
+        snapshotFailures = 0
+        val previous = _snapshot.value
+        _snapshot.value = previous.copy(
+            running = stats.localMining,
+            chainHeight = stats.height,
+            difficultyBits = stats.difficulty.toInt(),
+            hashrateHps = if (stats.localMining) stats.reportedHashrateHps else 0,
+            totalSupplyEmitted = stats.emissionZka.toString()
+        )
+        _status.value = if (stats.localMining) ServiceStatus.Online else ServiceStatus.Offline
+    }
+
+    private fun applySnapshotFailure(error: Throwable) {
+        snapshotFailures += 1
+        val previous = _snapshot.value
+        if (previous.running || _controlledByApp.value) {
+            _status.value = ServiceStatus.Online
+            if (snapshotFailures >= 3) {
+                emitMetricsWarning("Mining metrics are temporarily unavailable while the miner is running: ${sanitize(error.message ?: "unknown error")}")
+            }
+        } else if (snapshotFailures >= 3) {
+            _snapshot.value = previous.copy(running = false, hashrateHps = 0)
+            _status.value = ServiceStatus.Offline
+            emitMetricsWarning("Mining metrics remain cached after repeated read failures: ${sanitize(error.message ?: "unknown error")}")
         }
     }
 
@@ -242,5 +284,23 @@ class MiningController(private val cli: ZokaCli) {
         if (now - lastMetricsWarningMillis < 15_000L) return
         lastMetricsWarningMillis = now
         _logs.tryEmit(RuntimeLog("mining", message))
+    }
+}
+
+internal class PollingThrottle(private val minimumIntervalMillis: Long) {
+    private var lastAttemptMillis: Long? = null
+
+    init {
+        require(minimumIntervalMillis >= 0) { "minimumIntervalMillis cannot be negative" }
+    }
+
+    @Synchronized
+    fun tryAcquire(nowMillis: Long): Boolean {
+        val previous = lastAttemptMillis
+        if (previous != null && nowMillis >= previous && nowMillis - previous < minimumIntervalMillis) {
+            return false
+        }
+        lastAttemptMillis = nowMillis
+        return true
     }
 }

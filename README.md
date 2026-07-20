@@ -20,8 +20,12 @@ Common commands:
 ```powershell
 .\gradlew.bat run
 .\gradlew.bat build
-.\gradlew.bat packageMsi
+.\gradlew.bat packageMsi -Pzsilent.requireTorBundle=true
 ```
+
+Release installers must be prepared through
+[`docs/RELEASE.md`](docs/RELEASE.md). The preflight verifies that the app,
+`zoka`, and `zokahd` versions match and emits checksums without publishing.
 
 The app looks for Zoka binaries in:
 

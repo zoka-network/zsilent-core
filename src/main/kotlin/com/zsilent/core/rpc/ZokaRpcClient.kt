@@ -3,6 +3,7 @@ package com.zsilent.core.rpc
 import com.zsilent.core.models.ChainHeightResponse
 import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
+import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.PeersResponse
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -59,6 +60,16 @@ class ZokaRpcClient(val baseUrl: String) {
         return codec.decodeFromString<PeersResponse>(text)
     }
 
+    /**
+     * Read the running node's pending queue without spawning a second zoka
+     * process (and therefore without repeatedly reopening RocksDB).
+     */
+    suspend fun pendingPrivateTransfers(): PendingPrivateTransfers {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val text = client.get("$baseUrl/private/pending").bodyAsText()
+        return decodePendingPrivateTransfers(text, codec)
+    }
+
     suspend fun startMining(threads: Int) {
         require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
         val body = codec.encodeToString(LocalMiningControlRequest(threads.coerceAtLeast(1)))
@@ -101,3 +112,27 @@ class ZokaRpcClient(val baseUrl: String) {
 private data class LocalMiningControlRequest(
     val threads: Int
 )
+
+@Serializable
+private data class PendingPrivateTransfersResponse(
+    val count: Int = 0,
+    val pending: List<PendingPrivateTransferRef> = emptyList()
+)
+
+@Serializable
+private data class PendingPrivateTransferRef(
+    @kotlinx.serialization.SerialName("tx_hash")
+    val txHash: String = ""
+)
+
+internal fun decodePendingPrivateTransfers(
+    text: String,
+    codec: Json = Json { ignoreUnknownKeys = true; isLenient = true }
+): PendingPrivateTransfers {
+    val response = codec.decodeFromString<PendingPrivateTransfersResponse>(text)
+    val hashes = response.pending.map { it.txHash.trim() }.filter { it.isNotBlank() }.distinct()
+    return PendingPrivateTransfers(
+        count = maxOf(response.count, hashes.size),
+        pendingPrivateTxHashes = hashes
+    )
+}

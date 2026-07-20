@@ -95,7 +95,39 @@ try {
             Copy-Item -Path $src -Destination (Join-Path $resolvedOut $geo) -Force
         }
     }
+
+    $preparedTorExe = Join-Path $resolvedOut "tor.exe"
+    if (-not (Test-Path -LiteralPath $preparedTorExe -PathType Leaf)) {
+        throw "Prepared bundle does not contain tor.exe at its expected root"
+    }
+    $torVersionOutput = (& $preparedTorExe --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "Prepared tor.exe --version failed with exit code $LASTEXITCODE"
+    }
+    $torVersionMatch = [regex]::Match($torVersionOutput, 'Tor version ([0-9.]+)')
+    $torVersion = if ($torVersionMatch.Success) {
+        $torVersionMatch.Groups[1].Value.TrimEnd('.')
+    } else {
+        ""
+    }
+    if ($torVersion -ne "0.4.9.11") {
+        throw "Unexpected Tor version '$torVersion'; expected 0.4.9.11"
+    }
+
+    $bundleVersionMatch = [regex]::Match($Url, '/torbrowser/([^/]+)/')
+    $bundleVersion = if ($bundleVersionMatch.Success) { $bundleVersionMatch.Groups[1].Value } else { "unknown" }
+    $metadata = [ordered]@{
+        schema_version = 1
+        bundle_version = $bundleVersion
+        source_url = $Url
+        archive_sha256 = $actual
+        tor_version = $torVersion
+        tor_exe_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $preparedTorExe).Hash.ToLowerInvariant()
+        prepared_at_utc = [DateTime]::UtcNow.ToString("o")
+    }
+    $metadata | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $resolvedOut ".zsilent-bundle.json") -Encoding UTF8
     Write-Host "Prepared Tor bundle at $resolvedOut"
+    Write-Host "Tor version verified: $torVersion (Expert Bundle $bundleVersion)"
 }
 finally {
     if (Test-Path $work) {

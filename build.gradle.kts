@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "1.8.2"
+val releaseVersion = "1.9.0"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
@@ -29,7 +29,10 @@ val torBundleDir = (findProperty("zsilent.torBundleDir") as String?)
     ?: nodeRepoRoot.dir("third_party/tor/windows-x86_64").asFile
 val requireTorBundle = (findProperty("zsilent.requireTorBundle") as String?)
     ?.toBooleanStrictOrNull()
-    ?: false
+    // A Windows release without the managed Tor payload silently loses onion
+    // reachability. Require it by default; local developers can still opt out
+    // explicitly with -Pzsilent.requireTorBundle=false.
+    ?: hostOs.isWindows
 val windowsMsvcRuntimeDlls = listOf(
     "concrt140.dll",
     "msvcp140.dll",

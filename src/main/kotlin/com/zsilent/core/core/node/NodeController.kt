@@ -14,11 +14,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
-import java.io.BufferedWriter
 import java.io.File
-import java.io.FileWriter
 import java.io.InputStreamReader
-import java.io.Writer
 
 class NodeController(private val cli: ZokaCli) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -32,7 +29,7 @@ class NodeController(private val cli: ZokaCli) {
     /// filtered; this is the complete record, and the path users can be
     /// pointed at when reporting a problem.
     val logFile: File = File(cli.dataRoot, "logs/node.log")
-    private var logWriter: Writer? = null
+    private val diskLog = RollingNodeLog(logFile, MAX_LOG_BYTES)
 
     private data class StartParams(
         val password: String,
@@ -274,9 +271,7 @@ class NodeController(private val cli: ZokaCli) {
     private fun openLogFile() {
         closeLogFile()
         try {
-            logFile.parentFile?.mkdirs()
-            rotateLogIfOversized()
-            logWriter = BufferedWriter(FileWriter(logFile, true))
+            diskLog.open()
             writeLogLine("--- node session started ---")
             // Surface the path in the panel too, so it's discoverable without
             // knowing where the data directory lives.
@@ -284,47 +279,18 @@ class NodeController(private val cli: ZokaCli) {
         } catch (_: Exception) {
             // Logging to disk is a diagnostic aid, never a reason to fail to
             // run the node.
-            logWriter = null
+            diskLog.close()
         }
     }
 
     @Synchronized
     private fun writeLogLine(line: String) {
-        val writer = logWriter ?: return
-        try {
-            writer.write("${LOG_TIMESTAMP.format(java.time.Instant.now())} $line")
-            writer.write("\n")
-            // Flushed per line on purpose: the lines worth having are the ones
-            // written just before a crash or a hang.
-            writer.flush()
-        } catch (_: Exception) {
-            logWriter = null
-        }
+        diskLog.append(line)
     }
 
     @Synchronized
     private fun closeLogFile() {
-        try {
-            logWriter?.flush()
-            logWriter?.close()
-        } catch (_: Exception) {
-            // nothing useful to do while tearing down
-        }
-        logWriter = null
-    }
-
-    /// Keep at most one previous log around, so a long-running node can't
-    /// quietly fill the disk.
-    private fun rotateLogIfOversized() {
-        try {
-            if (logFile.exists() && logFile.length() > MAX_LOG_BYTES) {
-                val previous = File(logFile.parentFile, "${logFile.name}.1")
-                if (previous.exists()) previous.delete()
-                logFile.renameTo(previous)
-            }
-        } catch (_: Exception) {
-            // A rotation failure must not stop logging.
-        }
+        diskLog.close()
     }
 
     private fun sanitize(line: String): String {
@@ -356,11 +322,6 @@ class NodeController(private val cli: ZokaCli) {
         /// Rotate the node log past this size, keeping one previous file, so
         /// a node left running for weeks can't fill the disk.
         private const val MAX_LOG_BYTES = 8L * 1024 * 1024
-
-        private val LOG_TIMESTAMP: java.time.format.DateTimeFormatter =
-            java.time.format.DateTimeFormatter
-                .ofPattern("yyyy-MM-dd HH:mm:ss")
-                .withZone(java.time.ZoneId.systemDefault())
 
         // Repetitive, non-actionable p2p connection churn. Dropped from the
         // panel entirely (the fluid mining console / dashboard summary line

@@ -214,7 +214,7 @@ private fun rememberZSilentAppState(): ZSilentAppState {
     val networkRpc = remember(networkSettings.remoteRpcUrl) { ZokaRpcClient(networkSettings.remoteRpcUrl) }
     val localRpc = remember(networkSettings.localRpcUrl) { ZokaRpcClient(networkSettings.localRpcUrl) }
     val nodeController = remember { NodeController(cli) }
-    val miningController = remember { MiningController(cli) }
+    val miningController = remember(cli, localRpc) { MiningController(cli, localRpc) }
     return remember {
         ZSilentAppState(
             cli = cli,
