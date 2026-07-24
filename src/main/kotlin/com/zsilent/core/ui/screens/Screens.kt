@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.CurrencyExchange
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Add
@@ -1979,10 +1981,21 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             ui.miningDiagnostic?.takeIf { it.isNotBlank() && it != ui.miningBlockReason }?.let { diagnostic ->
                 ErrorText(diagnostic)
             }
-            val lastMiningLog = ui.logs.firstOrNull { it.source == "mining" }?.message
-            if (!lastMiningLog.isNullOrBlank()) {
+            // `ui.logs` rotates as new entries arrive, so "the first mining-sourced
+            // entry" can momentarily be absent between polls even while mining is
+            // healthy — deriving this fresh every recomposition made the row flicker
+            // in and out, which reflows this whole panel and visibly shoves every
+            // card below it up and down. Stick to the last real message instead of
+            // reverting to blank on a transient miss; it only ever updates when a
+            // genuinely new event arrives, so the row's presence — and this panel's
+            // height — stays stable.
+            var lastMiningLogSticky by remember { mutableStateOf<String?>(null) }
+            ui.logs.firstOrNull { it.source == "mining" }?.message
+                ?.takeIf { it.isNotBlank() }
+                ?.let { lastMiningLogSticky = it }
+            lastMiningLogSticky?.let { message ->
                 Text(
-                    "Last miner event: $lastMiningLog",
+                    "Last miner event: $message",
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2201,6 +2214,71 @@ private fun logSourceColor(source: String): Color {
 
 private fun logCategoryLabel(source: String): String {
     return "[${source.ifBlank { "runtime" }.uppercase()}]"
+}
+
+@Composable
+private fun ComingSoonScreen(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String
+) {
+    ScreenScaffold(title, subtitle) {
+        Panel(title = title, meta = "Coming soon") {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(40.dp)
+                )
+                Text(
+                    description,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.widthIn(max = 420.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun P2PExchangeScreen() {
+    ComingSoonScreen(
+        title = "P2P Exchange",
+        subtitle = "Trade ZKA directly with other peers, no order book, no custodian.",
+        icon = Icons.Outlined.CurrencyExchange,
+        description = "Peer-to-peer trading is on the roadmap — swap ZKA directly with another " +
+            "wallet with no intermediary holding funds. Not available yet."
+    )
+}
+
+@Composable
+fun MiningPoolScreen() {
+    ComingSoonScreen(
+        title = "Mining Pool",
+        subtitle = "Combine hashrate with other miners and share block rewards.",
+        icon = Icons.Outlined.Groups,
+        description = "Pooled mining is on the roadmap — combine hashrate with other miners for " +
+            "steadier rewards instead of solo variance. Not available yet."
+    )
+}
+
+@Composable
+fun ExplorerScreen() {
+    ComingSoonScreen(
+        title = "Explorer",
+        subtitle = "Browse blocks, transactions and network activity.",
+        icon = Icons.Outlined.Explore,
+        description = "A built-in chain explorer is on the roadmap. In the meantime, the public " +
+            "explorer is available in your browser."
+    )
 }
 
 @Composable

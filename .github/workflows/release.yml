@@ -8,12 +8,12 @@ on:
       node_version:
         description: "ZokaNetwork/ZokaNetwork tag whose verified binaries are embedded"
         required: true
-        default: "v1.9.0"
+        default: "v1.9.1"
         type: string
       release_tag:
         description: "ZSilent tag; must match the app and node version"
         required: true
-        default: "v1.9.0"
+        default: "v1.9.1"
         type: string
       zoka_sha256:
         description: "Required SHA-256 of the official Windows zoka.exe asset"

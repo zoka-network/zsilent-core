@@ -30,7 +30,10 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.CurrencyExchange
 import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Security
@@ -56,11 +59,14 @@ import androidx.compose.ui.unit.sp
 import com.zsilent.core.models.AppSection
 import com.zsilent.core.models.ServiceStatus
 import com.zsilent.core.ui.screens.DashboardScreen
+import com.zsilent.core.ui.screens.ExplorerScreen
 import com.zsilent.core.ui.screens.LoginScreen
 import com.zsilent.core.ui.screens.LogsScreen
+import com.zsilent.core.ui.screens.MiningPoolScreen
 import com.zsilent.core.ui.screens.MiningScreen
 import com.zsilent.core.ui.screens.NodeScreen
 import com.zsilent.core.ui.screens.OnboardingScreen
+import com.zsilent.core.ui.screens.P2PExchangeScreen
 import com.zsilent.core.ui.screens.PrivacyScreen
 import com.zsilent.core.ui.screens.ReceiveScreen
 import com.zsilent.core.ui.screens.SendScreen
@@ -111,6 +117,9 @@ fun ZSilentApp(appState: ZSilentAppState) {
                 AppSection.Receive   -> ReceiveScreen(uiState, appState)
                 AppSection.Node      -> NodeScreen(uiState, appState)
                 AppSection.Mining    -> MiningScreen(uiState, appState)
+                AppSection.MiningPool  -> MiningPoolScreen()
+                AppSection.P2PExchange -> P2PExchangeScreen()
+                AppSection.Explorer    -> ExplorerScreen()
                 AppSection.Privacy   -> PrivacyScreen(uiState, appState)
                 AppSection.Logs      -> LogsScreen(uiState)
                 AppSection.Settings  -> SettingsScreen(uiState, appState)
@@ -281,6 +290,9 @@ private fun AppSection.navItem(): NavItem = when (this) {
     AppSection.Receive   -> NavItem("Receive",   Icons.Outlined.QrCode)
     AppSection.Node      -> NavItem("Node",      Icons.Outlined.Memory)
     AppSection.Mining    -> NavItem("Mining",    Icons.Outlined.Bolt)
+    AppSection.MiningPool  -> NavItem("Mining Pool",  Icons.Outlined.Groups)
+    AppSection.P2PExchange -> NavItem("P2P Exchange", Icons.Outlined.CurrencyExchange)
+    AppSection.Explorer    -> NavItem("Explorer",     Icons.Outlined.Explore)
     AppSection.Privacy   -> NavItem("Privacy",   Icons.Outlined.Security)
     AppSection.Logs      -> NavItem("Logs",      Icons.Outlined.Terminal)
     AppSection.Settings  -> NavItem("Settings",  Icons.Outlined.Settings)

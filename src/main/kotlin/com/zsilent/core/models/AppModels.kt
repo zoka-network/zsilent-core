@@ -10,6 +10,9 @@ enum class AppSection {
     Receive,
     Node,
     Mining,
+    MiningPool,
+    P2PExchange,
+    Explorer,
     Privacy,
     Logs,
     Settings
