@@ -21,8 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -165,15 +167,27 @@ private fun CollapsibleSidebar(
         Spacer(Modifier.height(4.dp))
 
         // ── Nav items ─────────────────────────────────────────────────
-        AppSection.entries.forEach { section ->
-            val (label, icon) = section.navItem()
-            SidebarItem(
-                icon = icon,
-                label = label,
-                selected = selected == section,
-                expanded = expanded,
-                onClick = { onSelect(section) }
-            )
+        // Scrollable and weighted so it only ever claims the space left
+        // over after the logo/toggle above and "Close session"/version
+        // below — with 12 sections the list no longer always fits a
+        // shorter window, and without this the overflowing items were
+        // simply clipped with no way to reach them.
+        Column(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            AppSection.entries.forEach { section ->
+                val (label, icon) = section.navItem()
+                SidebarItem(
+                    icon = icon,
+                    label = label,
+                    selected = selected == section,
+                    expanded = expanded,
+                    onClick = { onSelect(section) }
+                )
+            }
         }
 
         Spacer(Modifier.height(8.dp))
