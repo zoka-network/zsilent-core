@@ -131,6 +131,67 @@ data class WalletSyncStatus(
     val progressPercent: Double = 0.0
 )
 
+// Block metadata as served by GET /blocks/:height, /blocks/hash/:hash and
+// /blocks/latest. Mirrors the node's block_metadata_json exactly.
+//
+// Note what is deliberately absent: private transactions contribute only
+// counts here. The node never serves nullifier owners or private amounts on
+// this endpoint, so the explorer cannot leak them either.
+@Serializable
+data class BlockSummary(
+    val hash: String = "",
+    val height: Long = 0,
+    val timestamp: Long = 0,
+    @SerialName("state_root")
+    val stateRoot: String = "",
+    @SerialName("previous_hash")
+    val previousHash: String = "",
+    val nonce: Long = 0,
+    // Genesis (height 0) has no recorded difficulty — the node sends null.
+    @SerialName("difficulty_bits")
+    val difficultyBits: Int? = null,
+    @SerialName("size_bytes")
+    val sizeBytes: Long = 0,
+    @SerialName("reward_atoms")
+    val rewardAtoms: Long = 0,
+    @SerialName("reward_zka_display")
+    val rewardZkaDisplay: String = "",
+    @SerialName("transactions_count")
+    val transactionsCount: Int = 0,
+    @SerialName("private_tx_count")
+    val privateTxCount: Int = 0,
+    @SerialName("private_nullifier_count")
+    val privateNullifierCount: Int = 0,
+    @SerialName("private_coinbase")
+    val privateCoinbase: Boolean = false
+)
+
+// GET /blocks/:height/transactions. The node exposes only the hash of each
+// public transaction — sender, receiver and amount are private by protocol.
+@Serializable
+data class BlockTransactionRef(
+    val hash: String = ""
+)
+
+@Serializable
+data class BlockTransactions(
+    @SerialName("block_height")
+    val blockHeight: Long = 0,
+    @SerialName("transactions_count")
+    val transactionsCount: Int = 0,
+    val transactions: List<BlockTransactionRef> = emptyList()
+)
+
+// GET /mempool/tx/:hash — only ever describes an unconfirmed transaction.
+// The node has no tx-hash index over confirmed blocks, so a hash that is
+// already mined 404s here rather than resolving.
+@Serializable
+data class MempoolTransaction(
+    val hash: String = "",
+    val timestamp: Long = 0,
+    val status: String = ""
+)
+
 @Serializable
 data class WalletListResponse(
     val network: String = "",
