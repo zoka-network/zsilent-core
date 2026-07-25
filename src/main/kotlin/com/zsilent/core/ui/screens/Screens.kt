@@ -33,7 +33,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.CurrencyExchange
-import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -2270,16 +2269,8 @@ fun MiningPoolScreen() {
     )
 }
 
-@Composable
-fun ExplorerScreen() {
-    ComingSoonScreen(
-        title = "Explorer",
-        subtitle = "Browse blocks, transactions and network activity.",
-        icon = Icons.Outlined.Explore,
-        description = "A built-in chain explorer is on the roadmap. In the meantime, the public " +
-            "explorer is available in your browser."
-    )
-}
+// ExplorerScreen lives in ExplorerScreen.kt — it reads real chain state and is
+// wired into the router. No Coming Soon placeholder for this section.
 
 @Composable
 fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {

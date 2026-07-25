@@ -121,7 +121,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
                 AppSection.Mining    -> MiningScreen(uiState, appState)
                 AppSection.MiningPool  -> MiningPoolScreen()
                 AppSection.P2PExchange -> P2PExchangeScreen()
-                AppSection.Explorer    -> ExplorerScreen()
+                AppSection.Explorer    -> ExplorerScreen(uiState, appState)
                 AppSection.Privacy   -> PrivacyScreen(uiState, appState)
                 AppSection.Logs      -> LogsScreen(uiState)
                 AppSection.Settings  -> SettingsScreen(uiState, appState)
