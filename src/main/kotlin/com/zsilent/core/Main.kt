@@ -235,7 +235,7 @@ private fun WindowScope.ZSilentRoot(
 ) {
     val ui by appState.state.collectAsState()
 
-    ZSilentTheme(darkTheme = ui.darkTheme) {
+    ZSilentTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 WindowTitleBar(

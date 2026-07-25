@@ -605,35 +605,6 @@ class ZSilentAppState(
         }
     }
 
-    fun toggleTheme() {
-        val snapshot = _uiState.value
-        val darkTheme = !snapshot.darkTheme
-        update { it.copy(darkTheme = darkTheme) }
-        if (snapshot.onboardingComplete) {
-            setupStore.save(
-                PersistedSetup(
-                    onboardingComplete = true,
-                    walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
-                    walletAddress = snapshot.activeWalletAddress,
-                    managedWallets = snapshot.managedWallets,
-                    managedWalletAddresses = managedAddressesFor(snapshot),
-                    nodeEnabled = snapshot.onboardingNodeEnabled,
-                    miningEnabled = snapshot.onboardingMiningEnabled,
-                    balancesHidden = snapshot.balancesHidden,
-                    autoLockMinutes = snapshot.onboardingAutoLockMinutes,
-                    darkTheme = darkTheme,
-                    torEnabled = snapshot.torEnabled,
-                    torOnly = snapshot.torOnly,
-                    torSocksHost = snapshot.torSocksHost,
-                    torSocksPort = snapshot.torSocksPort,
-                    managedTorEnabled = snapshot.managedTorEnabled,
-                    onionSeedEnabled = snapshot.onionSeedEnabled,
-                    managedTorSocksPort = snapshot.managedTorSocksPort
-                )
-            )
-        }
-    }
-
     fun toggleBalances() {
         val snapshot = _uiState.value
         val hidden = !snapshot.balancesHidden
