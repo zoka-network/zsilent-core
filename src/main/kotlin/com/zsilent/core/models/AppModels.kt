@@ -364,6 +364,9 @@ data class PersistedSetup(
     val balancesHidden: Boolean = false,
     val autoLockMinutes: Int = 10,
     val darkTheme: Boolean = true,
+    // Experimental sections are opt-in, so absent (older setup files) must
+    // read as off rather than silently enabling them on upgrade.
+    val explorerEnabled: Boolean = false,
     val torEnabled: Boolean = true,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",

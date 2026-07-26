@@ -2145,6 +2145,17 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
             ToggleRow("Wallet session", !ui.appLocked) { appState.lockApp("Locked manually.") }
         }
+        Panel(
+            title = "Experimental",
+            meta = if (ui.explorerEnabled) "1 enabled" else "off"
+        ) {
+            ToggleRow("Chain explorer", ui.explorerEnabled) { appState.setExplorerEnabled(it) }
+            HintText(
+                "Adds an Explorer section to the sidebar for browsing blocks and pending " +
+                    "transactions. It reads only from your own node — no public explorer is " +
+                    "contacted — so it can only show what your node has already synced."
+            )
+        }
         Panel(title = "Security posture", meta = "default") {
             KeyValueRow("Telemetry", "disabled")
             KeyValueRow("Private keys in logs", "blocked")
