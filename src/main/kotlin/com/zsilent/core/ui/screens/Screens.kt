@@ -2258,27 +2258,8 @@ private fun ComingSoonScreen(
     }
 }
 
-@Composable
-fun P2PExchangeScreen() {
-    ComingSoonScreen(
-        title = "P2P Exchange",
-        subtitle = "Trade ZKA directly with other peers, no order book, no custodian.",
-        icon = Icons.Outlined.CurrencyExchange,
-        description = "Peer-to-peer trading is on the roadmap — swap ZKA directly with another " +
-            "wallet with no intermediary holding funds. Not available yet."
-    )
-}
-
-@Composable
-fun MiningPoolScreen() {
-    ComingSoonScreen(
-        title = "Mining Pool",
-        subtitle = "Combine hashrate with other miners and share block rewards.",
-        icon = Icons.Outlined.Groups,
-        description = "Pooled mining is on the roadmap — combine hashrate with other miners for " +
-            "steadier rewards instead of solo variance. Not available yet."
-    )
-}
+// P2PExchangeScreen and MiningPoolScreen live in their own files. Both take
+// (ui, appState) and read real state, so no Coming Soon placeholders remain.
 
 // ExplorerScreen lives in ExplorerScreen.kt — it reads real chain state and is
 // wired into the router. No Coming Soon placeholder for this section.

@@ -120,8 +120,8 @@ fun ZSilentApp(appState: ZSilentAppState) {
                 AppSection.Receive   -> ReceiveScreen(uiState, appState)
                 AppSection.Node      -> NodeScreen(uiState, appState)
                 AppSection.Mining    -> MiningScreen(uiState, appState)
-                AppSection.MiningPool  -> MiningPoolScreen()
-                AppSection.P2PExchange -> P2PExchangeScreen()
+                AppSection.MiningPool  -> MiningPoolScreen(uiState, appState)
+                AppSection.P2PExchange -> P2PExchangeScreen(uiState, appState)
                 AppSection.Explorer    ->
                     // Reachable only while the opt-in holds; if it is switched
                     // off from another surface the router must not keep

@@ -3,7 +3,10 @@ package com.zsilent.core.rpc
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.ChainHeightResponse
+import com.zsilent.core.models.CreateOfferRequest
 import com.zsilent.core.models.MempoolTransaction
+import com.zsilent.core.models.OfferList
+import com.zsilent.core.models.OfferSummary
 import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
@@ -124,6 +127,56 @@ class ZokaRpcClient(val baseUrl: String) {
      */
     suspend fun mempoolTransaction(hash: String): MempoolTransaction? =
         getOrNull("/mempool/tx/$hash")
+
+    /**
+     * Raised when the node answers 404 on an endpoint the app knows about.
+     *
+     * For the exchange this is expected rather than exceptional: a node built
+     * before offers existed has no such route, and the UI must say "your node
+     * is too old" instead of "there are no offers", which would be a lie about
+     * the network.
+     */
+    class EndpointUnsupported(val path: String) : Exception("node has no $path endpoint")
+
+    /**
+     * Offers this node knows about. Throws [EndpointUnsupported] when the node
+     * predates the exchange.
+     */
+    suspend fun exchangeOffers(): OfferList =
+        getOrNull<OfferList>("/p2p-exchange/offers")
+            ?: throw EndpointUnsupported("/p2p-exchange/offers")
+
+    suspend fun createOffer(request: CreateOfferRequest): OfferSummary {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val response = client.post("$baseUrl/p2p-exchange/offers") {
+            contentType(ContentType.Application.Json)
+            setBody(codec.encodeToString(request))
+        }
+        if (response.status == HttpStatusCode.NotFound) {
+            throw EndpointUnsupported("/p2p-exchange/offers")
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            // The node explains refusals (below minimum, too many open offers,
+            // malformed TRON address); surface its wording rather than a
+            // generic failure the user cannot act on.
+            throw IllegalStateException(body.ifBlank { "offer rejected: ${response.status}" })
+        }
+        return codec.decodeFromString(body)
+    }
+
+    suspend fun claimOffer(offerId: String): OfferSummary {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/claim")
+        if (response.status == HttpStatusCode.NotFound) {
+            throw EndpointUnsupported("/p2p-exchange/offers/$offerId/claim")
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(body.ifBlank { "claim refused: ${response.status}" })
+        }
+        return codec.decodeFromString(body)
+    }
 
     // Returns the Block JSON for a given height.
     // Same format as GET /blocks/:height/raw, accepted by POST /sync/block.

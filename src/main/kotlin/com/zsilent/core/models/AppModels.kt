@@ -182,6 +182,47 @@ data class BlockTransactions(
     val transactions: List<BlockTransactionRef> = emptyList()
 )
 
+// ── P2P exchange ─────────────────────────────────────────────────────────
+//
+// Mirrors the node's `p2p_exchange::Offer`. Amounts stay integers on this side
+// too: ZKA in atoms, USDT in micro-USDT (TRC-20 carries six decimals). Parsing
+// them into Double for display is fine; doing arithmetic on that Double is not,
+// because the node decides payment matching on the integer value.
+@Serializable
+data class OfferSummary(
+    val id: String = "",
+    @SerialName("seller_address")
+    val sellerAddress: String = "",
+    @SerialName("zka_atoms")
+    val zkaAtoms: Long = 0,
+    @SerialName("micro_usdt")
+    val microUsdt: Long = 0,
+    @SerialName("usdt_receive_address")
+    val usdtReceiveAddress: String = "",
+    val status: String = "Open",
+    @SerialName("created_at")
+    val createdAt: Long = 0,
+    @SerialName("claim_expires_at")
+    val claimExpiresAt: Long? = null,
+    @SerialName("claimed_by")
+    val claimedBy: String? = null
+)
+
+@Serializable
+data class OfferList(
+    val offers: List<OfferSummary> = emptyList()
+)
+
+@Serializable
+data class CreateOfferRequest(
+    @SerialName("zka_atoms")
+    val zkaAtoms: Long,
+    @SerialName("micro_usdt")
+    val microUsdt: Long,
+    @SerialName("usdt_receive_address")
+    val usdtReceiveAddress: String
+)
+
 // GET /mempool/tx/:hash — only ever describes an unconfirmed transaction.
 // The node has no tx-hash index over confirmed blocks, so a hash that is
 // already mined 404s here rather than resolving.
