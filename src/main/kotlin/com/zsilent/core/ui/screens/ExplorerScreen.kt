@@ -24,6 +24,7 @@ import com.zsilent.core.config.ZokaNetworkConfig
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.MempoolTransaction
+import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
 import com.zsilent.core.ui.components.CopyableKeyValueRow
@@ -103,7 +104,7 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Block height, block hash, or pending tx hash") },
+                    label = { Text("Height, block hash, address, or pending tx hash") },
                     singleLine = true,
                     enabled = ui.localRpcOnline,
                     colors = zFieldColors(),
@@ -122,12 +123,16 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 }
             }
             HintText(
-                "Digits are read as a block height. Anything else is tried as a block hash, " +
-                    "then as a pending transaction."
+                "Digits are a block height. zka1… and zpriv:… are looked up as addresses. " +
+                    "Anything else is tried as a block hash, then as a pending transaction. " +
+                    "Confirmed transactions have no public index — use the view key scan " +
+                    "below to find your own."
             )
         }
 
         LookupResult(result)
+
+        ViewKeyScanPanel(ui, appState)
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Panel(title = "Latest blocks", meta = "visual top 5", modifier = Modifier.weight(1f)) {
@@ -167,6 +172,127 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             }
         }
     }
+}
+
+/**
+ * Finds the user's own private payments from their view scan key.
+ *
+ * Private transactions carry no readable recipient, so no hash lookup can find
+ * them — the only way is to test outputs against a scan key. That key reveals
+ * every payment its owner has ever received, which is why this panel refuses
+ * to run at all unless the RPC points at a node on this machine.
+ */
+@Composable
+private fun ViewKeyScanPanel(ui: ZSilentUiState, appState: ZSilentAppState) {
+    var scanKey by remember { mutableStateOf("") }
+    var scan by remember { mutableStateOf<ScanState>(ScanState.Idle) }
+    val scope = rememberCoroutineScope()
+    val local = remember(appState) { appState.localRpc.isLocalEndpoint() }
+
+    Panel(
+        title = "Find my private payments",
+        meta = if (local) "view key, stays local" else "disabled"
+    ) {
+        if (!local) {
+            Text(
+                "Your RPC endpoint is not on this machine. A view key reveals every " +
+                    "private payment you have received, so it is never sent to a remote " +
+                    "node.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            return@Panel
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = scanKey,
+                onValueChange = { scanKey = it.trim() },
+                label = { Text("View scan key (hex)") },
+                singleLine = true,
+                enabled = ui.localRpcOnline,
+                colors = zFieldColors(),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    scan = ScanState.Running
+                    scope.launch {
+                        scan = withContext(Dispatchers.IO) {
+                            try {
+                                ScanState.Done(appState.localRpc.viewScanByKey(scanKey))
+                            } catch (t: Throwable) {
+                                ScanState.Failed(t.message ?: "Scan failed")
+                            }
+                        }
+                    }
+                },
+                enabled = ui.localRpcOnline && scanKey.isNotBlank(),
+                colors = zButtonColors()
+            ) {
+                Text("Scan")
+            }
+        }
+
+        when (val current = scan) {
+            ScanState.Idle -> HintText(
+                "Private payments have no public recipient, so they cannot be found by " +
+                    "hash. Your view key is the only way to recognise them — it is sent " +
+                    "to your own node and nowhere else."
+            )
+
+            ScanState.Running -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text("Scanning archived transactions…", style = MaterialTheme.typography.bodySmall)
+            }
+
+            is ScanState.Failed -> ErrorText(current.message)
+
+            is ScanState.Done -> {
+                val result = current.result
+                CopyableKeyValueRow("Derived address", result.address)
+                KeyValueRow("Transactions scanned", result.scannedTransactions.toString())
+                KeyValueRow("Outputs found", result.matchingOutputs.toString())
+                KeyValueRow("Total", "${formatAtoms(result.totalAmountAtoms)} ZKA")
+                if (result.matches.isEmpty()) {
+                    EmptyState("No private outputs on this node match that key.")
+                    HintText(
+                        "If your node is still syncing, payments in blocks it has not " +
+                            "reached yet cannot be found."
+                    )
+                } else {
+                    result.matches.take(20).forEach { match ->
+                        CopyableKeyValueRow(
+                            "${formatAtoms(match.amount)} ZKA" +
+                                if (match.isChange) " (change)" else "",
+                            match.txHash
+                        )
+                    }
+                    if (result.matches.size > 20) {
+                        HintText("Showing the first 20 of ${result.matches.size}.")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private sealed interface ScanState {
+    data object Idle : ScanState
+    data object Running : ScanState
+    data class Done(val result: ViewScanResponse) : ScanState
+    data class Failed(val message: String) : ScanState
+}
+
+/** Atoms to a readable ZKA figure. Matches `economics::ATOMS_PER_ZKA`. */
+private fun formatAtoms(atoms: Long): String {
+    val whole = atoms / 1_000_000L
+    val frac = atoms % 1_000_000L
+    return if (frac == 0L) whole.toString()
+    else "$whole.${frac.toString().padStart(6, '0').trimEnd('0')}"
 }
 
 /**
@@ -216,6 +342,15 @@ private fun LookupResult(result: ExplorerLookup) {
         is ExplorerLookup.Found -> BlockDetail(result.block, result.transactions)
 
         is ExplorerLookup.PendingTx -> PendingTxDetail(result.tx)
+
+        is ExplorerLookup.Account -> Panel(title = "Address", meta = "exists on chain") {
+            CopyableKeyValueRow("Address", result.address)
+            KeyValueRow("Status", "known to this node")
+            HintText(
+                "Balances are not published. The node confirms the address exists and " +
+                    "nothing more — amounts and history are private by protocol."
+            )
+        }
 
         is ExplorerLookup.NotFound -> Panel(title = "Not found", meta = "no match") {
             Text(
@@ -293,6 +428,7 @@ private sealed interface ExplorerLookup {
     data object Loading : ExplorerLookup
     data class Found(val block: BlockSummary, val transactions: BlockTransactions?) : ExplorerLookup
     data class PendingTx(val tx: MempoolTransaction) : ExplorerLookup
+    data class Account(val address: String) : ExplorerLookup
     data class NotFound(val term: String, val hint: String) : ExplorerLookup
     data class Failed(val message: String) : ExplorerLookup
 }
@@ -321,6 +457,20 @@ private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLoo
         } else {
             ExplorerLookup.Found(block, runCatching { rpc.blockTransactions(height) }.getOrNull())
         }
+    } else if (term.startsWith("zka1") || term.startsWith("zpriv:")) {
+        // Address shapes go straight to the account check; trying them as a
+        // block hash first would just waste a round trip.
+        val account = rpc.accountExists(term)
+        if (account != null && account.valid) {
+            ExplorerLookup.Account(account.address)
+        } else {
+            ExplorerLookup.NotFound(
+                term,
+                "This node has no account with that address. It may simply never have " +
+                    "received funds, or your node may not have synced the block that " +
+                    "created it."
+            )
+        }
     } else {
         val block = rpc.blockByHash(term)
         if (block != null) {
@@ -337,7 +487,8 @@ private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLoo
                     term,
                     "Not a block hash on this node, and not a pending transaction. " +
                         "Transactions already mined into a block cannot be looked up by " +
-                        "hash — the node keeps no index for them. Open the block instead."
+                        "hash — the node keeps no index for them. Open the block instead. " +
+                        "To find your own private payments, use the view key scan below."
                 )
             }
         }

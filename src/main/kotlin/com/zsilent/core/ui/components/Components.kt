@@ -5,7 +5,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -220,6 +224,164 @@ fun StatusCard(
                 color = ZText, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = ZTextSubtle)
         }
+    }
+}
+
+/** Accent colours available to metric tiles and meters. */
+enum class MetricAccent(val color: Color) {
+    Green(ZAccent),
+    Blue(Color(0xFF9CB8F2)),
+    Violet(Color(0xFFC3A8F2)),
+    Amber(Color(0xFFF4C28A)),
+    Rose(ZError),
+    /** For figures that are not live yet — deliberately colourless. */
+    Neutral(ZTextSubtle)
+}
+
+/**
+ * A metric with an accent bar, a large monospaced figure and an optional
+ * meter underneath.
+ *
+ * `dimmed` renders the tile greyed out for values that are not live yet. It is
+ * a visual honesty control: a placeholder styled exactly like a real reading
+ * invites the user to act on a number nobody measured.
+ */
+@Composable
+fun MetricTile(
+    label: String,
+    value: String,
+    caption: String,
+    accent: MetricAccent = MetricAccent.Green,
+    fraction: Float? = null,
+    dimmed: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val tint = if (dimmed) ZTextSubtle else accent.color
+    androidx.compose.material3.Surface(
+        modifier = modifier,
+        shape = shape,
+        color = Color.Transparent,
+        shadowElevation = 2.dp,
+        tonalElevation = 0.dp
+    ) {
+        Row(modifier = Modifier.background(ZCardGradient, shape)) {
+            // Accent rail — the tile's only strong colour, so a row of tiles
+            // reads as one system instead of competing blocks.
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(tint.copy(alpha = if (dimmed) 0.35f else 1f))
+            )
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(
+                    label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ZTextSubtle,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    value,
+                    fontSize = 22.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = if (dimmed) ZTextSubtle else ZText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (fraction != null) MeterBar(fraction, accent, dimmed)
+                Text(caption, style = MaterialTheme.typography.bodySmall, color = ZTextSubtle)
+            }
+        }
+    }
+}
+
+/** Horizontal fill bar, used for allocation and progress. */
+@Composable
+fun MeterBar(
+    fraction: Float,
+    accent: MetricAccent = MetricAccent.Green,
+    dimmed: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val safe = fraction.coerceIn(0f, 1f)
+    val tint = if (dimmed) ZTextSubtle else accent.color
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .background(ZSurfaceElev, RoundedCornerShape(3.dp))
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(safe)
+                .height(6.dp)
+                .background(tint.copy(alpha = if (dimmed) 0.4f else 1f), RoundedCornerShape(3.dp))
+        )
+    }
+}
+
+/**
+ * Segmented single-choice control, for picking among a handful of options
+ * (mining power, core counts) without a dropdown.
+ */
+@Composable
+fun SegmentedSelector(
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier
+            .background(ZSurfaceElev, RoundedCornerShape(10.dp))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        options.forEach { option ->
+            val active = option == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .background(
+                        if (active) ZAccentSoft else Color.Transparent,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .clickable(enabled = enabled) { onSelect(option) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    option,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = when {
+                        !enabled -> ZTextSubtle
+                        active -> ZAccent
+                        else -> ZTextMuted
+                    },
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
+                )
+            }
+        }
+    }
+}
+
+/** Label with a coloured dot, for legends and state rows. */
+@Composable
+fun LegendDot(label: String, accent: MetricAccent, modifier: Modifier = Modifier) {
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Box(Modifier.size(8.dp).background(accent.color, RoundedCornerShape(4.dp)))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = ZTextMuted)
     }
 }
 

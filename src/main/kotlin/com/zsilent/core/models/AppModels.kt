@@ -182,6 +182,52 @@ data class BlockTransactions(
     val transactions: List<BlockTransactionRef> = emptyList()
 )
 
+// GET /accounts/:address — existence only. The node deliberately withholds
+// balance and nonce here; those are private.
+@Serializable
+data class AccountCheck(
+    val address: String = "",
+    val valid: Boolean = false
+)
+
+// POST /private/view-scan-key. Finds the private outputs belonging to a scan
+// key. The key itself is a secret that reveals every incoming private payment
+// to its owner, so it is only ever sent to a node running on this machine.
+@Serializable
+data class ViewScanMatch(
+    @SerialName("tx_hash")
+    val txHash: String = "",
+    @SerialName("output_id")
+    val outputId: String = "",
+    @SerialName("output_index")
+    val outputIndex: Int = 0,
+    @SerialName("asset_tag")
+    val assetTag: String = "",
+    val amount: Long = 0,
+    @SerialName("is_change")
+    val isChange: Boolean = false,
+    val timestamp: Long = 0
+)
+
+@Serializable
+data class ViewScanResponse(
+    val address: String = "",
+    @SerialName("scanned_transactions")
+    val scannedTransactions: Int = 0,
+    @SerialName("matching_outputs")
+    val matchingOutputs: Int = 0,
+    @SerialName("total_amount_atoms")
+    val totalAmountAtoms: Long = 0,
+    val matches: List<ViewScanMatch> = emptyList()
+)
+
+@Serializable
+data class ViewScanKeyRequest(
+    @SerialName("scan_key_hex")
+    val scanKeyHex: String,
+    val limit: Int? = null
+)
+
 // ── P2P exchange ─────────────────────────────────────────────────────────
 //
 // Mirrors the node's `p2p_exchange::Offer`. Amounts stay integers on this side

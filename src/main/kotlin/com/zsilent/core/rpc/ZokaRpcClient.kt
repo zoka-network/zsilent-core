@@ -1,9 +1,12 @@
 package com.zsilent.core.rpc
 
+import com.zsilent.core.models.AccountCheck
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.ChainHeightResponse
 import com.zsilent.core.models.CreateOfferRequest
+import com.zsilent.core.models.ViewScanKeyRequest
+import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.models.MempoolTransaction
 import com.zsilent.core.models.OfferList
 import com.zsilent.core.models.OfferSummary
@@ -127,6 +130,49 @@ class ZokaRpcClient(val baseUrl: String) {
      */
     suspend fun mempoolTransaction(hash: String): MempoolTransaction? =
         getOrNull("/mempool/tx/$hash")
+
+    /**
+     * Whether the chain knows this address. The node returns existence only —
+     * balance and nonce stay private — so this answers "is this address real"
+     * and nothing more.
+     */
+    suspend fun accountExists(address: String): AccountCheck? =
+        getOrNull("/accounts/$address")
+
+    /**
+     * True when this client points at a node on this machine.
+     *
+     * The view scan key reveals every private payment its owner has received.
+     * Sending it to a remote node would hand that power to whoever runs it, so
+     * the scan is refused unless the RPC is local.
+     */
+    fun isLocalEndpoint(): Boolean {
+        val host = runCatching { java.net.URI(baseUrl).host }.getOrNull()?.lowercase()
+        return host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "[::1]"
+    }
+
+    /**
+     * Finds private outputs belonging to [scanKeyHex].
+     *
+     * Refuses outright when the endpoint is not local, rather than trusting the
+     * caller to have checked: this is the one request in the client that
+     * carries a secret capable of deanonymising the user's whole history.
+     */
+    suspend fun viewScanByKey(scanKeyHex: String, limit: Int? = null): ViewScanResponse {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        check(isLocalEndpoint()) {
+            "refusing to send a view scan key to a non-local node ($baseUrl)"
+        }
+        val response = client.post("$baseUrl/private/view-scan-key") {
+            contentType(ContentType.Application.Json)
+            setBody(codec.encodeToString(ViewScanKeyRequest(scanKeyHex, limit)))
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(body.ifBlank { "view scan failed: ${response.status}" })
+        }
+        return codec.decodeFromString(body)
+    }
 
     /**
      * Raised when the node answers 404 on an endpoint the app knows about.
