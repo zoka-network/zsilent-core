@@ -4,7 +4,6 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -16,113 +15,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Premium fintech dark palette — silent, technical, violet-accented.
+//  "Zenith" — the single ZSilent palette: near-black surfaces, white text,
+//  pastel-green accent. Matches ZKAPriv.
 //
-//  Surfaces: deep blacks with a slight blue-grey lean (never pure black).
-//  Accent : a single lilac/violet family used sparingly for active state,
-//           progress, chart lines and small glows.
-//  Text   : soft white / cool grey / deep grey for high/medium/low emphasis.
-//  Errors : desaturated rose, success expressed via the same violet family
-//           so the palette stays disciplined (no green/blue noise).
+//  There is deliberately no light/dark pair. Everything reading
+//  MaterialTheme.colorScheme.* directly (sync progress bars, mining screen,
+//  the Send wallet picker, …) resolves against this one scheme, so the whole
+//  app stays visually consistent.
+//
+//  Kept as a `darkColorScheme` because that is the Material3 plumbing for a
+//  dark-surface palette — the name refers to the machinery, not to a theme
+//  the user can switch away from.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Brand violet family
-private val LilacPrimary = Color(0xFFC084FC)          // main accent
-private val LilacPrimaryOn = Color(0xFF231038)
-private val LilacContainer = Color(0xFF5B2BAA)
-private val LilacContainerOn = Color(0xFFE9D5FF)
-private val LilacDeep = Color(0xFFA855F7)             // deeper violet for hover/press
-private val LilacSoft = Color(0xFFD8B4FE)             // softer highlight
-private val LilacWhisper = Color(0xFFE9D5FF)          // very light hover wash
-
-// Secondary violet (used for active state contrast / progress)
-private val VioletSecondary = Color(0xFFA78BFA)
-private val VioletSecondaryOn = Color(0xFF1F1145)
-private val VioletSecondaryContainer = Color(0xFF3E2C7A)
-private val VioletSecondaryContainerOn = Color(0xFFDDD0FF)
-
-// Tertiary — even softer lilac for info badges / charts
-private val LavenderTertiary = Color(0xFFD8B4FE)
-private val LavenderTertiaryOn = Color(0xFF2B1556)
-
-// Error — desaturated, never saturated red
-private val SoftError = Color(0xFFE08B8B)
-private val SoftErrorOn = Color(0xFF45161A)
-private val SoftErrorContainer = Color(0xFF6D2E33)
-private val SoftErrorContainerOn = Color(0xFFFCD9D9)
-
-// Surfaces — carbon greys with a hint of blue
-private val SurfaceBase = Color(0xFF07080C)           // app background
-private val SurfaceLowest = Color(0xFF050608)         // recessed
-private val SurfaceLow = Color(0xFF0B0D12)            // card low elevation
-private val SurfaceMid = Color(0xFF10131A)            // standard card
-private val SurfaceHigh = Color(0xFF141822)           // elevated card
-private val SurfaceHigher = Color(0xFF171B24)         // hover / focus
-private val SurfaceTop = Color(0xFF1B202B)            // tooltip / modal
-private val SurfaceTint = Color(0xFF0D1017)           // tinted variant
-
-// Text emphasis on dark surfaces
-private val TextHigh = Color(0xFFF4F4F5)              // primary text — soft white
-private val TextMedium = Color(0xFF9CA3AF)            // secondary text — cool grey
-private val TextLow = Color(0xFF6B7280)               // tertiary / disabled
-
-// Outlines
-private val OutlineSoft = Color(0xFF1E2430)           // hair lines between cards
-private val OutlineMid = Color(0xFF252B38)
-private val OutlineStrong = Color(0xFF2A3140)         // emphasized borders
-
-private val Paper = Color(0xFFFFFFFF)
-
-private val DarkScheme: ColorScheme = darkColorScheme(
-    primary = LilacPrimary,
-    onPrimary = LilacPrimaryOn,
-    primaryContainer = LilacContainer,
-    onPrimaryContainer = LilacContainerOn,
-    inversePrimary = LilacDeep,
-
-    secondary = VioletSecondary,
-    onSecondary = VioletSecondaryOn,
-    secondaryContainer = VioletSecondaryContainer,
-    onSecondaryContainer = VioletSecondaryContainerOn,
-
-    tertiary = LavenderTertiary,
-    onTertiary = LavenderTertiaryOn,
-
-    error = SoftError,
-    onError = SoftErrorOn,
-    errorContainer = SoftErrorContainer,
-    onErrorContainer = SoftErrorContainerOn,
-
-    background = SurfaceBase,
-    onBackground = TextHigh,
-
-    surface = SurfaceBase,
-    onSurface = TextHigh,
-    surfaceVariant = SurfaceTint,
-    onSurfaceVariant = TextMedium,
-    surfaceTint = LilacPrimary,
-    inverseSurface = Color(0xFFE9E6EE),
-    inverseOnSurface = Color(0xFF1B1A1F),
-
-    outline = OutlineStrong,
-    outlineVariant = OutlineSoft,
-    scrim = Color(0xFF000000),
-    surfaceBright = SurfaceTop,
-    surfaceDim = SurfaceLowest,
-    surfaceContainerLowest = SurfaceLowest,
-    surfaceContainerLow = SurfaceLow,
-    surfaceContainer = SurfaceMid,
-    surfaceContainerHigh = SurfaceHigh,
-    surfaceContainerHighest = SurfaceHigher
-)
-
-// "Zenith" scheme — near-black, white text, pastel-green primary accent.
-// Kept as a `darkColorScheme` (Material3 plumbing) but every token below is
-// sourced from the same near-black/pastel palette used by the Noir*/Z*
-// composables, so anything reading MaterialTheme.colorScheme.* directly
-// (sync progress bars, mining screen, the Send wallet picker, etc.) matches
-// the rest of the app instead of the old smoke-gray look.
-private val LightScheme: ColorScheme = darkColorScheme(
+private val ZenithScheme: ColorScheme = darkColorScheme(
     primary             = Color(0xFFA8E6B0),   // pastel green accent
     onPrimary           = Color(0xFF0A0A0C),
     primaryContainer    = Color(0xFF1C2B20),
@@ -259,12 +165,9 @@ private val ZSilentTypography = Typography(
 )
 
 @Composable
-fun ZSilentTheme(
-    darkTheme: Boolean = false,  // always light — matches ZKAPriv
-    content: @Composable () -> Unit
-) {
+fun ZSilentTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = LightScheme,   // dark theme removed: single clean light palette
+        colorScheme = ZenithScheme,
         typography = ZSilentTypography,
         shapes = ZSilentShapes,
         content = content

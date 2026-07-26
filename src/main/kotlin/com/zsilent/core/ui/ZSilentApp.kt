@@ -106,6 +106,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
             expanded = expanded,
             onToggle = { expanded = !expanded },
             onCloseSession = { appState.lockApp("Session closed.") },
+            sections = visibleSections(uiState),
             modifier = Modifier.width(sidebarWidth)
         )
         // 1dp separator line between sidebar and content
@@ -121,7 +122,12 @@ fun ZSilentApp(appState: ZSilentAppState) {
                 AppSection.Mining    -> MiningScreen(uiState, appState)
                 AppSection.MiningPool  -> MiningPoolScreen()
                 AppSection.P2PExchange -> P2PExchangeScreen()
-                AppSection.Explorer    -> ExplorerScreen()
+                AppSection.Explorer    ->
+                    // Reachable only while the opt-in holds; if it is switched
+                    // off from another surface the router must not keep
+                    // rendering a section the sidebar no longer lists.
+                    if (uiState.explorerEnabled) ExplorerScreen(uiState, appState)
+                    else DashboardScreen(uiState, appState)
                 AppSection.Privacy   -> PrivacyScreen(uiState, appState)
                 AppSection.Logs      -> LogsScreen(uiState)
                 AppSection.Settings  -> SettingsScreen(uiState, appState)
@@ -130,6 +136,20 @@ fun ZSilentApp(appState: ZSilentAppState) {
     }
 }
 
+/**
+ * Sections offered in the sidebar for the current settings.
+ *
+ * Experimental sections are opt-in, so they are filtered out of the nav rather
+ * than shown disabled — a visible entry that refuses to open reads as a bug.
+ */
+private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
+    AppSection.entries.filter { section ->
+        when (section) {
+            AppSection.Explorer -> uiState.explorerEnabled
+            else -> true
+        }
+    }
+
 @Composable
 private fun CollapsibleSidebar(
     selected: AppSection,
@@ -137,6 +157,7 @@ private fun CollapsibleSidebar(
     expanded: Boolean,
     onToggle: () -> Unit,
     onCloseSession: () -> Unit,
+    sections: List<AppSection>,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -178,7 +199,7 @@ private fun CollapsibleSidebar(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            AppSection.entries.forEach { section ->
+            sections.forEach { section ->
                 val (label, icon) = section.navItem()
                 SidebarItem(
                     icon = icon,

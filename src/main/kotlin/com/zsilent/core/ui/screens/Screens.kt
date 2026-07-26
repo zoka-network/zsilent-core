@@ -33,7 +33,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.CurrencyExchange
-import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -2146,6 +2145,17 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
             ToggleRow("Wallet session", !ui.appLocked) { appState.lockApp("Locked manually.") }
         }
+        Panel(
+            title = "Experimental",
+            meta = if (ui.explorerEnabled) "1 enabled" else "off"
+        ) {
+            ToggleRow("Chain explorer", ui.explorerEnabled) { appState.setExplorerEnabled(it) }
+            HintText(
+                "Adds an Explorer section to the sidebar for browsing blocks and pending " +
+                    "transactions. It reads only from your own node — no public explorer is " +
+                    "contacted — so it can only show what your node has already synced."
+            )
+        }
         Panel(title = "Security posture", meta = "default") {
             KeyValueRow("Telemetry", "disabled")
             KeyValueRow("Private keys in logs", "blocked")
@@ -2270,16 +2280,8 @@ fun MiningPoolScreen() {
     )
 }
 
-@Composable
-fun ExplorerScreen() {
-    ComingSoonScreen(
-        title = "Explorer",
-        subtitle = "Browse blocks, transactions and network activity.",
-        icon = Icons.Outlined.Explore,
-        description = "A built-in chain explorer is on the roadmap. In the meantime, the public " +
-            "explorer is available in your browser."
-    )
-}
+// ExplorerScreen lives in ExplorerScreen.kt — it reads real chain state and is
+// wired into the router. No Coming Soon placeholder for this section.
 
 @Composable
 fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {

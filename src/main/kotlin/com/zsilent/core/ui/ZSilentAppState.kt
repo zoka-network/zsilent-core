@@ -77,6 +77,10 @@ data class ZSilentUiState(
     val onboardingRecoveryConfirmed: Boolean = false,
     val selectedSection: AppSection = AppSection.Dashboard,
     val darkTheme: Boolean = true,
+    // Opt-in gate for the in-app chain explorer. Off by default: the section
+    // ships experimental, so a user has to ask for it in Settings before it
+    // appears in the sidebar.
+    val explorerEnabled: Boolean = false,
     val appLocked: Boolean = true,
     val sessionUnlocked: Boolean = false,
     val loginBusy: Boolean = false,
@@ -248,6 +252,7 @@ class ZSilentAppState(
                     onboardingAutoLockMinutes = setup.autoLockMinutes,
                     balancesHidden = setup.balancesHidden,
                     darkTheme = setup.darkTheme,
+                    explorerEnabled = setup.explorerEnabled,
                     torEnabled = setup.torEnabled,
                     torOnly = setup.torOnly,
                     torSocksHost = setup.torSocksHost,
@@ -467,6 +472,7 @@ class ZSilentAppState(
                     balancesHidden = snapshot.balancesHidden,
                     autoLockMinutes = value,
                     darkTheme = snapshot.darkTheme,
+                    explorerEnabled = snapshot.explorerEnabled,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -555,6 +561,7 @@ class ZSilentAppState(
                 balancesHidden = snapshot.balancesHidden,
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                 darkTheme = snapshot.darkTheme,
+                explorerEnabled = snapshot.explorerEnabled,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost,
@@ -605,35 +612,6 @@ class ZSilentAppState(
         }
     }
 
-    fun toggleTheme() {
-        val snapshot = _uiState.value
-        val darkTheme = !snapshot.darkTheme
-        update { it.copy(darkTheme = darkTheme) }
-        if (snapshot.onboardingComplete) {
-            setupStore.save(
-                PersistedSetup(
-                    onboardingComplete = true,
-                    walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
-                    walletAddress = snapshot.activeWalletAddress,
-                    managedWallets = snapshot.managedWallets,
-                    managedWalletAddresses = managedAddressesFor(snapshot),
-                    nodeEnabled = snapshot.onboardingNodeEnabled,
-                    miningEnabled = snapshot.onboardingMiningEnabled,
-                    balancesHidden = snapshot.balancesHidden,
-                    autoLockMinutes = snapshot.onboardingAutoLockMinutes,
-                    darkTheme = darkTheme,
-                    torEnabled = snapshot.torEnabled,
-                    torOnly = snapshot.torOnly,
-                    torSocksHost = snapshot.torSocksHost,
-                    torSocksPort = snapshot.torSocksPort,
-                    managedTorEnabled = snapshot.managedTorEnabled,
-                    onionSeedEnabled = snapshot.onionSeedEnabled,
-                    managedTorSocksPort = snapshot.managedTorSocksPort
-                )
-            )
-        }
-    }
-
     fun toggleBalances() {
         val snapshot = _uiState.value
         val hidden = !snapshot.balancesHidden
@@ -656,6 +634,53 @@ class ZSilentAppState(
                     balancesHidden = hidden,
                     autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                     darkTheme = snapshot.darkTheme,
+                    explorerEnabled = snapshot.explorerEnabled,
+                    torEnabled = snapshot.torEnabled,
+                    torOnly = snapshot.torOnly,
+                    torSocksHost = snapshot.torSocksHost,
+                    torSocksPort = snapshot.torSocksPort,
+                    managedTorEnabled = snapshot.managedTorEnabled,
+                    onionSeedEnabled = snapshot.onionSeedEnabled,
+                    managedTorSocksPort = snapshot.managedTorSocksPort
+                )
+            )
+        }
+    }
+
+    /**
+     * Opt in or out of the in-app chain explorer.
+     *
+     * Turning it off while the user is standing on that screen would leave the
+     * router pointing at a section the sidebar no longer offers, so the
+     * selection falls back to the dashboard in that case.
+     */
+    fun setExplorerEnabled(enabled: Boolean) {
+        val snapshot = _uiState.value
+        if (snapshot.explorerEnabled == enabled) return
+        update {
+            it.copy(
+                explorerEnabled = enabled,
+                selectedSection = if (!enabled && it.selectedSection == AppSection.Explorer) {
+                    AppSection.Dashboard
+                } else {
+                    it.selectedSection
+                }
+            )
+        }
+        if (snapshot.onboardingComplete) {
+            setupStore.save(
+                PersistedSetup(
+                    onboardingComplete = true,
+                    walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
+                    walletAddress = snapshot.activeWalletAddress,
+                    managedWallets = snapshot.managedWallets,
+                    managedWalletAddresses = managedAddressesFor(snapshot),
+                    nodeEnabled = snapshot.onboardingNodeEnabled,
+                    miningEnabled = snapshot.onboardingMiningEnabled,
+                    balancesHidden = snapshot.balancesHidden,
+                    autoLockMinutes = snapshot.onboardingAutoLockMinutes,
+                    darkTheme = snapshot.darkTheme,
+                    explorerEnabled = enabled,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -968,6 +993,7 @@ class ZSilentAppState(
                     balancesHidden = current.balancesHidden,
                     autoLockMinutes = current.onboardingAutoLockMinutes,
                     darkTheme = current.darkTheme,
+                    explorerEnabled = current.explorerEnabled,
                     torEnabled = current.torEnabled,
                     torOnly = current.torOnly,
                     torSocksHost = current.torSocksHost,
@@ -1103,6 +1129,7 @@ class ZSilentAppState(
                         balancesHidden = current.balancesHidden,
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
+                        explorerEnabled = current.explorerEnabled,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -1250,6 +1277,7 @@ class ZSilentAppState(
                         balancesHidden = current.balancesHidden,
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
+                        explorerEnabled = current.explorerEnabled,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -2783,6 +2811,7 @@ class ZSilentAppState(
                 balancesHidden = snapshot.balancesHidden,
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                 darkTheme = snapshot.darkTheme,
+                explorerEnabled = snapshot.explorerEnabled,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost.ifBlank { "127.0.0.1" },
