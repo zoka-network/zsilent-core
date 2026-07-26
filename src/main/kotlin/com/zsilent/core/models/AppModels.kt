@@ -364,9 +364,10 @@ data class PersistedSetup(
     val balancesHidden: Boolean = false,
     val autoLockMinutes: Int = 10,
     val darkTheme: Boolean = true,
-    // Experimental sections are opt-in, so absent (older setup files) must
-    // read as off rather than silently enabling them on upgrade.
-    val explorerEnabled: Boolean = false,
+    // Absent in setup files written before the explorer existed. Those users
+    // saw an Explorer entry in 1.9.1, so defaulting to true keeps it where
+    // they expect rather than making the section disappear on upgrade.
+    val explorerEnabled: Boolean = true,
     val torEnabled: Boolean = true,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",

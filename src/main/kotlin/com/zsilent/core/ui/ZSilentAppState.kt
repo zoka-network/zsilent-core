@@ -77,10 +77,14 @@ data class ZSilentUiState(
     val onboardingRecoveryConfirmed: Boolean = false,
     val selectedSection: AppSection = AppSection.Dashboard,
     val darkTheme: Boolean = true,
-    // Opt-in gate for the in-app chain explorer. Off by default: the section
-    // ships experimental, so a user has to ask for it in Settings before it
-    // appears in the sidebar.
-    val explorerEnabled: Boolean = false,
+    // Gate for the in-app chain explorer, toggleable under Settings.
+    //
+    // On by default. Shipping it off hid a section that 1.9.1 already showed,
+    // and a section that vanishes with no trace is worse than one that says
+    // "coming soon" — there is nothing left to hint the feature exists. The
+    // opt-in default is reserved for the sections that move funds; this one
+    // is read-only and never leaves the local node.
+    val explorerEnabled: Boolean = true,
     val appLocked: Boolean = true,
     val sessionUnlocked: Boolean = false,
     val loginBusy: Boolean = false,

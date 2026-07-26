@@ -25,11 +25,13 @@ class SetupStoreExplorerFlagTest {
 
     /**
      * The upgrade path: a setup file written before the flag existed has no
-     * such key. It must read as off — enabling an experimental section on
-     * users who never asked for it would defeat the point of opting in.
+     * such key. It must read as *on*. Those users already saw an Explorer
+     * entry in 1.9.1, and a section that silently disappears on upgrade leaves
+     * nothing to hint the feature exists — worse than the "coming soon" card
+     * it replaced.
      */
     @Test
-    fun setup_file_without_the_flag_reads_as_disabled() {
+    fun setup_file_without_the_flag_keeps_the_explorer_visible() {
         val dir = Files.createTempDirectory("zsilent-setup-legacy")
         dir.toFile().deleteOnExit()
         val path = dir.resolve("setup.json")
@@ -50,8 +52,24 @@ class SetupStoreExplorerFlagTest {
         val loaded = SetupStore(path).load()
 
         assertTrue(loaded != null, "legacy setup file should still load")
-        assertFalse(loaded.explorerEnabled, "absent flag must not enable the section")
+        assertTrue(
+            loaded.explorerEnabled,
+            "upgrading must not make the Explorer vanish from the sidebar"
+        )
         assertEquals("main", loaded.walletName)
+    }
+
+    /**
+     * Turning it off must still stick across a restart — the toggle is only
+     * meaningful if the "off" choice survives, and `false` is the value most
+     * at risk of being confused with an unset field.
+     */
+    @Test
+    fun an_explicit_opt_out_is_not_mistaken_for_an_unset_field() {
+        val store = storeInTempDir()
+        store.save(PersistedSetup(onboardingComplete = true, explorerEnabled = false))
+
+        assertFalse(store.load()!!.explorerEnabled)
     }
 
     @Test
