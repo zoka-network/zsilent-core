@@ -17,6 +17,12 @@ import kotlin.test.assertTrue
  * not invented here. The models were written by reading that Rust code, so
  * without this test a renamed field would surface as a silently defaulted zero
  * in the UI instead of a failure.
+ *
+ * Checked against a live mainnet node at height 12943 on 2026-07-26. That run
+ * corrected the reward fixtures: `reward_zka_display` is a bare `"12"`, not the
+ * `"12.00000000 ZKA"` this file first assumed, and a block reward is 12_000_000
+ * atoms rather than 1_200_000_000. Both decoded either way, so only a real
+ * payload could catch it.
  */
 class ExplorerModelDecodingTest {
     private val codec = Json {
@@ -37,9 +43,9 @@ class ExplorerModelDecodingTest {
               "difficulty": 21,
               "difficulty_bits": 21,
               "size_bytes": 4096,
-              "reward_atoms": 1200000000,
+              "reward_atoms": 12000000,
               "reward_zka": 12.0,
-              "reward_zka_display": "12.00000000 ZKA",
+              "reward_zka_display": "12",
               "transactions_count": 3,
               "private_tx_count": 2,
               "private_nullifier_count": 4,
@@ -57,8 +63,8 @@ class ExplorerModelDecodingTest {
         assertEquals(987654L, block.nonce)
         assertEquals(21, block.difficultyBits)
         assertEquals(4096L, block.sizeBytes)
-        assertEquals(1200000000L, block.rewardAtoms)
-        assertEquals("12.00000000 ZKA", block.rewardZkaDisplay)
+        assertEquals(12000000L, block.rewardAtoms)
+        assertEquals("12", block.rewardZkaDisplay)
         assertEquals(3, block.transactionsCount)
         assertEquals(2, block.privateTxCount)
         assertEquals(4, block.privateNullifierCount)
@@ -85,7 +91,7 @@ class ExplorerModelDecodingTest {
               "size_bytes": 512,
               "reward_atoms": 0,
               "reward_zka": 0.0,
-              "reward_zka_display": "0.00000000 ZKA",
+              "reward_zka_display": "0",
               "transactions_count": 0,
               "private_tx_count": 0,
               "private_nullifier_count": 0,
