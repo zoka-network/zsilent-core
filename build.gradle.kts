@@ -189,6 +189,16 @@ compose.desktop {
     }
 }
 
+// Galería de verificación visual del rediseño (docs/GUIA_CAMBIO_VISUAL.md).
+// Entry point aparte: no arranca nodo, no toca la wallet y no pasa por login,
+// así se puede mirar el resultado de cada etapa sin montar todo el runtime.
+tasks.register<JavaExec>("runGallery") {
+    group = "application"
+    description = "Abre la galería de componentes para verificación visual."
+    mainClass.set("com.zsilent.core.ui.gallery.ZGalleryKt")
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.matching {
     it.name in setOf(
         "createDistributable",

@@ -28,7 +28,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 | Etapa | Alcance | Estado |
 |---|---|---|
 | 0 | Tokens, tipografía, formas, movimiento (`Theme.kt`) | ✅ hecha |
-| 0b | Primitivos (`Components.kt`) | ⬜ pendiente |
+| 0b | Primitivos (`Components.kt`) y efectos (`Effects.kt`) | ✅ hecha |
 | 1 | Onboarding | ⬜ pendiente |
 | 2 | Intro (pantalla nueva) | ⬜ pendiente |
 | 3 | Login | ⬜ pendiente |
@@ -237,28 +237,27 @@ El `cubic-bezier(0.2, 0.8, 0.2, 1)` del prototipo se traduce literal a
 `ZEasing` y usarlo en todas las transiciones para que el movimiento se sienta
 consistente.
 
-**Los dos casos que no tienen equivalente directo.**
+**Los dos casos difíciles resultaron ser código muerto.**
 
-`zs-glow` es `box-shadow: 0 0 0 1px …, 0 0 60px -20px …`. El `shadow()` de
-Compose solo produce sombras negras de elevación; una sombra de color con spread
-necesita bajar a Skia. Se resuelve con un helper único:
+`zs-glow` y `zs-mask-fade` están declarados en el CSS del prototipo y **tienen
+cero usos** en todo `src/`. Se contaron los usos reales de cada clase antes de
+implementar nada:
 
-```kotlin
-fun Modifier.zGlow(color: Color, radius: Dp = 60.dp) = this.drawBehind {
-    val paint = Paint().apply {
-        asFrameworkPaint().imageFilter = ImageFilter.makeDropShadowOnly(
-            dx = 0f, dy = 0f,
-            sigmaX = radius.toPx() / 3f, sigmaY = radius.toPx() / 3f,
-            color = color.toArgb(), input = null, crop = null,
-        )
-    }
-    drawIntoCanvas { it.saveLayer(size.toRect(), paint); it.restore() }
-}
-```
+| Clase | Usos en el prototipo |
+|---|---|
+| `zs-pulse` | 7 |
+| `scrollbar-thin` | 6 |
+| `zs-grid` | 5 |
+| `zs-noise` | 4 |
+| `zs-in` | 3 |
+| `zs-scan` | 1 |
+| `zs-glow` | **0** |
+| `zs-mask-fade` | **0** |
 
-Receta a validar al implementarla: es la única parte de la etapa 0 que no es
-mecánica, y conviene aislarla en un archivo propio para poder cambiarla sin tocar
-el resto.
+O sea que la única pieza del porteo que no tenía equivalente en Compose — la
+sombra de color con spread, que obligaba a bajar a Skia — no hacía falta. No se
+porta. Si alguna vez se necesita, queda anotado que requiere un
+`ImageFilter` sobre el paint nativo.
 
 `backdrop-blur-md` aparece en la sidebar, el topbar y los fondos de diálogo. El
 `Modifier.blur` de Compose difumina el contenido *del elemento*, no lo que está
@@ -267,7 +266,63 @@ una superficie translúcida un poco más opaca (`surface` al 92%). Sobre un fond
 `#000000` con una retícula al 20% detrás, la diferencia es imperceptible y evita
 un montón de complejidad. Si algún día se nota, se revisa.
 
-### 0.5 Primitivos (`ui/components/Components.kt`)
+### 0.5 Primitivos (`ui/components/Components.kt`) ✅
+
+**Cómo mirar el avance.** Hay una galería con entry point propio que renderiza
+todos los primitivos sin arrancar nodo, sin tocar la wallet y sin pasar por
+login:
+
+```powershell
+.\gradlew.bat runGallery
+```
+
+Trae los tres interruptores que hacen falta para verificar las decisiones: tema
+claro/oscuro (D2), densidad compact/cozy y animaciones on/off (D4). Es la forma
+de cerrar cada etapa visualmente sin montar todo el runtime, y donde conviene
+mirar primero cuando algo se ve raro.
+
+La galería vive en `ui/gallery/ZGallery.kt` y no entra en el MSI — solo la usa la
+tarea de Gradle.
+
+**API que quedó.** Nuevos:
+
+```kotlin
+ZTone.Default / .On / .Warn / .Err / .Off / .Info
+
+Pill(text, tone)                      // el punto late en On, Warn y Err
+Stat(label, value, hint, tone, mono)
+SectionTitle(eyebrow, title, sub)
+Truncate(value, head = 10, tail = 6)
+ZButton(onClick, variant, size, enabled) { ZButtonText("…") }
+ZButtonVariant.Default / .Ghost / .Accent / .Danger / .Outline
+ZButtonSize.Small / .Medium / .Large
+ZInput(value, onValueChange, placeholder, mono, trailing)
+ZLabel(text)
+ZToggle(checked, onCheckedChange)
+CopyButton(value, label)              // confirma "Copied" 1,2 s
+```
+
+`PanelHeader` gana `subtitle` y un slot `right`; `EmptyState` gana `sub` e
+`icon`; `PasswordField` se reconstruyó sobre `ZInput` así que ahora la etiqueta
+va arriba en vez de flotar. `StatusPill` queda como envoltorio de `Pill` por
+compatibilidad.
+
+**Se conservaron todas las firmas públicas anteriores a propósito.** Cambiarlas
+habría obligado a reescribir las quince pantallas en la misma etapa. Así
+`Screens.kt`, `LoginScreen.kt`, `ExplorerScreen.kt`, `P2PExchangeScreen.kt`,
+`MiningPoolScreen.kt` y `NoirOnboarding.kt` siguen compilando y heredan la piel
+nueva, y cada etapa las migra a los primitivos nuevos a su turno.
+
+`MetricAccent` sigue existiendo pero sus seis valores colapsan sobre los cuatro
+semánticos — se pierde la distinción entre `Blue` y `Violet`, que en una paleta
+acromática no tienen dónde ir. Es transitorio: cuando la etapa 9 reescriba
+`MiningPoolScreen` se pasa al vocabulario de `ZTone` y el enum se puede borrar.
+
+`ZInput` se construyó sobre `BasicTextField` y no sobre `OutlinedTextField`
+porque el de Material impone un alto mínimo de 56dp que pelea con los 40dp del
+diseño.
+
+### 0.5.1 Mapeo original de primitivos
 
 El prototipo define trece primitivos en 156 líneas. La mayoría ya tiene
 contraparte, así que esto es reescritura en el lugar, no diseño desde cero.

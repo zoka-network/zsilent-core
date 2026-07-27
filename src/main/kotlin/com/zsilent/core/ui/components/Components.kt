@@ -1,170 +1,223 @@
 package com.zsilent.core.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.outlined.SwapHoriz
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.AccountTree
-import androidx.compose.material.icons.outlined.Badge
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Dns
-import androidx.compose.material.icons.outlined.Hub
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.Paid
-import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.Tag
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material.icons.outlined.VpnKey
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.zsilent.core.ui.theme.MonoFamily
+import com.zsilent.core.ui.theme.ZTheme
+import com.zsilent.core.ui.theme.ZEasing
+import com.zsilent.core.ui.theme.Z_DURATION_FAST
+import com.zsilent.core.ui.theme.zPulseAlpha
+import kotlinx.coroutines.delay
 
-// "Zenith" palette — near-black, white text, pastel green accent for metrics.
-private val ZInk        = Color(0xFF0A0A0C)   // section background — near black
-private val ZSurface    = Color(0xFF16171B)   // card surface — a touch lighter than bg
-private val ZSurfaceElev= Color(0xFF1D1F24)   // input field bg
-private val ZOutline    = Color(0xFF2A2D33)   // subtle border
-private val ZOutlineStrong = Color(0xFF3A3D44)
-private val ZText       = Color(0xFFFFFFFF)   // primary text — WHITE
-private val ZTextMuted  = Color(0xFFB8BCC4)   // secondary text — light gray
-private val ZTextSubtle = Color(0xFF7A7F88)   // tertiary
-private val ZAccent     = Color(0xFFA8E6B0)   // pastel green accent (metrics/charts)
-private val ZAccentSoft = Color(0xFF1C2B20)   // pastel-green-tinted bg
-private val ZAccentDeep = Color(0xFF7FCB8E)   // deeper pastel green
-private val ZError      = Color(0xFFE2918F)   // soft desaturated rose
-private val ZBtnBlack   = Color(0xFF050506)   // button bg — true near-black
+// ─────────────────────────────────────────────────────────────────────────────
+//  Primitivos portados de zoka-whisper-desk/src/components/zs/primitives.tsx
+//
+//  Ver docs/GUIA_CAMBIO_VISUAL.md, etapa 0b.
+//
+//  Dos reglas al editar este archivo:
+//
+//  1. Ningún color literal. Todo sale de MaterialTheme.colorScheme o de
+//     ZTheme.semantics. Este archivo tenía 28 Color(0x…) hardcodeados que
+//     rompían el modo claro (decisión D2).
+//
+//  2. Ningún espaciado fijo. Todo relleno, separación y alto de control sale de
+//     ZTheme.spacing, porque la densidad es configurable (decisión D4).
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Subtle vertical gradient so flat cards read with a touch of depth against
-// the near-black background, matching NoirCardGradient in NoirOnboarding.kt.
-private val ZCardGradient = Brush.verticalGradient(
-    listOf(Color(0xFF1B1D22), Color(0xFF101114))
-)
+/** Tonos de estado del prototipo. Mapean a los cuatro semánticos del tema. */
+enum class ZTone { Default, On, Warn, Err, Off, Info }
+
+@Composable
+private fun ZTone.foreground(): Color = when (this) {
+    ZTone.Default -> MaterialTheme.colorScheme.onSurfaceVariant
+    ZTone.On      -> ZTheme.semantics.success
+    ZTone.Warn    -> ZTheme.semantics.warning
+    ZTone.Err     -> ZTheme.semantics.danger
+    ZTone.Off     -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    ZTone.Info    -> MaterialTheme.colorScheme.onSurface
+}
+
+@Composable
+private fun ZTone.container(): Color = when (this) {
+    ZTone.Default, ZTone.Off -> MaterialTheme.colorScheme.surfaceContainerHigh
+    ZTone.Info               -> MaterialTheme.colorScheme.surfaceContainerHigh
+    else                     -> foreground().copy(alpha = 0.10f)
+}
+
+@Composable
+private fun ZTone.borderColor(): Color = when (this) {
+    ZTone.Default, ZTone.Off -> MaterialTheme.colorScheme.outlineVariant
+    ZTone.Info               -> ZTheme.semantics.borderStrong
+    else                     -> foreground().copy(alpha = 0.30f)
+}
+
+/** `true` en los tonos cuyo punto late. */
+private val ZTone.pulses: Boolean
+    get() = this == ZTone.On || this == ZTone.Warn || this == ZTone.Err
+
+// ── Contenedores ─────────────────────────────────────────────────────────────
 
 @Composable
 fun ScreenScaffold(
-    title: String,       // kept for API compat, not shown
-    subtitle: String,    // kept for API compat, not shown
+    title: String,       // se conserva por compatibilidad de API, no se muestra
+    subtitle: String,    // idem
     content: @Composable () -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().background(ZInk)
-    ) {
+    val spacing = ZTheme.spacing
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = spacing.screen, vertical = spacing.panel),
+            verticalArrangement = Arrangement.spacedBy(spacing.gap)
         ) { content() }
     }
 }
 
-// Kept for compile compatibility — no longer draws dark bg
 @Composable
 fun GridBackground(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize().background(ZInk))
+    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
 }
 
+/**
+ * Contenedor base. CSS del prototipo: `rounded-lg border border-border
+ * bg-surface/60`.
+ *
+ * El relleno translúcido es intencional: sobre el fondo con retícula deja pasar
+ * un rastro de la trama. La separación visual la produce el borde, no el
+ * relleno — ver la nota de Theme.kt.
+ */
 @Composable
 fun Panel(
     modifier: Modifier = Modifier,
     title: String? = null,
     meta: String? = null,
-    contentPadding: PaddingValues = PaddingValues(20.dp),
+    contentPadding: PaddingValues = PaddingValues(ZTheme.spacing.panel),
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(16.dp)
-    androidx.compose.material3.Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = shape,
-        color = Color.Transparent,
-        shadowElevation = 2.dp,
-        tonalElevation = 0.dp
+    val shape = MaterialTheme.shapes.medium
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), shape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
+            .padding(contentPadding),
+        verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
     ) {
-        CompositionLocalProvider(LocalContentColor provides ZText) {
-            Column(
-                modifier = Modifier
-                    .background(ZCardGradient, shape)
-                    .padding(contentPadding),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (title != null || meta != null) PanelHeader(title = title.orEmpty(), meta = meta)
-                content()
-            }
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+            if (title != null || meta != null) PanelHeader(title = title.orEmpty(), meta = meta)
+            content()
         }
     }
 }
 
+/**
+ * Cabecera de panel: etiqueta en mono mayúscula, subtítulo opcional y un slot a
+ * la derecha.
+ *
+ * `meta` se mantiene por compatibilidad y se renderiza en el slot derecho.
+ */
 @Composable
-fun PanelHeader(title: String, meta: String? = null) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ZText)
-        if (meta != null) {
-            MetaBadge(meta)
+fun PanelHeader(
+    title: String,
+    meta: String? = null,
+    subtitle: String? = null,
+    right: @Composable (() -> Unit)? = null,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                title.uppercase(),
+                style = ZTheme.text.panelLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+        }
+        when {
+            right != null -> right()
+            meta != null  -> MetaBadge(meta)
         }
     }
 }
@@ -176,12 +229,14 @@ fun MetaBadge(meta: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        if (icon != null) Icon(icon, null, tint = ZText, modifier = Modifier.size(17.dp))
-        Text(meta, color = ZTextMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        if (icon != null) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(15.dp))
+        }
+        Text(meta, color = MaterialTheme.colorScheme.onSurfaceVariant, style = ZTheme.text.mono)
     }
 }
 
-private fun metaIcon(meta: String): androidx.compose.ui.graphics.vector.ImageVector? {
+private fun metaIcon(meta: String): ImageVector? {
     val bi = com.zsilent.core.ui.onboarding.BootstrapIcons
     return when {
         meta.contains("lock", ignoreCase = true)    -> bi.Lock
@@ -198,6 +253,478 @@ private fun metaIcon(meta: String): androidx.compose.ui.graphics.vector.ImageVec
     }
 }
 
+/** Encabezado de sección: eyebrow acentuado, título y bajada. */
+@Composable
+fun SectionTitle(eyebrow: String, title: String, sub: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            eyebrow.uppercase(),
+            style = ZTheme.text.eyebrow,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(title, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
+        if (sub != null) {
+            Text(
+                sub,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.widthIn(max = 640.dp)
+            )
+        }
+    }
+}
+
+// ── Datos ────────────────────────────────────────────────────────────────────
+
+/**
+ * Métrica del prototipo: etiqueta chica en mono mayúscula, valor grande en mono
+ * y una pista opcional.
+ */
+@Composable
+fun Stat(
+    label: String,
+    value: String,
+    hint: String? = null,
+    tone: ZTone = ZTone.Default,
+    mono: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    val valueColor = when (tone) {
+        ZTone.Default -> MaterialTheme.colorScheme.onSurface
+        ZTone.Info    -> MaterialTheme.colorScheme.primary
+        else          -> tone.foreground()
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label.uppercase(), style = ZTheme.text.fieldLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            value,
+            style = if (mono) ZTheme.text.monoLarge else MaterialTheme.typography.titleLarge,
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (hint != null) {
+            Text(
+                hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+            )
+        }
+    }
+}
+
+/** Insignia de estado con punto. Los tonos activos laten. */
+@Composable
+fun Pill(
+    text: String,
+    tone: ZTone = ZTone.Default,
+    modifier: Modifier = Modifier,
+) {
+    val shape = MaterialTheme.shapes.extraSmall
+    val fg = tone.foreground()
+    val pulseAlpha = if (tone.pulses) zPulseAlpha() else 1f
+    Row(
+        modifier = modifier
+            .background(tone.container(), shape)
+            .border(BorderStroke(1.dp, tone.borderColor()), shape)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (tone != ZTone.Default && tone != ZTone.Off) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .alpha(pulseAlpha)
+                    .background(
+                        if (tone == ZTone.Info) fg.copy(alpha = 0.6f) else fg,
+                        CircleShape
+                    )
+            )
+        }
+        Text(text.uppercase(), style = ZTheme.text.pill, color = fg)
+    }
+}
+
+/**
+ * Trunca por el medio conservando cabeza y cola. Para hashes, direcciones y
+ * endpoints. El prototipo usa 10/6 por defecto.
+ */
+@Composable
+fun Truncate(
+    value: String,
+    head: Int = 10,
+    tail: Int = 6,
+    modifier: Modifier = Modifier,
+    style: TextStyle = ZTheme.text.mono,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    val shown = remember(value, head, tail) {
+        if (value.length <= head + tail + 1) value
+        else value.take(head) + "…" + value.takeLast(tail)
+    }
+    Text(shown, modifier = modifier, style = style, color = color, maxLines = 1)
+}
+
+@Composable
+fun MonoText(
+    text: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int = 1
+) {
+    Text(
+        text,
+        modifier = modifier,
+        style = ZTheme.text.mono,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+// ── Controles ────────────────────────────────────────────────────────────────
+
+enum class ZButtonVariant { Default, Ghost, Accent, Danger, Outline }
+enum class ZButtonSize { Small, Medium, Large }
+
+/**
+ * Botón del prototipo: texto en mayúscula con tracking, borde de 1dp y sin
+ * elevación. Cinco variantes.
+ */
+@Composable
+fun ZButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    variant: ZButtonVariant = ZButtonVariant.Default,
+    size: ZButtonSize = ZButtonSize.Medium,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val danger = ZTheme.semantics.danger
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+
+    val container = when (variant) {
+        ZButtonVariant.Default -> scheme.surfaceContainerHigh
+        ZButtonVariant.Ghost   -> Color.Transparent
+        ZButtonVariant.Accent  -> scheme.primary
+        ZButtonVariant.Danger  -> danger.copy(alpha = if (hovered) 0.20f else 0.10f)
+        ZButtonVariant.Outline -> Color.Transparent
+    }
+    val fg = when (variant) {
+        ZButtonVariant.Default -> scheme.onSurface
+        ZButtonVariant.Ghost   -> if (hovered) scheme.onSurface else scheme.onSurfaceVariant
+        ZButtonVariant.Accent  -> scheme.onPrimary
+        ZButtonVariant.Danger  -> danger
+        ZButtonVariant.Outline -> scheme.onSurface
+    }
+    val borderTarget = when (variant) {
+        ZButtonVariant.Default -> if (hovered) ZTheme.semantics.borderStrong else scheme.outlineVariant
+        ZButtonVariant.Ghost   -> Color.Transparent
+        ZButtonVariant.Accent  -> scheme.primary
+        ZButtonVariant.Danger  -> danger.copy(alpha = 0.40f)
+        ZButtonVariant.Outline -> ZTheme.semantics.borderStrong
+    }
+    val border by animateColorAsState(borderTarget, tween(), label = "z-button-border")
+
+    val height = when (size) {
+        ZButtonSize.Small  -> 28.dp
+        ZButtonSize.Medium -> ZTheme.spacing.control
+        ZButtonSize.Large  -> ZTheme.spacing.control + 4.dp
+    }
+    val horizontal = when (size) {
+        ZButtonSize.Small  -> 10.dp
+        ZButtonSize.Medium -> 14.dp
+        ZButtonSize.Large  -> 20.dp
+    }
+    val shape = MaterialTheme.shapes.small
+    val alpha = if (enabled) 1f else 0.4f
+
+    Row(
+        modifier = modifier
+            .heightIn(min = height)
+            .alpha(alpha)
+            .background(container, shape)
+            .border(BorderStroke(1.dp, border), shape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+            ) { onClick() }
+            .padding(horizontal = horizontal),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides fg) {
+            content()
+        }
+    }
+}
+
+/** Texto de botón, con la mayúscula y el tracking ya aplicados. */
+@Composable
+fun ZButtonText(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Medium,
+        color = LocalContentColor.current,
+        maxLines = 1,
+    )
+}
+
+/** Etiqueta de campo: mono, mayúscula, tracking ancho. */
+@Composable
+fun ZLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text.uppercase(),
+        modifier = modifier,
+        style = ZTheme.text.fieldLabel,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+/**
+ * Campo de texto del prototipo: alto fijo, relleno `surface-2`, texto mono y
+ * borde que pasa a `primary` con el foco.
+ *
+ * Se construye sobre `BasicTextField` y no sobre `OutlinedTextField` porque el
+ * de Material impone un alto mínimo de 56dp que pelea con los 40dp del diseño.
+ */
+@Composable
+fun ZInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    enabled: Boolean = true,
+    mono: Boolean = true,
+    singleLine: Boolean = true,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    val scheme = MaterialTheme.colorScheme
+    var focused by remember { mutableStateOf(false) }
+    val shape = MaterialTheme.shapes.small
+    val borderTarget = if (focused) scheme.primary.copy(alpha = 0.4f) else scheme.outlineVariant
+    val border by animateColorAsState(borderTarget, tween(), label = "z-input-border")
+    val style = (if (mono) ZTheme.text.mono else MaterialTheme.typography.bodyMedium)
+        .copy(color = scheme.onSurface)
+
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .heightIn(min = ZTheme.spacing.control)
+            .background(if (focused) ZTheme.semantics.elevated else scheme.surfaceContainerHigh, shape)
+            .border(BorderStroke(1.dp, border), shape)
+            .onFocusChanged { focused = it.isFocused },
+        enabled = enabled,
+        singleLine = singleLine,
+        textStyle = style,
+        visualTransformation = visualTransformation,
+        cursorBrush = SolidColor(scheme.primary),
+        decorationBox = { inner ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.weight(1f)) {
+                    if (value.isEmpty() && placeholder != null) {
+                        Text(
+                            placeholder,
+                            style = style,
+                            color = scheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    inner()
+                }
+                if (trailing != null) {
+                    Spacer(Modifier.width(4.dp))
+                    trailing()
+                }
+            }
+        },
+    )
+}
+
+/** Interruptor del prototipo: pista de 24×44dp con pastilla de 16dp. */
+@Composable
+fun ZToggle(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val track = if (checked) scheme.primary.copy(alpha = 0.3f) else scheme.surfaceContainerHigh
+    val borderColor = if (checked) scheme.primary else scheme.outlineVariant
+    val thumb = if (checked) scheme.primary else scheme.onSurfaceVariant
+    Box(
+        modifier
+            .size(width = 44.dp, height = 24.dp)
+            .alpha(if (enabled) 1f else 0.4f)
+            .background(track, CircleShape)
+            .border(BorderStroke(1.dp, borderColor), CircleShape)
+            .clickable(enabled = enabled) { onCheckedChange(!checked) },
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier
+                .padding(horizontal = 3.dp)
+                .size(16.dp)
+                .background(thumb, CircleShape)
+        )
+    }
+}
+
+/**
+ * Selector segmentado de opción única.
+ *
+ * Nota: el prototipo no tiene un equivalente exacto — usa grupos de botones —
+ * pero varias pantallas de ZSilent ya dependen de esta firma, así que se
+ * conserva restilada.
+ */
+@Composable
+fun SegmentedSelector(
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val scheme = MaterialTheme.colorScheme
+    val shape = MaterialTheme.shapes.small
+    Row(
+        modifier
+            .background(scheme.surfaceContainerHigh, shape)
+            .border(BorderStroke(1.dp, scheme.outlineVariant), shape)
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        options.forEach { option ->
+            val active = option == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .background(
+                        if (active) scheme.primary.copy(alpha = 0.20f) else Color.Transparent,
+                        MaterialTheme.shapes.extraSmall
+                    )
+                    .clickable(enabled = enabled) { onSelect(option) }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    option.uppercase(),
+                    style = ZTheme.text.pill,
+                    color = when {
+                        !enabled -> scheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        active   -> scheme.primary
+                        else     -> scheme.onSurfaceVariant
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PasswordField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    enabled: Boolean = true
+) {
+    var visible by remember { mutableStateOf(false) }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ZLabel(label)
+        ZInput(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = singleLine,
+            visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailing = {
+                Icon(
+                    imageVector = if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                    contentDescription = if (visible) "Hide password" else "Show password",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable(enabled = enabled) { visible = !visible }
+                )
+            },
+        )
+    }
+}
+
+/** Botón de copiar con confirmación de 1,2 s, como el del prototipo. */
+@Composable
+fun CopyButton(value: String, label: String = "Copy", modifier: Modifier = Modifier) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) { delay(1200); copied = false }
+    }
+    ZButton(
+        onClick = { clipboard.setText(AnnotatedString(value)); copied = true },
+        modifier = modifier,
+        variant = ZButtonVariant.Default,
+        size = ZButtonSize.Small,
+        enabled = value.isNotBlank(),
+    ) {
+        Icon(
+            if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+            contentDescription = null,
+            tint = if (copied) ZTheme.semantics.success else LocalContentColor.current,
+            modifier = Modifier.size(12.dp)
+        )
+        ZButtonText(if (copied) "Copied" else label)
+    }
+}
+
+@Composable
+fun CopyIconButton(value: String, enabled: Boolean = value.isNotBlank()) {
+    val clipboard = LocalClipboardManager.current
+    IconButton(onClick = { clipboard.setText(AnnotatedString(value)) }, enabled = enabled) {
+        Icon(
+            Icons.Outlined.ContentCopy,
+            contentDescription = "Copy",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+// ── Filas y medidores ────────────────────────────────────────────────────────
+
+/**
+ * Acentos disponibles para métricas.
+ *
+ * La paleta nueva es acromática, así que estos seis colapsan sobre los cuatro
+ * semánticos: se pierde la distinción entre Blue y Violet. Es intencional y
+ * transitorio — cuando la etapa 9 reescriba MiningPoolScreen se pasa al
+ * vocabulario de tonos del prototipo y este enum se puede borrar.
+ */
+enum class MetricAccent { Green, Blue, Violet, Amber, Rose, Neutral }
+
+@Composable
+private fun MetricAccent.resolve(): Color = when (this) {
+    MetricAccent.Green   -> ZTheme.semantics.success
+    MetricAccent.Blue    -> MaterialTheme.colorScheme.primary
+    MetricAccent.Violet  -> MaterialTheme.colorScheme.primary
+    MetricAccent.Amber   -> ZTheme.semantics.warning
+    MetricAccent.Rose    -> ZTheme.semantics.danger
+    MetricAccent.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
 @Composable
 fun StatusCard(
     title: String,
@@ -205,46 +732,17 @@ fun StatusCard(
     detail: String,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(14.dp)
-    androidx.compose.material3.Surface(
-        modifier = modifier,
-        shape = shape,
-        color = Color.Transparent,
-        shadowElevation = 2.dp,
-        tonalElevation = 0.dp
-    ) {
-        Column(modifier = Modifier
-            .background(ZCardGradient, shape)
-            .padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                labelIcon(title)?.let { Icon(it, null, tint = ZText, modifier = Modifier.size(17.dp)) }
-                Text(title.uppercase(), style = MaterialTheme.typography.labelSmall, color = ZTextSubtle, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
-            }
-            Text(value, fontSize = 22.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
-                color = ZText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = ZTextSubtle)
-        }
+    Panel(modifier = modifier, contentPadding = PaddingValues(ZTheme.spacing.panel)) {
+        Stat(label = title, value = value, hint = detail)
     }
 }
 
-/** Accent colours available to metric tiles and meters. */
-enum class MetricAccent(val color: Color) {
-    Green(ZAccent),
-    Blue(Color(0xFF9CB8F2)),
-    Violet(Color(0xFFC3A8F2)),
-    Amber(Color(0xFFF4C28A)),
-    Rose(ZError),
-    /** For figures that are not live yet — deliberately colourless. */
-    Neutral(ZTextSubtle)
-}
-
 /**
- * A metric with an accent bar, a large monospaced figure and an optional
- * meter underneath.
+ * Métrica con riel de acento, cifra grande y medidor opcional.
  *
- * `dimmed` renders the tile greyed out for values that are not live yet. It is
- * a visual honesty control: a placeholder styled exactly like a real reading
- * invites the user to act on a number nobody measured.
+ * `dimmed` la renderiza apagada para valores que todavía no son reales. Es un
+ * control de honestidad visual: un placeholder con el mismo aspecto que una
+ * lectura real invita a actuar sobre un número que nadie midió.
  */
 @Composable
 fun MetricTile(
@@ -256,52 +754,38 @@ fun MetricTile(
     dimmed: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(14.dp)
-    val tint = if (dimmed) ZTextSubtle else accent.color
-    androidx.compose.material3.Surface(
-        modifier = modifier,
-        shape = shape,
-        color = Color.Transparent,
-        shadowElevation = 2.dp,
-        tonalElevation = 0.dp
+    val scheme = MaterialTheme.colorScheme
+    val shape = MaterialTheme.shapes.medium
+    val tint = if (dimmed) scheme.onSurfaceVariant else accent.resolve()
+    Row(
+        modifier = modifier
+            .background(scheme.surface.copy(alpha = 0.6f), shape)
+            .border(BorderStroke(1.dp, scheme.outlineVariant), shape)
     ) {
-        Row(modifier = Modifier.background(ZCardGradient, shape)) {
-            // Accent rail — the tile's only strong colour, so a row of tiles
-            // reads as one system instead of competing blocks.
-            Box(
-                Modifier
-                    .width(3.dp)
-                    .fillMaxHeight()
-                    .background(tint.copy(alpha = if (dimmed) 0.35f else 1f))
+        Box(
+            Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(tint.copy(alpha = if (dimmed) 0.35f else 1f))
+        )
+        Column(
+            modifier = Modifier.padding(ZTheme.spacing.panel),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(label.uppercase(), style = ZTheme.text.fieldLabel, color = scheme.onSurfaceVariant)
+            Text(
+                value,
+                style = ZTheme.text.monoLarge,
+                color = if (dimmed) scheme.onSurfaceVariant else scheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Text(
-                    label.uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ZTextSubtle,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    value,
-                    fontSize = 22.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = if (dimmed) ZTextSubtle else ZText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (fraction != null) MeterBar(fraction, accent, dimmed)
-                Text(caption, style = MaterialTheme.typography.bodySmall, color = ZTextSubtle)
-            }
+            if (fraction != null) MeterBar(fraction, accent, dimmed)
+            Text(caption, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
         }
     }
 }
 
-/** Horizontal fill bar, used for allocation and progress. */
 @Composable
 fun MeterBar(
     fraction: Float,
@@ -310,86 +794,36 @@ fun MeterBar(
     modifier: Modifier = Modifier
 ) {
     val safe = fraction.coerceIn(0f, 1f)
-    val tint = if (dimmed) ZTextSubtle else accent.color
+    val tint = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else accent.resolve()
+    val shape = CircleShape
     Box(
         modifier
             .fillMaxWidth()
             .height(6.dp)
-            .background(ZSurfaceElev, RoundedCornerShape(3.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest, shape)
     ) {
         Box(
             Modifier
                 .fillMaxWidth(safe)
                 .height(6.dp)
-                .background(tint.copy(alpha = if (dimmed) 0.4f else 1f), RoundedCornerShape(3.dp))
+                .background(tint.copy(alpha = if (dimmed) 0.4f else 1f), shape)
         )
     }
 }
 
-/**
- * Segmented single-choice control, for picking among a handful of options
- * (mining power, core counts) without a dropdown.
- */
-@Composable
-fun SegmentedSelector(
-    options: List<String>,
-    selected: String,
-    onSelect: (String) -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier
-            .background(ZSurfaceElev, RoundedCornerShape(10.dp))
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        options.forEach { option ->
-            val active = option == selected
-            Box(
-                Modifier
-                    .weight(1f)
-                    .background(
-                        if (active) ZAccentSoft else Color.Transparent,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .clickable(enabled = enabled) { onSelect(option) }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    option,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = when {
-                        !enabled -> ZTextSubtle
-                        active -> ZAccent
-                        else -> ZTextMuted
-                    },
-                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
-                )
-            }
-        }
-    }
-}
-
-/** Label with a coloured dot, for legends and state rows. */
 @Composable
 fun LegendDot(label: String, accent: MetricAccent, modifier: Modifier = Modifier) {
     Row(
         modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Box(Modifier.size(8.dp).background(accent.color, RoundedCornerShape(4.dp)))
-        Text(label, style = MaterialTheme.typography.bodySmall, color = ZTextMuted)
+        Box(Modifier.size(6.dp).background(accent.resolve(), CircleShape))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-/**
- * Maps a key-value label to a representative icon. Keyword based and
- * case-insensitive so it works across all sections automatically.
- */
-fun labelIcon(label: String): androidx.compose.ui.graphics.vector.ImageVector? {
+fun labelIcon(label: String): ImageVector? {
     val l = label.lowercase()
     val bi = com.zsilent.core.ui.onboarding.BootstrapIcons
     return when {
@@ -427,32 +861,29 @@ fun labelIcon(label: String): androidx.compose.ui.graphics.vector.ImageVector? {
 private fun LabelWithIcon(label: String) {
     val icon = labelIcon(label)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (icon != null) Icon(icon, null, tint = ZText, modifier = Modifier.size(18.dp))
-        Text(label, color = ZTextMuted, style = MaterialTheme.typography.bodyMedium)
+        if (icon != null) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+        }
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
 fun KeyValueRow(label: String, value: String) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
+        Modifier.fillMaxWidth().padding(vertical = ZTheme.spacing.row / 2),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         LabelWithIcon(label)
         Text(
             value,
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.bodyMedium,
-            color = ZText,
+            style = ZTheme.text.mono,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 16.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.End
+            modifier = Modifier.weight(1f).padding(start = 16.dp),
+            textAlign = TextAlign.End
         )
     }
 }
@@ -460,25 +891,20 @@ fun KeyValueRow(label: String, value: String) {
 @Composable
 fun CopyableKeyValueRow(label: String, value: String) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
+        Modifier.fillMaxWidth().padding(vertical = ZTheme.spacing.row / 2),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         LabelWithIcon(label)
         Row(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 16.dp),
+            modifier = Modifier.weight(1f).padding(start = 16.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 value,
-                fontFamily = FontFamily.Monospace,
-                style = MaterialTheme.typography.bodyMedium,
-                color = ZText,
+                style = ZTheme.text.mono,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -487,66 +913,22 @@ fun CopyableKeyValueRow(label: String, value: String) {
     }
 }
 
-@Composable
-fun CopyIconButton(value: String, enabled: Boolean = value.isNotBlank()) {
-    val clipboard = LocalClipboardManager.current
-    IconButton(
-        onClick = { clipboard.setText(AnnotatedString(value)) },
-        enabled = enabled
-    ) {
-        Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy")
-    }
-}
-
-@Composable
-fun PasswordField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    singleLine: Boolean = true,
-    enabled: Boolean = true
-) {
-    var visible by remember { mutableStateOf(false) }
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        singleLine = singleLine,
-        enabled = enabled,
-        modifier = modifier,
-        trailingIcon = {
-            IconButton(onClick = { visible = !visible }, enabled = enabled) {
-                Icon(
-                    imageVector = if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                    contentDescription = if (visible) "Hide password" else "Show password"
-                )
-            }
-        },
-        colors = zFieldColors(),
-        shape = MaterialTheme.shapes.medium
-    )
-}
+// ── Estados y varios ─────────────────────────────────────────────────────────
 
 @Composable
 fun QrCode(value: String, modifier: Modifier = Modifier) {
     val matrix = remember(value) {
-        runCatching {
-            QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, 33, 33)
-        }.getOrNull()
+        runCatching { QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, 33, 33) }.getOrNull()
     }
     val foreground = MaterialTheme.colorScheme.onSurface
-    val background = MaterialTheme.colorScheme.surface
-
     Box(
         modifier = modifier
-            .size(220.dp)
-            .background(background, MaterialTheme.shapes.large)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), MaterialTheme.shapes.large)
-            .padding(12.dp)
+            .size(224.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.medium)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), MaterialTheme.shapes.medium)
+            .padding(16.dp)
     ) {
-        Canvas(Modifier.size(196.dp)) {
+        Canvas(Modifier.fillMaxSize()) {
             val qr = matrix ?: return@Canvas
             val cell = minOf(size.width / qr.width, size.height / qr.height)
             val offset = Offset(
@@ -555,11 +937,13 @@ fun QrCode(value: String, modifier: Modifier = Modifier) {
             )
             for (x in 0 until qr.width) {
                 for (y in 0 until qr.height) {
-                    drawRect(
-                        color = if (qr[x, y]) foreground else Color.Transparent,
-                        topLeft = Offset(offset.x + x * cell, offset.y + y * cell),
-                        size = Size(cell, cell)
-                    )
+                    if (qr[x, y]) {
+                        drawRect(
+                            color = foreground,
+                            topLeft = Offset(offset.x + x * cell, offset.y + y * cell),
+                            size = Size(cell, cell)
+                        )
+                    }
                 }
             }
         }
@@ -570,135 +954,125 @@ fun QrCode(value: String, modifier: Modifier = Modifier) {
 fun SectionEyebrow(text: String) {
     Text(
         text.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = ZTextSubtle
+        style = ZTheme.text.eyebrow,
+        color = MaterialTheme.colorScheme.primary
     )
 }
 
+/** Se conserva por compatibilidad. Lo nuevo es [Pill]. */
 @Composable
-fun StatusPill(
+fun StatusPill(text: String, active: Boolean, modifier: Modifier = Modifier) {
+    Pill(text = text, tone = if (active) ZTone.On else ZTone.Off, modifier = modifier)
+}
+
+@Composable
+fun EmptyState(
     text: String,
-    active: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sub: String? = null,
+    icon: ImageVector? = null,
 ) {
-    val shape = RoundedCornerShape(999.dp)
-    val dot = if (active) ZAccent else ZTextSubtle
-    Row(
+    val scheme = MaterialTheme.colorScheme
+    Column(
         modifier = modifier
-            .background(ZSurfaceElev, shape)
-            .border(BorderStroke(1.dp, ZOutline), shape)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, scheme.outlineVariant), MaterialTheme.shapes.medium)
+            .padding(horizontal = 24.dp, vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .background(dot, shape)
+        Icon(
+            icon ?: Icons.Outlined.Inbox,
+            contentDescription = null,
+            tint = scheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.size(20.dp)
         )
-        Text(text, style = MaterialTheme.typography.labelSmall, color = if (active) ZText else ZTextMuted)
+        Text(text, style = MaterialTheme.typography.titleSmall, color = scheme.onSurface)
+        if (sub != null) {
+            Text(
+                sub,
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 360.dp)
+            )
+        }
     }
 }
 
 @Composable
-fun EmptyState(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text,
-        modifier = modifier.padding(vertical = 4.dp),
-        color = ZTextMuted,
-        style = MaterialTheme.typography.bodyMedium
-    )
-}
-
-@Composable
 fun ErrorText(text: String) {
-    Text(text, color = ZError, style = MaterialTheme.typography.bodyMedium)
+    Text(text, color = ZTheme.semantics.danger, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
 fun HintText(text: String) {
-    Text(text, color = ZTextMuted, style = MaterialTheme.typography.bodySmall)
+    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
 fun ThinDivider() {
-    HorizontalDivider(color = ZOutline, thickness = DividerDefaults.Thickness)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = DividerDefaults.Thickness)
 }
 
-@Composable
-fun MonoText(
-    text: String,
-    modifier: Modifier = Modifier,
-    maxLines: Int = 1
-) {
-    Text(
-        text,
-        modifier = modifier,
-        fontFamily = FontFamily.Monospace,
-        style = MaterialTheme.typography.bodyMedium,
-        maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis
-    )
-}
+// ── Colores heredados para llamadas Material que quedan por migrar ───────────
+// Las pantallas que todavía usan Button/OutlinedTextField de Material los
+// consumen. Se van borrando a medida que las etapas 1-14 migran a ZButton y
+// ZInput.
 
 @Composable
 fun zFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = ZText,
-    unfocusedTextColor = ZText,
-    focusedContainerColor = ZSurfaceElev,
-    unfocusedContainerColor = ZSurfaceElev,
-    disabledContainerColor = ZSurfaceElev,
-    focusedBorderColor = ZAccent,
-    unfocusedBorderColor = ZOutlineStrong,
-    disabledBorderColor = ZOutline,
-    focusedLabelColor = ZAccent,
-    unfocusedLabelColor = ZTextMuted,
-    cursorColor = ZAccent
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    focusedContainerColor = ZTheme.semantics.elevated,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+    disabledBorderColor = MaterialTheme.colorScheme.outlineVariant,
+    focusedLabelColor = MaterialTheme.colorScheme.primary,
+    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    cursorColor = MaterialTheme.colorScheme.primary
 )
 
-// Black raised button with white text/icon (use with elevation at call site).
 @Composable
 fun zButtonColors() = ButtonDefaults.buttonColors(
-    containerColor = ZBtnBlack,
-    contentColor = Color(0xFFFFFFFF),
-    disabledContainerColor = Color(0xFF3A3A3C),
-    disabledContentColor = ZTextSubtle
+    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 )
 
-// Pastel-accented variant for the single essential action on a screen (e.g.
-// "Sign and send"). Use sparingly — most buttons should keep zButtonColors().
 @Composable
 fun zPastelButtonColors(accent: Color) = ButtonDefaults.buttonColors(
     containerColor = accent,
-    contentColor = ZInk,
-    disabledContainerColor = Color(0xFF3A3A3C),
-    disabledContentColor = ZTextSubtle
+    contentColor = MaterialTheme.colorScheme.onPrimary,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 )
 
-// Elevation for the raised (relief) look on black buttons.
+/** El prototipo no usa elevación en ninguna parte. */
 @Composable
 fun zButtonElevation() = ButtonDefaults.buttonElevation(
-    defaultElevation = 4.dp,
-    pressedElevation = 1.dp,
-    hoveredElevation = 6.dp
+    defaultElevation = 0.dp,
+    pressedElevation = 0.dp,
+    hoveredElevation = 0.dp
 )
 
 @Composable
 fun zOutlinedButtonColors() = ButtonDefaults.outlinedButtonColors(
-    containerColor = ZBtnBlack,
-    contentColor = Color(0xFFFFFFFF),
-    disabledContainerColor = Color(0xFF3A3A3C),
-    disabledContentColor = ZTextSubtle
+    containerColor = Color.Transparent,
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    disabledContainerColor = Color.Transparent,
+    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 )
 
-// Minimalist black/white switch: black track + white thumb when ON,
-// dark track + light-gray thumb when OFF. High contrast on smoke-gray.
 @Composable
 fun zSwitchColors() = androidx.compose.material3.SwitchDefaults.colors(
-    checkedThumbColor   = Color(0xFFFFFFFF),
-    checkedTrackColor   = Color(0xFF1C1C1E),
-    checkedBorderColor  = Color(0xFF1C1C1E),
-    uncheckedThumbColor = Color(0xFFC7C9CF),
-    uncheckedTrackColor = Color(0xFF45474D),
-    uncheckedBorderColor= Color(0xFF55575E)
+    checkedThumbColor    = MaterialTheme.colorScheme.primary,
+    checkedTrackColor    = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+    checkedBorderColor   = MaterialTheme.colorScheme.primary,
+    uncheckedThumbColor  = MaterialTheme.colorScheme.onSurfaceVariant,
+    uncheckedTrackColor  = MaterialTheme.colorScheme.surfaceContainerHigh,
+    uncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant
 )
