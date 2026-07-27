@@ -32,7 +32,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 1 | Onboarding | ✅ hecha |
 | 2 | Intro (pantalla nueva) | ⬜ pendiente — ver nota de orden |
 | 3 | Login | ✅ hecha |
-| 4 | Shell de navegación | ⬜ pendiente |
+| 4 | Shell de navegación | ✅ hecha |
 | 5 | Dashboard | ⬜ pendiente |
 | 6 | Wallet (+ Send, Receive) | ⬜ pendiente |
 | 7 | Node | ⬜ pendiente |
@@ -70,9 +70,14 @@ auditoría se absorbe casi entera en el trabajo ya planeado. Quedan sueltos
 ventana y hay que revisar aparte.
 
 **D3 — Send y Receive pasan a ser pestañas de Wallet.**
-`AppSection` baja de 12 a 10 entradas: se eliminan `Send` y `Receive`. Hay que
-actualizar `navItem()` en `ZSilentApp.kt:327` y todo call site que navegue a esas
-secciones. Se hace en la etapa 4, y la etapa 6 construye las pestañas.
+`AppSection` baja de 12 a 10 entradas: se eliminan `Send` y `Receive`.
+
+**Corrección de plan: esto se hace en la etapa 6, no en la 4.** Sacar las
+secciones en la etapa 4 dejaría Send y Receive inalcanzables hasta que la etapa 6
+construya las pestañas — o sea, la app quedaría sin forma de enviar plata en el
+medio. El enum y las pestañas tienen que caer en el mismo commit. Verificado que
+nada fuera de `ZSilentApp.kt` y `AppModels.kt` referencia `AppSection.Send` ni
+`AppSection.Receive`, así que el cambio va a ser acotado.
 
 **D4 — Entran densidad y animaciones.**
 `ZDensity` (`Compact` / `Cozy`) y el switch de animaciones ya están en el tema.
@@ -569,11 +574,58 @@ la piel.
 
 ---
 
-## Etapa 4 — Shell de navegación
+## Etapa 4 — Shell de navegación ✅
 
 Prototipo: `src/components/zs/AppShell.tsx` (182).
 ZSilent: `ui/ZSilentApp.kt` (340) — `CollapsibleSidebar`, `SidebarItem`,
 `ToggleSidebarButton`, `AppSection.navItem()` en `:327`.
+
+### Cómo quedó
+
+Sidebar de 256dp con los cuatro grupos del prototipo, ítem activo con `accent` al
+10% más la barra de 2×16dp pegada al borde izquierdo, punto que late en Node
+cuando está `Online` y en Mining cuando está `Online`, y al pie la tarjeta de
+wallet activa con pill `Unlocked` y dirección truncada 8/6.
+
+**Se conservó el colapso de la sidebar**, que el prototipo no tiene — usa un
+cajón para móvil en su lugar. En escritorio colapsar es útil de verdad, así que
+se mantiene; cuando está colapsada se ocultan las etiquetas de grupo, que sin
+ancho no significan nada.
+
+Topbar de 56dp con breadcrumb `/ sección` en mono, las tres pills de estado
+(`node`, `tor`, `mining`) y el interruptor de tema. El contenido reanima al
+cambiar de sección con `ZAnimatedSwap`.
+
+Los 12 literales del archivo pasan a cero.
+
+### El hallazgo de la etapa: una preferencia cableada y nunca conectada
+
+`darkTheme` **ya existía** en `PersistedSetup`, se cargaba al arrancar, vivía en
+`ZSilentUiState` y se re-guardaba en unos quince sitios distintos cada vez que se
+tocaba cualquier otro ajuste. Pero **nadie la aplicaba**: en `Main.kt` se llamaba
+`ZSilentTheme { … }` sin argumentos, así que siempre ganaba el default `true`.
+
+Alguien construyó toda la tubería y no conectó la llave. El valor incluso ya
+estaba en alcance, dos líneas arriba de la llamada. El arreglo fue
+`ZSilentTheme(darkTheme = ui.darkTheme)` más un `setDarkTheme()` en
+`ZSilentAppState` siguiendo el patrón de `setExplorerEnabled`. Con eso el toggle
+de la topbar persiste entre arranques.
+
+### Colores fuera del tema en Main.kt
+
+Se limpiaron los 5 de `OutdatedVersionScreen`, que usaba un naranja `#FF6B35`
+inexistente en la paleta nueva y `Color.Black` sobre él. Ahora la advertencia va
+en el semántico `warning` y el botón es un `ZButton`. Es una pantalla que se ve
+poco pero se ve en el peor momento — cuando el cliente quedó fuera de la red — y
+en tema claro era ilegible.
+
+### Verificación
+
+Compila y los 20 tests pasan. **No lancé la app real a propósito:** tenés un nodo
+corriendo, y arrancar ZSilent con `nodeEnabled = true` intentaría levantar un
+segundo nodo sobre el mismo directorio de datos y el mismo puerto. La
+verificación visual del shell la tenés que hacer vos cuando te convenga, o
+después de cerrar el nodo.
 
 **Cambia la arquitectura de información, no solo la piel.** El prototipo agrupa
 las secciones en cuatro bloques con encabezado en mono mayúscula 9sp:

@@ -697,6 +697,43 @@ class ZSilentAppState(
         }
     }
 
+    /**
+     * Aplica y persiste el tema claro/oscuro.
+     *
+     * El campo `darkTheme` ya existía en `PersistedSetup` y viajaba por todo el
+     * estado, pero nadie lo leía para aplicarlo. Este setter y el argumento en
+     * `ZSilentTheme` de Main.kt cierran ese circuito.
+     */
+    fun setDarkTheme(enabled: Boolean) {
+        val snapshot = _uiState.value
+        if (snapshot.darkTheme == enabled) return
+        update { it.copy(darkTheme = enabled) }
+        if (snapshot.onboardingComplete) {
+            setupStore.save(
+                PersistedSetup(
+                    onboardingComplete = true,
+                    walletName = snapshot.activeWalletName.ifBlank { snapshot.walletName },
+                    walletAddress = snapshot.activeWalletAddress,
+                    managedWallets = snapshot.managedWallets,
+                    managedWalletAddresses = managedAddressesFor(snapshot),
+                    nodeEnabled = snapshot.onboardingNodeEnabled,
+                    miningEnabled = snapshot.onboardingMiningEnabled,
+                    balancesHidden = snapshot.balancesHidden,
+                    autoLockMinutes = snapshot.onboardingAutoLockMinutes,
+                    darkTheme = enabled,
+                    explorerEnabled = snapshot.explorerEnabled,
+                    torEnabled = snapshot.torEnabled,
+                    torOnly = snapshot.torOnly,
+                    torSocksHost = snapshot.torSocksHost,
+                    torSocksPort = snapshot.torSocksPort,
+                    managedTorEnabled = snapshot.managedTorEnabled,
+                    onionSeedEnabled = snapshot.onionSeedEnabled,
+                    managedTorSocksPort = snapshot.managedTorSocksPort
+                )
+            )
+        }
+    }
+
     fun setTorEnabled(enabled: Boolean) {
         update {
             it.copy(

@@ -47,7 +47,12 @@ import com.zsilent.core.rpc.ZokaRpcClient
 import com.zsilent.core.services.ZokaCli
 import com.zsilent.core.ui.ZSilentApp
 import com.zsilent.core.ui.ZSilentAppState
+import com.zsilent.core.ui.components.ZButton
+import com.zsilent.core.ui.components.ZButtonSize
+import com.zsilent.core.ui.components.ZButtonText
+import com.zsilent.core.ui.components.ZButtonVariant
 import com.zsilent.core.ui.theme.ZSilentTheme
+import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
@@ -235,7 +240,12 @@ private fun WindowScope.ZSilentRoot(
 ) {
     val ui by appState.state.collectAsState()
 
-    ZSilentTheme {
+    // `darkTheme` venía persistiéndose en PersistedSetup y viajando por todo
+    // ZSilentUiState desde hace tiempo, pero nadie lo aplicaba: acá se llamaba
+    // `ZSilentTheme {}` sin argumentos, así que siempre ganaba el default. La
+    // preferencia existía y el valor ya estaba en alcance — solo faltaba
+    // pasarlo.
+    ZSilentTheme(darkTheme = ui.darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 WindowTitleBar(
@@ -326,8 +336,12 @@ private fun WindowScope.InstallWindowDragHandler() {
 @Composable
 private fun OutdatedVersionScreen() {
     val releaseUrl = "https://github.com/ZokaNetwork/zsilent-core/releases/latest"
+    val scheme = MaterialTheme.colorScheme
+    // El naranja #FF6B35 anterior no existe en la paleta nueva. Esto es una
+    // advertencia bloqueante, así que va en el semántico de warning.
+    val warning = ZTheme.semantics.warning
     Box(
-        modifier = Modifier.fillMaxSize().background(Color(0xFF0A0A0C)),
+        modifier = Modifier.fillMaxSize().background(scheme.background),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -337,29 +351,25 @@ private fun OutdatedVersionScreen() {
         ) {
             Text(
                 "Versión desactualizada",
-                color = Color(0xFFFF6B35),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
+                color = warning,
+                style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center
             )
             Text(
                 "Esta versión de ZSilent Core (v${ZokaNetworkConfig.AppVersion}) ya no es compatible con la red ZOKA Mainnet Zenith.\n\nDescargá la versión más reciente (v${ZokaNetworkConfig.MinimumClientVersion} o superior) para continuar minando y usando la red.",
-                color = Color(0xFFAAAAAA),
-                fontSize = 14.sp,
+                color = scheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center
             )
-            Button(
-                onClick = {
-                    runCatching { Desktop.getDesktop().browse(URI(releaseUrl)) }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B35))
-            ) {
-                Text("Descargar última versión", color = Color.Black, fontWeight = FontWeight.SemiBold)
-            }
+            ZButton(
+                onClick = { runCatching { Desktop.getDesktop().browse(URI(releaseUrl)) } },
+                variant = ZButtonVariant.Accent,
+                size = ZButtonSize.Large,
+            ) { ZButtonText("Descargar última versión") }
             Text(
                 "v${ZokaNetworkConfig.AppVersion} · requiere v${ZokaNetworkConfig.MinimumClientVersion}+",
-                color = Color(0xFF555555),
-                fontSize = 11.sp
+                color = scheme.onSurfaceVariant.copy(alpha = 0.6f),
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
