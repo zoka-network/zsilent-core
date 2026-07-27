@@ -40,7 +40,10 @@ class NodeController(private val cli: ZokaCli) {
         val threads: Int?,
         val torProxy: String,
         val torOnly: Boolean,
-        val externalAddrs: List<String>
+        val externalAddrs: List<String>,
+        val tronApiUrl: String,
+        val tronApiKey: String,
+        val tronFallbackUrls: String
     )
 
     private val _status = MutableStateFlow(ServiceStatus.Offline)
@@ -58,7 +61,10 @@ class NodeController(private val cli: ZokaCli) {
         threads: Int? = null,
         torProxy: String = "",
         torOnly: Boolean = false,
-        externalAddrs: List<String> = emptyList()
+        externalAddrs: List<String> = emptyList(),
+        tronApiUrl: String = "",
+        tronApiKey: String = "",
+        tronFallbackUrls: String = ""
     ) {
         val binary = cli.zoka
         if (process?.isAlive == true) {
@@ -88,7 +94,20 @@ class NodeController(private val cli: ZokaCli) {
         }
 
         stopRequested = false
-        lastStartParams = StartParams(password, address, network, power, autoMine, threads, torProxy, torOnly, cleanExternalAddrs)
+        lastStartParams = StartParams(
+            password,
+            address,
+            network,
+            power,
+            autoMine,
+            threads,
+            torProxy,
+            torOnly,
+            cleanExternalAddrs,
+            tronApiUrl,
+            tronApiKey,
+            tronFallbackUrls
+        )
         _status.value = ServiceStatus.Starting
         readyFile.parentFile?.mkdirs()
         if (readyFile.exists()) readyFile.delete()
@@ -146,6 +165,15 @@ class NodeController(private val cli: ZokaCli) {
         // Enable the runtime mining-control RPC (/mining/start|stop) so mining can
         // be toggled in-process without restarting the node.
         builder.environment()["ZOKA_API_ENABLE_MINING_CONTROL"] = "true"
+        tronApiUrl.trim().takeIf { it.isNotBlank() }?.let {
+            builder.environment()["ZOKA_TRON_API_URL"] = it
+        }
+        tronApiKey.trim().takeIf { it.isNotBlank() }?.let {
+            builder.environment()["ZOKA_TRON_API_KEY"] = it
+        }
+        tronFallbackUrls.trim().takeIf { it.isNotBlank() }?.let {
+            builder.environment()["ZOKA_TRON_FALLBACK_URLS"] = it
+        }
         builder.redirectErrorStream(true)
 
         scope.launch {
@@ -214,7 +242,10 @@ class NodeController(private val cli: ZokaCli) {
             threads = params.threads,
             torProxy = params.torProxy,
             torOnly = params.torOnly,
-            externalAddrs = params.externalAddrs
+            externalAddrs = params.externalAddrs,
+            tronApiUrl = params.tronApiUrl,
+            tronApiKey = params.tronApiKey,
+            tronFallbackUrls = params.tronFallbackUrls
         )
     }
 

@@ -455,6 +455,13 @@ data class PersistedSetup(
     // saw an Explorer entry in 1.9.1, so defaulting to true keeps it where
     // they expect rather than making the section disappear on upgrade.
     val explorerEnabled: Boolean = true,
+    // Moves real funds, so legacy setup files and fresh installs stay opted
+    // out until the user enables the experimental section deliberately.
+    val p2pExchangeEnabled: Boolean = false,
+    val p2pExchangeRisksAccepted: Boolean = false,
+    val tronApiUrl: String = "https://api.trongrid.io",
+    val tronApiKey: String = "",
+    val tronFallbackUrls: String = "",
     val torEnabled: Boolean = true,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",

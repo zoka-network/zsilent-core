@@ -85,6 +85,11 @@ data class ZSilentUiState(
     // opt-in default is reserved for the sections that move funds; this one
     // is read-only and never leaves the local node.
     val explorerEnabled: Boolean = true,
+    val p2pExchangeEnabled: Boolean = false,
+    val p2pExchangeRisksAccepted: Boolean = false,
+    val tronApiUrl: String = "https://api.trongrid.io",
+    val tronApiKey: String = "",
+    val tronFallbackUrls: String = "",
     val appLocked: Boolean = true,
     val sessionUnlocked: Boolean = false,
     val loginBusy: Boolean = false,
@@ -257,6 +262,11 @@ class ZSilentAppState(
                     balancesHidden = setup.balancesHidden,
                     darkTheme = setup.darkTheme,
                     explorerEnabled = setup.explorerEnabled,
+                    p2pExchangeEnabled = setup.p2pExchangeEnabled,
+                    p2pExchangeRisksAccepted = setup.p2pExchangeRisksAccepted,
+                    tronApiUrl = setup.tronApiUrl,
+                    tronApiKey = setup.tronApiKey,
+                    tronFallbackUrls = setup.tronFallbackUrls,
                     torEnabled = setup.torEnabled,
                     torOnly = setup.torOnly,
                     torSocksHost = setup.torSocksHost,
@@ -477,6 +487,11 @@ class ZSilentAppState(
                     autoLockMinutes = value,
                     darkTheme = snapshot.darkTheme,
                     explorerEnabled = snapshot.explorerEnabled,
+                    p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                    p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                    tronApiUrl = snapshot.tronApiUrl,
+                    tronApiKey = snapshot.tronApiKey,
+                    tronFallbackUrls = snapshot.tronFallbackUrls,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -566,6 +581,11 @@ class ZSilentAppState(
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                 darkTheme = snapshot.darkTheme,
                 explorerEnabled = snapshot.explorerEnabled,
+                p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                tronApiUrl = snapshot.tronApiUrl,
+                tronApiKey = snapshot.tronApiKey,
+                tronFallbackUrls = snapshot.tronFallbackUrls,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost,
@@ -639,6 +659,11 @@ class ZSilentAppState(
                     autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                     darkTheme = snapshot.darkTheme,
                     explorerEnabled = snapshot.explorerEnabled,
+                    p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                    p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                    tronApiUrl = snapshot.tronApiUrl,
+                    tronApiKey = snapshot.tronApiKey,
+                    tronFallbackUrls = snapshot.tronFallbackUrls,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -685,6 +710,11 @@ class ZSilentAppState(
                     autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                     darkTheme = snapshot.darkTheme,
                     explorerEnabled = enabled,
+                    p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                    p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                    tronApiUrl = snapshot.tronApiUrl,
+                    tronApiKey = snapshot.tronApiKey,
+                    tronFallbackUrls = snapshot.tronFallbackUrls,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -695,6 +725,59 @@ class ZSilentAppState(
                 )
             )
         }
+    }
+
+    fun setP2PExchangeEnabled(enabled: Boolean) {
+        val snapshot = _uiState.value
+        if (snapshot.p2pExchangeEnabled == enabled) return
+        update {
+            it.copy(
+                p2pExchangeEnabled = enabled,
+                selectedSection = if (!enabled && it.selectedSection == AppSection.P2PExchange) {
+                    AppSection.Dashboard
+                } else {
+                    it.selectedSection
+                },
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        persistCurrentSetup()
+        appendLog(
+            RuntimeLog(
+                "exchange",
+                if (enabled) "Experimental P2P Exchange enabled."
+                else "Experimental P2P Exchange disabled."
+            )
+        )
+    }
+
+    fun acceptP2PExchangeRisks() {
+        if (_uiState.value.p2pExchangeRisksAccepted) return
+        update {
+            it.copy(
+                p2pExchangeRisksAccepted = true,
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        persistCurrentSetup()
+    }
+
+    fun setTronApiSettings(url: String, apiKey: String, fallbackUrls: String) {
+        update {
+            it.copy(
+                tronApiUrl = url.trim().ifBlank { "https://api.trongrid.io" },
+                tronApiKey = apiKey.trim(),
+                tronFallbackUrls = fallbackUrls
+                    .split(',', '\n')
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .joinToString(","),
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        persistCurrentSetup()
+        appendLog(RuntimeLog("exchange", "Saved Tron provider settings; restart the node to apply them."))
     }
 
     fun setTorEnabled(enabled: Boolean) {
@@ -998,6 +1081,11 @@ class ZSilentAppState(
                     autoLockMinutes = current.onboardingAutoLockMinutes,
                     darkTheme = current.darkTheme,
                     explorerEnabled = current.explorerEnabled,
+                    p2pExchangeEnabled = current.p2pExchangeEnabled,
+                    p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
+                    tronApiUrl = current.tronApiUrl,
+                    tronApiKey = current.tronApiKey,
+                    tronFallbackUrls = current.tronFallbackUrls,
                     torEnabled = current.torEnabled,
                     torOnly = current.torOnly,
                     torSocksHost = current.torSocksHost,
@@ -1134,6 +1222,11 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
+                        p2pExchangeEnabled = current.p2pExchangeEnabled,
+                        p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
+                        tronApiUrl = current.tronApiUrl,
+                        tronApiKey = current.tronApiKey,
+                        tronFallbackUrls = current.tronFallbackUrls,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -1282,6 +1375,11 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
+                        p2pExchangeEnabled = current.p2pExchangeEnabled,
+                        p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
+                        tronApiUrl = current.tronApiUrl,
+                        tronApiKey = current.tronApiKey,
+                        tronFallbackUrls = current.tronFallbackUrls,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -1880,7 +1978,10 @@ class ZSilentAppState(
                 threads = threads,
                 torProxy = torProxy,
                 torOnly = snapshot.torOnly,
-                externalAddrs = externalAddrs
+                externalAddrs = externalAddrs,
+                tronApiUrl = snapshot.tronApiUrl,
+                tronApiKey = snapshot.tronApiKey,
+                tronFallbackUrls = snapshot.tronFallbackUrls
             )
             if (externalAddrs.isNotEmpty()) {
                 watchNodeReadySeedAddress()
@@ -2816,6 +2917,11 @@ class ZSilentAppState(
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                 darkTheme = snapshot.darkTheme,
                 explorerEnabled = snapshot.explorerEnabled,
+                p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                tronApiUrl = snapshot.tronApiUrl,
+                tronApiKey = snapshot.tronApiKey,
+                tronFallbackUrls = snapshot.tronFallbackUrls,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost.ifBlank { "127.0.0.1" },

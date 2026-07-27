@@ -121,7 +121,9 @@ fun ZSilentApp(appState: ZSilentAppState) {
                 AppSection.Node      -> NodeScreen(uiState, appState)
                 AppSection.Mining    -> MiningScreen(uiState, appState)
                 AppSection.MiningPool  -> MiningPoolScreen(uiState, appState)
-                AppSection.P2PExchange -> P2PExchangeScreen(uiState, appState)
+                AppSection.P2PExchange ->
+                    if (uiState.p2pExchangeEnabled) P2PExchangeScreen(uiState, appState)
+                    else DashboardScreen(uiState, appState)
                 AppSection.Explorer    ->
                     // Reachable only while the opt-in holds; if it is switched
                     // off from another surface the router must not keep
@@ -146,6 +148,7 @@ private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
     AppSection.entries.filter { section ->
         when (section) {
             AppSection.Explorer -> uiState.explorerEnabled
+            AppSection.P2PExchange -> uiState.p2pExchangeEnabled
             else -> true
         }
     }
