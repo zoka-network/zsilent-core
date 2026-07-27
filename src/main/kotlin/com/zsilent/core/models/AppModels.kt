@@ -256,7 +256,17 @@ data class OfferSummary(
 
 @Serializable
 data class OfferList(
-    val offers: List<OfferSummary> = emptyList()
+    val offers: List<OfferSummary> = emptyList(),
+    val verification: String = "unknown"
+)
+
+@Serializable
+data class ClaimOfferResponse(
+    @SerialName("offer_id")
+    val offerId: String = "",
+    @SerialName("seller_address")
+    val sellerAddress: String = "",
+    val status: String = "claim_requested"
 )
 
 @Serializable
@@ -267,6 +277,27 @@ data class CreateOfferRequest(
     val microUsdt: Long,
     @SerialName("usdt_receive_address")
     val usdtReceiveAddress: String
+)
+
+@Serializable
+data class ReportPaymentFailureRequest(
+    @SerialName("tron_tx_hash")
+    val tronTxHash: String,
+    @SerialName("acknowledge_public_disclosure")
+    val acknowledgePublicDisclosure: Boolean
+)
+
+@Serializable
+data class PaymentFailureSummary(
+    @SerialName("offer_id")
+    val offerId: String = "",
+    @SerialName("seller_address")
+    val sellerAddress: String = "",
+    @SerialName("buyer_address")
+    val buyerAddress: String = "",
+    @SerialName("tron_tx_hash")
+    val tronTxHash: String = "",
+    val timestamp: Long = 0
 )
 
 // GET /mempool/tx/:hash — only ever describes an unconfirmed transaction.

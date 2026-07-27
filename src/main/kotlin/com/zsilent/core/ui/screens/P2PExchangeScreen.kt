@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zsilent.core.models.CreateOfferRequest
+import com.zsilent.core.models.OfferList
 import com.zsilent.core.models.OfferSummary
 import com.zsilent.core.rpc.ZokaRpcClient
 import com.zsilent.core.ui.ZSilentAppState
@@ -37,8 +40,12 @@ import com.zsilent.core.ui.components.StatusCard
 import com.zsilent.core.ui.components.zButtonColors
 import com.zsilent.core.ui.components.zFieldColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 /** Atoms per ZKA, matching `economics::ATOMS_PER_ZKA` on the node. */
 private const val ATOMS_PER_ZKA = 1_000_000L
@@ -56,10 +63,8 @@ private const val MICRO_USDT_PER_USDT = 1_000_000L
  */
 @Composable
 fun P2PExchangeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
-    var risksAccepted by remember { mutableStateOf(false) }
-
-    if (!risksAccepted) {
-        ExchangeRiskGate(onAccept = { risksAccepted = true })
+    if (!ui.p2pExchangeRisksAccepted) {
+        ExchangeRiskGate(onAccept = appState::acceptP2PExchangeRisks)
         return
     }
     ExchangeMain(ui, appState)
@@ -99,17 +104,20 @@ private fun ExchangeRiskGate(onAccept: () -> Unit) {
             RiskLine(
                 "Payment is verified on Tron",
                 "Your node checks the USDT transfer over Tor. If Tor is down, payments " +
-                    "cannot be verified and the offer will expire instead of releasing."
+                    "cannot be verified. A claimed offer stays locked until a private " +
+                    "check succeeds; the node never falls back to a direct connection."
             )
             RiskLine(
                 "Offers expire after 45 minutes",
-                "If a buyer does not pay within the window, the offer closes and your " +
-                    "ZKA is released back to you."
+                "If no qualifying payment arrived within the window, the offer closes and " +
+                    "your ZKA is released only after your node completes one final private " +
+                    "Tron check."
             )
             RiskLine(
-                "Start small",
-                "This feature is new and has not been through a security review yet. " +
-                    "Do not put an amount at risk that you would mind losing."
+                "There is no amount cap",
+                "The backend flow has had a dedicated review, but this is still an " +
+                    "experimental mainnet feature with no testnet phase. Start with the " +
+                    "minimum and never risk an amount you would mind losing."
             )
 
             Button(onClick = onAccept, colors = zButtonColors()) {
@@ -138,12 +146,14 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
     var usdtInput by remember { mutableStateOf("") }
     var tronAddress by remember { mutableStateOf("") }
     var formError by remember { mutableStateOf<String?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    var actionNotice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun reload() {
         state = withContext(Dispatchers.IO) {
             try {
-                OfferFeed.Loaded(appState.localRpc.exchangeOffers().offers)
+                OfferFeed.Loaded(appState.localRpc.exchangeOffers())
             } catch (unsupported: ZokaRpcClient.EndpointUnsupported) {
                 OfferFeed.Unsupported
             } catch (t: Throwable) {
@@ -153,14 +163,24 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
     }
 
     LaunchedEffect(ui.localRpcOnline) {
-        if (ui.localRpcOnline) reload() else state = OfferFeed.NodeOffline
+        if (!ui.localRpcOnline) {
+            state = OfferFeed.NodeOffline
+            return@LaunchedEffect
+        }
+        while (isActive) {
+            reload()
+            delay(5_000)
+        }
     }
 
     ScreenScaffold(
         title = "P2P Exchange",
         subtitle = "Sell ZKA for USDT, directly with another peer."
     ) {
-        val offers = (state as? OfferFeed.Loaded)?.offers.orEmpty()
+        val loaded = state as? OfferFeed.Loaded
+        val offers = loaded?.value?.offers.orEmpty()
+        val verification = loaded?.value?.verification ?: "unknown"
+        val verificationReady = verification == "ready" || verification.startsWith("checking offer ")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard("Offers", offers.size.toString(), "visible to your node", Modifier.weight(1f))
             StatusCard(
@@ -170,22 +190,26 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                 Modifier.weight(1f)
             )
             StatusCard(
-                "Tor",
-                if (ui.torEnabled) "on" else "off",
-                if (ui.torEnabled) "payment checks private" else "required to verify",
+                "Verification",
+                if (verificationReady) "ready" else "blocked",
+                verificationLabel(verification),
                 Modifier.weight(1f)
             )
         }
 
-        if (!ui.torEnabled) {
-            Panel(title = "Tor is off", meta = "verification blocked") {
+        if (!verificationReady) {
+            Panel(title = "Payment verification unavailable", meta = "publishing blocked") {
                 Text(
-                    "Payment checks query a public Tron API. With Tor off that request " +
-                        "would expose your IP and the address you are watching, so the " +
-                        "exchange will not run them. Enable Tor under Privacy.",
+                    "The local node reports: ${verificationLabel(verification)}. It will not " +
+                        "query Tron directly or expire a claimed offer without a successful " +
+                        "private check. Start/restart the node with Tor available before selling.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+        }
+        actionError?.let { ErrorText(it) }
+        actionNotice?.let {
+            Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
         }
 
         Panel(title = "Publish an offer", meta = "you sell ZKA") {
@@ -239,7 +263,7 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                         }
                     }
                 },
-                enabled = ui.localRpcOnline,
+                enabled = ui.localRpcOnline && verificationReady,
                 colors = zButtonColors()
             ) {
                 Text("Publish offer")
@@ -250,19 +274,67 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
         }
 
-        OfferFeedPanel(state, onClaim = { offer ->
-            scope.launch {
-                withContext(Dispatchers.IO) {
-                    runCatching { appState.localRpc.claimOffer(offer.id) }
+        OfferFeedPanel(
+            state = state,
+            activeWalletAddress = ui.activeWalletAddress,
+            onClaim = { offer ->
+                scope.launch {
+                    val outcome = withContext(Dispatchers.IO) {
+                        runCatching { appState.localRpc.claimOffer(offer.id) }
+                    }
+                    outcome
+                        .onSuccess {
+                            actionError = null
+                            actionNotice =
+                                "Claim request sent. Do not pay until the seller's signed acceptance appears."
+                        }
+                        .onFailure { actionError = it.message ?: "Claim request failed." }
+                    reload()
                 }
-                reload()
+            },
+            onCancel = { offer ->
+                scope.launch {
+                    val outcome = withContext(Dispatchers.IO) {
+                        runCatching { appState.localRpc.cancelOffer(offer.id) }
+                    }
+                    outcome
+                        .onSuccess {
+                            actionError = null
+                            actionNotice = "Offer cancelled and its ZKA reservation released."
+                        }
+                        .onFailure { actionError = it.message ?: "Cancellation failed." }
+                    reload()
+                }
+            },
+            onReport = { offer, tronTxHash ->
+                scope.launch {
+                    val outcome = withContext(Dispatchers.IO) {
+                        runCatching {
+                            appState.localRpc.reportPaymentFailure(offer.id, tronTxHash)
+                        }
+                    }
+                    outcome
+                        .onSuccess {
+                            actionError = null
+                            actionNotice =
+                                "Failure report published with the disclosed Tron transaction hash."
+                        }
+                        .onFailure { actionError = it.message ?: "Failure report was refused." }
+                    reload()
+                }
             }
-        })
+        )
     }
 }
 
 @Composable
-private fun OfferFeedPanel(state: OfferFeed, onClaim: (OfferSummary) -> Unit) {
+private fun OfferFeedPanel(
+    state: OfferFeed,
+    activeWalletAddress: String,
+    onClaim: (OfferSummary) -> Unit,
+    onCancel: (OfferSummary) -> Unit,
+    onReport: (OfferSummary, String) -> Unit
+) {
     when (state) {
         OfferFeed.Loading -> Panel(title = "Offers") {
             Row(
@@ -299,30 +371,158 @@ private fun OfferFeedPanel(state: OfferFeed, onClaim: (OfferSummary) -> Unit) {
 
         is OfferFeed.Loaded -> Panel(
             title = "Offers",
-            meta = "${state.offers.size} visible"
+            meta = "${state.value.offers.size} relevant"
         ) {
-            if (state.offers.isEmpty()) {
-                EmptyState("No offers are being advertised by your peers right now.")
+            if (state.value.offers.isEmpty()) {
+                EmptyState("No live offers or trades are relevant to this wallet right now.")
             } else {
-                state.offers.forEach { offer -> OfferRow(offer, onClaim) }
+                state.value.offers.forEach { offer ->
+                    OfferRow(
+                        offer = offer,
+                        activeWalletAddress = activeWalletAddress,
+                        onClaim = onClaim,
+                        onCancel = onCancel,
+                        onReport = onReport
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun OfferRow(offer: OfferSummary, onClaim: (OfferSummary) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun OfferRow(
+    offer: OfferSummary,
+    activeWalletAddress: String,
+    onClaim: (OfferSummary) -> Unit,
+    onCancel: (OfferSummary) -> Unit,
+    onReport: (OfferSummary, String) -> Unit
+) {
+    var nowSeconds by remember(offer.id) {
+        mutableStateOf(System.currentTimeMillis() / 1_000)
+    }
+    var reportOpen by remember(offer.id) { mutableStateOf(false) }
+    var tronTxHash by remember(offer.id) { mutableStateOf("") }
+    var disclosureAccepted by remember(offer.id) { mutableStateOf(false) }
+    LaunchedEffect(offer.id, offer.claimExpiresAt) {
+        while (isActive) {
+            nowSeconds = System.currentTimeMillis() / 1_000
+            delay(1_000)
+        }
+    }
+    val isSeller = offer.sellerAddress == activeWalletAddress
+    val isBuyer = offer.claimedBy == activeWalletAddress
+    val reportAfter = offer.claimExpiresAt?.plus(5 * 60)
+    val canReport = isBuyer &&
+        offer.status == "Claimed" &&
+        reportAfter != null &&
+        nowSeconds >= reportAfter
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         KeyValueRow(
             "${formatZka(offer.zkaAtoms)} ZKA",
             "for ${formatUsdt(offer.microUsdt)} USDT"
         )
         KeyValueRow("Status", offer.status)
         CopyableKeyValueRow("Seller", offer.sellerAddress)
-        if (offer.status == "Open") {
-            Button(onClick = { onClaim(offer) }, colors = zButtonColors()) {
-                Text("Take this offer")
+        when {
+            offer.status == "Open" && isSeller -> {
+                OutlinedButton(onClick = { onCancel(offer) }) {
+                    Text("Cancel open offer")
+                }
             }
+            offer.status == "Open" -> {
+                Button(onClick = { onClaim(offer) }, colors = zButtonColors()) {
+                    Text("Request this offer")
+                }
+                HintText("Wait for the seller's signed acceptance before sending USDT.")
+            }
+            isBuyer && offer.status == "Claimed" -> {
+                Text(
+                    "Claim accepted by the seller. You may now send the exact USDT amount.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                CopyableKeyValueRow("Send USDT (TRC-20) to", offer.usdtReceiveAddress)
+                KeyValueRow("Amount", "${formatUsdt(offer.microUsdt)} USDT")
+                offer.claimExpiresAt?.let {
+                    KeyValueRow("Payment window", countdownLabel(it, nowSeconds))
+                }
+            }
+            isBuyer && offer.status == "PaymentDetected" -> {
+                Text(
+                    "The seller verified the Tron payment. The ZKA release is being built or rebroadcast.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            isBuyer && offer.status == "Released" -> {
+                Text(
+                    "The seller released the ZKA. Your wallet will show it after the private transaction confirms.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+        if (canReport && !reportOpen) {
+            OutlinedButton(onClick = { reportOpen = true }) {
+                Text("Report payment without release")
+            }
+        }
+        if (reportOpen) {
+            Text(
+                "Public warning: this publishes your Tron transaction hash to the Zoka gossip network.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            OutlinedTextField(
+                value = tronTxHash,
+                onValueChange = { tronTxHash = it.trim() },
+                label = { Text("Tron transaction hash (64 hex characters)") },
+                singleLine = true,
+                colors = zFieldColors(),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = disclosureAccepted,
+                    onCheckedChange = { disclosureAccepted = it }
+                )
+                Text(
+                    "I understand this permanently links my report to that public Tron transaction.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        onReport(offer, tronTxHash)
+                        reportOpen = false
+                    },
+                    enabled = disclosureAccepted && tronTxHash.length == 64 &&
+                        tronTxHash.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' },
+                    colors = zButtonColors()
+                ) {
+                    Text("Publish report")
+                }
+                OutlinedButton(onClick = { reportOpen = false }) {
+                    Text("Cancel")
+                }
+            }
+        }
+        if (offer.claimedBy != null && !isBuyer) {
+            CopyableKeyValueRow("Buyer", offer.claimedBy)
+        }
+        if (offer.status == "Expired") {
+            HintText("This claim expired after the seller completed a final private Tron check.")
+        }
+        if (offer.status == "Cancelled") {
+            HintText("The seller cancelled this offer before it was claimed.")
         }
     }
 }
@@ -332,7 +532,7 @@ private sealed interface OfferFeed {
     data object NodeOffline : OfferFeed
     /** The node has no exchange endpoints — an older build. */
     data object Unsupported : OfferFeed
-    data class Loaded(val offers: List<OfferSummary>) : OfferFeed
+    data class Loaded(val value: OfferList) : OfferFeed
     data class Failed(val message: String) : OfferFeed
 }
 
@@ -344,29 +544,69 @@ private sealed interface OfferInput {
 /**
  * Turns the form into a request, or explains why it cannot.
  *
- * Amounts are converted to integers here and never handled as Double beyond
- * parsing: the node matches payments on the integer value, so a rounding
+ * Amounts are converted directly from decimal text to integers: the node
+ * matches payments on the integer value, so a floating-point rounding
  * difference between the two sides would decide real money.
  */
 private fun buildOfferRequest(zka: String, usdt: String, tron: String): OfferInput {
-    val zkaAmount = zka.toDoubleOrNull()
+    val zkaAmount = zka.toBigDecimalOrNull()
         ?: return OfferInput.Invalid("Enter how much ZKA you are selling.")
-    val usdtAmount = usdt.toDoubleOrNull()
+    val usdtAmount = usdt.toBigDecimalOrNull()
         ?: return OfferInput.Invalid("Enter how much USDT you want for it.")
-    if (zkaAmount <= 0) return OfferInput.Invalid("The ZKA amount must be greater than zero.")
-    if (usdtAmount <= 0) return OfferInput.Invalid("The USDT amount must be greater than zero.")
+    if (zkaAmount.signum() <= 0) {
+        return OfferInput.Invalid("The ZKA amount must be greater than zero.")
+    }
+    if (usdtAmount.signum() <= 0) {
+        return OfferInput.Invalid("The USDT amount must be greater than zero.")
+    }
     if (!looksLikeTronAddress(tron)) {
         return OfferInput.Invalid(
             "That is not a TRC-20 address. It should be 34 characters starting with T."
         )
     }
+    val zkaAtoms = runCatching { decimalUnitsExact(zkaAmount, ATOMS_PER_ZKA) }
+        .getOrElse {
+            return OfferInput.Invalid(
+                "ZKA supports at most 6 decimal places and the amount is too large."
+            )
+        }
+    val microUsdt = runCatching { decimalUnitsExact(usdtAmount, MICRO_USDT_PER_USDT) }
+        .getOrElse {
+            return OfferInput.Invalid(
+                "USDT supports at most 6 decimal places and the amount is too large."
+            )
+        }
     return OfferInput.Valid(
         CreateOfferRequest(
-            zkaAtoms = Math.round(zkaAmount * ATOMS_PER_ZKA),
-            microUsdt = Math.round(usdtAmount * MICRO_USDT_PER_USDT),
+            zkaAtoms = zkaAtoms,
+            microUsdt = microUsdt,
             usdtReceiveAddress = tron
         )
     )
+}
+
+internal fun decimalUnitsExact(amount: BigDecimal, unitsPerWhole: Long): Long =
+    amount
+        .multiply(BigDecimal.valueOf(unitsPerWhole))
+        .setScale(0, RoundingMode.UNNECESSARY)
+        .longValueExact()
+
+private fun verificationLabel(status: String): String = when {
+    status == "ready" -> "Tor and Tron verification ready"
+    status == "tor_unavailable" -> "Tor is unavailable"
+    status == "unknown" -> "waiting for the local node"
+    status.startsWith("checking offer ") -> "checking a claimed offer privately"
+    else -> status.replace('_', ' ').ifBlank { "unknown node response" }
+}
+
+private fun countdownLabel(deadline: Long, now: Long): String {
+    val remaining = deadline - now
+    if (remaining <= 0) {
+        return "window elapsed — final seller verification pending"
+    }
+    val minutes = remaining / 60
+    val seconds = remaining % 60
+    return "${minutes}m ${seconds.toString().padStart(2, '0')}s remaining"
 }
 
 /**

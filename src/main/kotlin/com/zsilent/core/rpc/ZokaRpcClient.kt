@@ -4,7 +4,10 @@ import com.zsilent.core.models.AccountCheck
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.ChainHeightResponse
+import com.zsilent.core.models.ClaimOfferResponse
 import com.zsilent.core.models.CreateOfferRequest
+import com.zsilent.core.models.PaymentFailureSummary
+import com.zsilent.core.models.ReportPaymentFailureRequest
 import com.zsilent.core.models.ViewScanKeyRequest
 import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.models.MempoolTransaction
@@ -211,7 +214,7 @@ class ZokaRpcClient(val baseUrl: String) {
         return codec.decodeFromString(body)
     }
 
-    suspend fun claimOffer(offerId: String): OfferSummary {
+    suspend fun claimOffer(offerId: String): ClaimOfferResponse {
         require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
         val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/claim")
         if (response.status == HttpStatusCode.NotFound) {
@@ -220,6 +223,41 @@ class ZokaRpcClient(val baseUrl: String) {
         val body = response.bodyAsText()
         if (!response.status.isSuccess()) {
             throw IllegalStateException(body.ifBlank { "claim refused: ${response.status}" })
+        }
+        return codec.decodeFromString(body)
+    }
+
+    suspend fun cancelOffer(offerId: String): OfferSummary {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/cancel")
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(body.ifBlank { "cancellation refused: ${response.status}" })
+        }
+        return codec.decodeFromString(body)
+    }
+
+    suspend fun reportPaymentFailure(
+        offerId: String,
+        tronTxHash: String
+    ): PaymentFailureSummary {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val response = client.post(
+            "$baseUrl/p2p-exchange/offers/$offerId/report-payment-failure"
+        ) {
+            contentType(ContentType.Application.Json)
+            setBody(
+                codec.encodeToString(
+                    ReportPaymentFailureRequest(
+                        tronTxHash = tronTxHash,
+                        acknowledgePublicDisclosure = true
+                    )
+                )
+            )
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(body.ifBlank { "report refused: ${response.status}" })
         }
         return codec.decodeFromString(body)
     }
