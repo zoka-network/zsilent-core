@@ -30,8 +30,8 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 0 | Tokens, tipografía, formas, movimiento (`Theme.kt`) | ✅ hecha |
 | 0b | Primitivos (`Components.kt`) y efectos (`Effects.kt`) | ✅ hecha |
 | 1 | Onboarding | ✅ hecha |
-| 2 | Intro (pantalla nueva) | ⬜ pendiente |
-| 3 | Login | ⬜ pendiente |
+| 2 | Intro (pantalla nueva) | ⬜ pendiente — ver nota de orden |
+| 3 | Login | ✅ hecha |
 | 4 | Shell de navegación | ⬜ pendiente |
 | 5 | Dashboard | ⬜ pendiente |
 | 6 | Wallet (+ Send, Receive) | ⬜ pendiente |
@@ -496,11 +496,58 @@ decorativo y pasa a ser útil.
 
 ---
 
-## Etapa 3 — Login
+## Etapa 3 — Login ✅
 
 Prototipo: `src/components/zs/Login.tsx` (120).
 ZSilent: `ui/screens/LoginScreen.kt` (395) — ya tiene `LoginWalletSelector`,
 `LoginResetScreen`, `LoginRestoreScreen`, `LoginConfirmationLayout`.
+
+### Cómo quedó
+
+**Se hizo antes de la etapa 2 a propósito.** El Intro tiene una pregunta de
+producto sin resolver, mientras que el Login tenía 24 colores literales que
+rompían el modo claro y lo ve todo el mundo en cada arranque. Arreglar lo roto
+primero.
+
+Los 24 literales pasaron a cero. Se portó la estructura del prototipo: marca
+fuera del panel, línea de acento con degradado en el borde superior, `ZLabel` +
+selector de wallet + pill `Zoka ready`, campo de contraseña con ojo, botón
+`Unlock session` a ancho completo, pie dividido con `Restore from phrase` y
+`Wipe local data` en `danger`, y fuera del panel `runtime · local-first` más la
+pill de estado del nodo.
+
+**Se extrajo `LoginContent`**, el cuerpo visual sin dependencias de
+`ZSilentAppState`, con un wrapper `LoginScreen(ui, appState)` que le pasa datos y
+callbacks. Eso permite renderizarlo en la galería sin arrancar nodo ni servicios.
+**Es el patrón a repetir en las etapas 5 a 14**: `XxxScreen(ui, appState)` fino
+sobre un `XxxContent(...)` con parámetros planos. Sin eso no hay forma de
+verificar una pantalla sin montar el runtime completo.
+
+### Dos bugs que aparecieron al pasar
+
+**Botón deshabilitado casi blanco.** `LoginConfirmationLayout` tenía
+`disabledContainerColor = Color(0xFFE5E7EB)` con `disabledContentColor` en gris
+medio. Sobre tema oscuro, el botón de confirmar deshabilitado se renderizaba como
+lo más brillante de la pantalla — un rectángulo blanco donde debía haber un
+control apagado, y con texto gris encima casi ilegible. Se ve en el diálogo de
+`Reset wallet` antes de tildar la casilla, que es justo el momento en que el
+usuario está más nervioso. Ahora usa la variante `Danger` de `ZButton`, que se
+atenúa con alfa.
+
+**`attempts` muerto.** `LoginScreen` declaraba `var attempts by remember { 0 }`,
+lo incrementaba en cada intento y no lo leía nunca. Probablemente quedó de un
+límite de reintentos que nunca se implementó. Eliminado — si hace falta rate
+limiting va en `ZSilentAppState`, no en la capa de presentación.
+
+### Una observación que no se tocó
+
+La contraseña vive como `String` en estado de Compose y se convierte con
+`.toCharArray()` al enviarla. Un `String` es inmutable y no se puede poner en
+cero, así que queda en memoria hasta que el GC lo recoja. Es preexistente y
+arreglarlo de verdad implica un campo de texto con estado `CharArray`, que en
+Compose es incómodo. **No se cambió en una etapa visual** para no meter riesgo en
+el camino de desbloqueo, pero queda anotado: si alguna vez se endurece el manejo
+de secretos en la UI, este es el lugar.
 
 Tarjeta centrada de 448dp de ancho sobre fondo con retícula al 40% y un halo
 circular de 500dp en `accent` al 10%. Encima de la tarjeta, la marca; dentro:

@@ -46,6 +46,7 @@ import com.zsilent.core.ui.onboarding.ScreenBody
 import com.zsilent.core.ui.onboarding.ScreenEyebrow
 import com.zsilent.core.ui.onboarding.ScreenTitle
 import com.zsilent.core.ui.onboarding.WelcomeStepNoir
+import com.zsilent.core.ui.screens.LoginContent
 import com.zsilent.core.ui.theme.ZDensity
 import com.zsilent.core.ui.theme.ZSilentTheme
 import com.zsilent.core.ui.theme.ZTheme
@@ -120,13 +121,40 @@ fun main() = application {
                         onStep = { onboardingStep = it },
                         onExit = { view = GalleryView.Primitives },
                     )
+
+                    // LoginContent no depende de ZSilentAppState, así que se
+                    // renderiza con datos de mentira y callbacks vacíos.
+                    GalleryView.Login -> Box(Modifier.fillMaxSize()) {
+                        LoginContent(
+                            activeWalletName = "Primary",
+                            activeWalletAddress = "zka1s8tnq0vzokademoaddress000000000000kdemo0",
+                            wallets = listOf(
+                                "Primary" to "zka1s8tnq0vzokademoaddress000000000000kdemo0",
+                                "Savings" to "zka1x4mpl3zokasecondaddress0000000000kdemo9",
+                            ),
+                            lockMessage = "Session locked after 15 min of inactivity.",
+                            loginError = null,
+                            busy = false,
+                            zokaReady = true,
+                            onSelectWallet = {},
+                            onLogin = {},
+                            onRestore = {},
+                            onReset = {},
+                        )
+                        ZButton(
+                            onClick = { view = GalleryView.Primitives },
+                            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                            variant = ZButtonVariant.Outline,
+                            size = ZButtonSize.Small,
+                        ) { ZButtonText("Volver") }
+                    }
                 }
             }
         }
     }
 }
 
-private enum class GalleryView { Primitives, Onboarding }
+private enum class GalleryView { Primitives, Onboarding, Login }
 
 @Composable
 private fun OnboardingPreview(
@@ -186,6 +214,11 @@ private fun Controls(
                 variant = ZButtonVariant.Accent,
                 size = ZButtonSize.Small,
             ) { ZButtonText("Onboarding") }
+            ZButton(
+                onClick = { onView(GalleryView.Login) },
+                variant = ZButtonVariant.Accent,
+                size = ZButtonSize.Small,
+            ) { ZButtonText("Login") }
         }
         ThinDivider()
         Row(
