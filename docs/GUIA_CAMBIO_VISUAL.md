@@ -27,7 +27,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 
 | Etapa | Alcance | Estado |
 |---|---|---|
-| 0 | Tokens, tipografía, formas, efectos (`Theme.kt`) | ⬜ pendiente |
+| 0 | Tokens, tipografía, formas, movimiento (`Theme.kt`) | ✅ hecha |
 | 0b | Primitivos (`Components.kt`) | ⬜ pendiente |
 | 1 | Onboarding | ⬜ pendiente |
 | 2 | Intro (pantalla nueva) | ⬜ pendiente |
@@ -46,41 +46,77 @@ Esto es un cambio de capa de presentación exclusivamente.
 
 ---
 
-## Decisiones abiertas
+## Decisiones tomadas
 
-Hay que resolverlas antes de la etapa que las necesita. No las decide la
-implementación.
+Las cuatro se resolvieron el 2026-07-27, todas hacia la réplica fiel del
+prototipo.
 
-**D1 — El acento pasa de menta a blanco.** Bloquea la etapa 0.
-Hoy `primary` es `#A8E6B0`. En el prototipo, `--accent` y `--primary` en modo
-oscuro son `#F8F8F8`: los botones primarios son blancos con texto negro, y el
-color sobrevive únicamente como cuatro estados semánticos. Es un cambio de marca.
-Alternativa intermedia: adoptar toda la estructura acromática pero conservar el
-menta como `accent`. Se ve distinto al prototipo pero mantiene la identidad.
+**D1 — El acento es blanco. Réplica exacta.**
+`primary` y `accent` pasan de `#A8E6B0` a `#F8F8F8` en oscuro y `#090909` en
+claro. Los botones primarios son blancos con texto negro. El `#A8E6B0` sale de la
+interfaz por completo; el único color son los cuatro estados semánticos.
 
-**D2 — ¿Entra el modo claro?** Bloquea la etapa 0.
-Hoy `Theme.kt` declara explícitamente que no hay par claro/oscuro. El prototipo
-trae los dos y un toggle. Si entra, hay que auditar todo `Color(0x…)` hardcodeado
-fuera del `ColorScheme`, porque en claro se rompe. Si no entra, se implementa
-solo la columna oscura de las tablas de abajo y se omite el toggle.
+**D2 — Entran los dos temas, con toggle.**
+`ZSilentTheme` recibe `darkTheme` y hay que persistirlo en `SetupStore` junto con
+el toggle de la topbar (etapa 4).
 
-**D3 — ¿Send y Receive dejan de ser secciones?** Bloquea las etapas 4 y 6.
-`AppSection` tiene hoy 12 entradas con `Send` y `Receive` como secciones de primer
-nivel. El prototipo tiene 10 y los mete como pestañas dentro de Wallet
-(`overview` / `send` / `receive`). Adoptarlo simplifica la navegación pero cambia
-el enum y todo lo que navegue a esas secciones.
+*Consecuencia medida:* hay **113 usos de `Color(0x…)` fuera del tema**, repartidos
+en `Components.kt` (28), `LoginScreen.kt` (24), `NoirOnboarding.kt` (24),
+`Screens.kt` (20), `ZSilentApp.kt` (12) y `Main.kt` (5), más 5 literales
+`Color.White`/`Color.Black`. Todos se rompen en claro. La buena noticia es que los
+tres primeros archivos se reescriben igual en las etapas 0b, 3 y 1, así que la
+auditoría se absorbe casi entera en el trabajo ya planeado. Quedan sueltos
+`Screens.kt` (se cubre entre las etapas 5 y 14) y `Main.kt`, que es cromo de
+ventana y hay que revisar aparte.
 
-**D4 — Densidad y animaciones configurables.** Bloquea la etapa 14.
-El prototipo expone en Settings → Appearance un selector `compact` / `cozy` y un
-switch de animaciones. Hoy no existe nada de eso. Si se adopta, los dos ajustes
-tienen que llegar al tema y respetarse en todos los componentes.
+**D3 — Send y Receive pasan a ser pestañas de Wallet.**
+`AppSection` baja de 12 a 10 entradas: se eliminan `Send` y `Receive`. Hay que
+actualizar `navItem()` en `ZSilentApp.kt:327` y todo call site que navegue a esas
+secciones. Se hace en la etapa 4, y la etapa 6 construye las pestañas.
+
+**D4 — Entran densidad y animaciones.**
+`ZDensity` (`Compact` / `Cozy`) y el switch de animaciones ya están en el tema.
+
+*Consecuencia para toda etapa a partir de 0b:* **ningún componente puede llevar
+espaciados fijos.** Todo relleno, separación, alto de control y margen de pantalla
+sale de `ZTheme.spacing`. Y toda animación tiene que consultar
+`ZTheme.animations` antes de animar — si está en `false`, se salta a la posición
+final. Es más fácil hacerlo bien desde el principio que retroajustarlo después.
 
 ---
 
-## Etapa 0 — Fundaciones (`ui/theme/Theme.kt`)
+## Etapa 0 — Fundaciones (`ui/theme/Theme.kt`) ✅
 
 Es la etapa de mayor palanca: todo lo que lee `MaterialTheme.colorScheme.*`
 hereda el cambio sin tocarse.
+
+### API que quedó — usar esto en todas las etapas siguientes
+
+```kotlin
+ZSilentTheme(darkTheme = true, density = ZDensity.Cozy, animations = true) { … }
+
+ZTheme.semantics.success / .warning / .danger / .info / .borderStrong / .elevated
+ZTheme.text.eyebrow / .panelLabel / .fieldLabel / .navGroup / .pill
+             .mono / .monoLarge / .monoDisplay
+ZTheme.spacing.panel / .gap / .row / .control / .screen
+ZTheme.animations        // Boolean — consultarlo ANTES de animar
+
+ZEasing                  // cubic-bezier(0.2, 0.8, 0.2, 1)
+Z_DURATION_FAST / Z_DURATION_ENTER / Z_DURATION_FADE
+```
+
+Los estilos de `ZTheme.text` **no aplican mayúscula por su cuenta** — eso lo hace
+cada componente con `.uppercase()` sobre el texto. Se decidió así para no
+sorprender a quien lea el estilo esperando que solo cambie la tipografía.
+
+Las fuentes están en `src/main/resources/font/` con sus licencias OFL: Inter en
+Regular/Medium/SemiBold y JetBrains Mono en Regular/Medium. Son 1,7 MB en total.
+Compensa de sobra contra los 37 MB de `material-icons-extended` que conviene
+podar cuando se toque `build.gradle.kts`.
+
+Verificado: `compileKotlin` y la suite de tests pasan, y las fuentes quedan en el
+classpath bajo `font/`. Falta la verificación visual con la app corriendo, que se
+hará al cerrar la etapa 0b — antes no hay nada que mirar.
 
 ### 0.1 Paleta
 
