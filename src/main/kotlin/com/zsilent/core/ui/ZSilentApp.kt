@@ -120,7 +120,9 @@ fun ZSilentApp(appState: ZSilentAppState) {
                 AppSection.Receive   -> ReceiveScreen(uiState, appState)
                 AppSection.Node      -> NodeScreen(uiState, appState)
                 AppSection.Mining    -> MiningScreen(uiState, appState)
-                AppSection.MiningPool  -> MiningPoolScreen(uiState, appState)
+                AppSection.MiningPool  ->
+                    if (uiState.teamMiningEnabled) MiningPoolScreen(uiState, appState)
+                    else DashboardScreen(uiState, appState)
                 AppSection.P2PExchange ->
                     if (uiState.p2pExchangeEnabled) P2PExchangeScreen(uiState, appState)
                     else DashboardScreen(uiState, appState)
@@ -149,6 +151,7 @@ private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
         when (section) {
             AppSection.Explorer -> uiState.explorerEnabled
             AppSection.P2PExchange -> uiState.p2pExchangeEnabled
+            AppSection.MiningPool -> uiState.teamMiningEnabled
             else -> true
         }
     }

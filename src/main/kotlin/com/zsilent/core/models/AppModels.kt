@@ -471,6 +471,86 @@ data class PendingPrivateTransfers(
 )
 
 @Serializable
+data class TeamMiningControlRequest(
+    val threads: Int = 1
+)
+
+@Serializable
+data class JoinMiningTeamRequest(
+    @SerialName("invite_code")
+    val inviteCode: String
+)
+
+@Serializable
+data class TeamMiningMember(
+    val address: String = "",
+    val active: Boolean = false,
+    val expelled: Boolean = false,
+    @SerialName("total_work")
+    val totalWork: Long = 0,
+    @SerialName("accepted_shares")
+    val acceptedShares: Long = 0,
+    @SerialName("blocks_paid")
+    val blocksPaid: Long = 0,
+    @SerialName("share_difficulty_bits")
+    val shareDifficultyBits: Int = 0,
+    @SerialName("estimated_hashrate_hps")
+    val estimatedHashrateHps: Long = 0
+)
+
+@Serializable
+data class TeamMiningTemplate(
+    val id: String = "",
+    val height: Long = 0,
+    @SerialName("recipient_address")
+    val recipientAddress: String = "",
+    @SerialName("network_difficulty_bits")
+    val networkDifficultyBits: Int = 0
+)
+
+@Serializable
+data class MiningTeam(
+    @SerialName("team_id")
+    val teamId: String = "",
+    @SerialName("invite_code")
+    val inviteCode: String = "",
+    val coordinator: String = "",
+    @SerialName("backup_coordinator")
+    val backupCoordinator: String? = null,
+    val epoch: Long = 0,
+    val revision: Long = 0,
+    val members: Map<String, TeamMiningMember> = emptyMap(),
+    @SerialName("total_work")
+    val totalWork: Long = 0,
+    @SerialName("confirmed_blocks")
+    val confirmedBlocks: Long = 0,
+    @SerialName("active_template")
+    val activeTemplate: TeamMiningTemplate? = null,
+    @SerialName("last_hijacked_recipient")
+    val lastHijackedRecipient: String? = null
+)
+
+@Serializable
+data class TeamMiningStatus(
+    val enabled: Boolean = false,
+    val hashing: Boolean = false,
+    val threads: Long = 1,
+    @SerialName("join_status")
+    val joinStatus: String = "not_joined",
+    @SerialName("local_address")
+    val localAddress: String = "",
+    val team: MiningTeam? = null,
+    @SerialName("combined_hashrate_hps")
+    val combinedHashrateHps: Long = 0,
+    @SerialName("local_accepted_shares")
+    val localAcceptedShares: Long = 0,
+    @SerialName("team_accepted_shares")
+    val teamAcceptedShares: Long = 0,
+    @SerialName("estimated_turn")
+    val estimatedTurn: Int? = null
+)
+
+@Serializable
 data class PersistedSetup(
     val onboardingComplete: Boolean = false,
     val walletName: String = "",
@@ -489,6 +569,9 @@ data class PersistedSetup(
     // Moves real funds, so legacy setup files and fresh installs stay opted
     // out until the user enables the experimental section deliberately.
     val p2pExchangeEnabled: Boolean = false,
+    // Team mining is experimental and can produce uneven short-term payouts,
+    // so it is absent from the sidebar until explicitly enabled.
+    val teamMiningEnabled: Boolean = false,
     val p2pExchangeRisksAccepted: Boolean = false,
     val tronApiUrl: String = "https://api.trongrid.io",
     val tronApiKey: String = "",

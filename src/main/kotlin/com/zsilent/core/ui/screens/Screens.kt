@@ -2409,7 +2409,10 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
         }
         SettingsMenuCard(
             title = "Experimental",
-            detail = if (ui.p2pExchangeEnabled) "P2P Exchange enabled" else "fund-moving features are off",
+            detail = listOfNotNull(
+                "P2P Exchange".takeIf { ui.p2pExchangeEnabled },
+                "Team Mining".takeIf { ui.teamMiningEnabled }
+            ).takeIf { it.isNotEmpty() }?.joinToString(" + ") ?: "experimental features are off",
             icon = Icons.Outlined.CurrencyExchange,
             meta = "opt-in",
             modifier = Modifier.fillMaxWidth(),
@@ -2694,6 +2697,23 @@ private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppSta
             if (ui.p2pExchangeRisksAccepted) "accepted" else "required on first entry"
         )
         HintText("There is no escrow, arbiter, refund or per-offer amount cap in v1.")
+    }
+
+    Panel(title = "Team Mining", meta = "experimental opt-in") {
+        ToggleRow("Enable Team Mining", ui.teamMiningEnabled) {
+            appState.setTeamMiningEnabled(it)
+        }
+        Text(
+            "This section coordinates mining with people you know. It stays out of the " +
+                "sidebar until you opt in. There is no team wallet and no coordinator fee.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        HintText(
+            "Whole block rewards rotate by contributed work. Short-term payouts are uneven, " +
+                "and a member can hijack a block; the team can detect and expel them but cannot " +
+                "make that otherwise-valid block impossible."
+        )
     }
 
     Panel(title = "Tron payment provider", meta = "applies after node restart") {

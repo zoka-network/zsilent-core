@@ -86,6 +86,7 @@ data class ZSilentUiState(
     // is read-only and never leaves the local node.
     val explorerEnabled: Boolean = true,
     val p2pExchangeEnabled: Boolean = false,
+    val teamMiningEnabled: Boolean = false,
     val p2pExchangeRisksAccepted: Boolean = false,
     val tronApiUrl: String = "https://api.trongrid.io",
     val tronApiKey: String = "",
@@ -263,6 +264,7 @@ class ZSilentAppState(
                     darkTheme = setup.darkTheme,
                     explorerEnabled = setup.explorerEnabled,
                     p2pExchangeEnabled = setup.p2pExchangeEnabled,
+                    teamMiningEnabled = setup.teamMiningEnabled,
                     p2pExchangeRisksAccepted = setup.p2pExchangeRisksAccepted,
                     tronApiUrl = setup.tronApiUrl,
                     tronApiKey = setup.tronApiKey,
@@ -488,6 +490,7 @@ class ZSilentAppState(
                     darkTheme = snapshot.darkTheme,
                     explorerEnabled = snapshot.explorerEnabled,
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                    teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
@@ -582,6 +585,7 @@ class ZSilentAppState(
                 darkTheme = snapshot.darkTheme,
                 explorerEnabled = snapshot.explorerEnabled,
                 p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                teamMiningEnabled = snapshot.teamMiningEnabled,
                 p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,
@@ -660,6 +664,7 @@ class ZSilentAppState(
                     darkTheme = snapshot.darkTheme,
                     explorerEnabled = snapshot.explorerEnabled,
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                    teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
@@ -711,6 +716,7 @@ class ZSilentAppState(
                     darkTheme = snapshot.darkTheme,
                     explorerEnabled = enabled,
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                    teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
@@ -747,6 +753,30 @@ class ZSilentAppState(
                 "exchange",
                 if (enabled) "Experimental P2P Exchange enabled."
                 else "Experimental P2P Exchange disabled."
+            )
+        )
+    }
+
+    fun setTeamMiningEnabled(enabled: Boolean) {
+        val snapshot = _uiState.value
+        if (snapshot.teamMiningEnabled == enabled) return
+        update {
+            it.copy(
+                teamMiningEnabled = enabled,
+                selectedSection = if (!enabled && it.selectedSection == AppSection.MiningPool) {
+                    AppSection.Dashboard
+                } else {
+                    it.selectedSection
+                },
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        persistCurrentSetup()
+        appendLog(
+            RuntimeLog(
+                "team-mining",
+                if (enabled) "Experimental Team Mining enabled."
+                else "Experimental Team Mining disabled."
             )
         )
     }
@@ -1082,6 +1112,7 @@ class ZSilentAppState(
                     darkTheme = current.darkTheme,
                     explorerEnabled = current.explorerEnabled,
                     p2pExchangeEnabled = current.p2pExchangeEnabled,
+                    teamMiningEnabled = current.teamMiningEnabled,
                     p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
                     tronApiUrl = current.tronApiUrl,
                     tronApiKey = current.tronApiKey,
@@ -1223,6 +1254,7 @@ class ZSilentAppState(
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
                         p2pExchangeEnabled = current.p2pExchangeEnabled,
+                        teamMiningEnabled = current.teamMiningEnabled,
                         p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
                         tronApiUrl = current.tronApiUrl,
                         tronApiKey = current.tronApiKey,
@@ -1376,6 +1408,7 @@ class ZSilentAppState(
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
                         p2pExchangeEnabled = current.p2pExchangeEnabled,
+                        teamMiningEnabled = current.teamMiningEnabled,
                         p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
                         tronApiUrl = current.tronApiUrl,
                         tronApiKey = current.tronApiKey,
@@ -2918,6 +2951,7 @@ class ZSilentAppState(
                 darkTheme = snapshot.darkTheme,
                 explorerEnabled = snapshot.explorerEnabled,
                 p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
+                teamMiningEnabled = snapshot.teamMiningEnabled,
                 p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,

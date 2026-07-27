@@ -6,6 +6,7 @@ import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.ChainHeightResponse
 import com.zsilent.core.models.ClaimOfferResponse
 import com.zsilent.core.models.CreateOfferRequest
+import com.zsilent.core.models.JoinMiningTeamRequest
 import com.zsilent.core.models.PaymentFailureSummary
 import com.zsilent.core.models.ReportPaymentFailureRequest
 import com.zsilent.core.models.ViewScanKeyRequest
@@ -17,6 +18,8 @@ import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.PeersResponse
+import com.zsilent.core.models.TeamMiningControlRequest
+import com.zsilent.core.models.TeamMiningStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
@@ -186,6 +189,49 @@ class ZokaRpcClient(val baseUrl: String) {
      * the network.
      */
     class EndpointUnsupported(val path: String) : Exception("node has no $path endpoint")
+
+    suspend fun teamMiningStatus(): TeamMiningStatus =
+        getOrNull<TeamMiningStatus>("/team-mining/status")
+            ?: throw EndpointUnsupported("/team-mining/status")
+
+    suspend fun createMiningTeam(): TeamMiningStatus =
+        postTeamMining("/team-mining/team")
+
+    suspend fun joinMiningTeam(inviteCode: String): TeamMiningStatus =
+        postTeamMining(
+            "/team-mining/join",
+            codec.encodeToString(JoinMiningTeamRequest(inviteCode.trim().uppercase()))
+        )
+
+    suspend fun leaveMiningTeam(): TeamMiningStatus =
+        postTeamMining("/team-mining/leave")
+
+    suspend fun startTeamMining(threads: Int): TeamMiningStatus =
+        postTeamMining(
+            "/team-mining/start",
+            codec.encodeToString(TeamMiningControlRequest(threads.coerceAtLeast(1)))
+        )
+
+    suspend fun stopTeamMining(): TeamMiningStatus =
+        postTeamMining("/team-mining/stop")
+
+    private suspend fun postTeamMining(path: String, jsonBody: String? = null): TeamMiningStatus {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val response = client.post("$baseUrl$path") {
+            if (jsonBody != null) {
+                contentType(ContentType.Application.Json)
+                setBody(jsonBody)
+            }
+        }
+        if (response.status == HttpStatusCode.NotFound) {
+            throw EndpointUnsupported(path)
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(body.ifBlank { "team mining request failed: ${response.status}" })
+        }
+        return codec.decodeFromString(body)
+    }
 
     /**
      * Offers this node knows about. Throws [EndpointUnsupported] when the node
