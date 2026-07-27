@@ -29,7 +29,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 |---|---|---|
 | 0 | Tokens, tipografía, formas, movimiento (`Theme.kt`) | ✅ hecha |
 | 0b | Primitivos (`Components.kt`) y efectos (`Effects.kt`) | ✅ hecha |
-| 1 | Onboarding | ⬜ pendiente |
+| 1 | Onboarding | ✅ hecha |
 | 2 | Intro (pantalla nueva) | ⬜ pendiente |
 | 3 | Login | ⬜ pendiente |
 | 4 | Shell de navegación | ⬜ pendiente |
@@ -353,10 +353,60 @@ Se conservan sin cambio de API: `ScreenScaffold`, `MeterBar`, `SegmentedSelector
 
 ---
 
-## Etapa 1 — Onboarding
+## Etapa 1 — Onboarding ✅
 
 Prototipo: `src/components/zs/Onboarding.tsx` (628 líneas).
 ZSilent: `ui/onboarding/NoirOnboarding.kt` (1705), `ui/screens/OnboardingScreen.kt` (101).
+
+### Cómo quedó
+
+**La palanca fue convertir las constantes de color en lectores del tema.** Los
+`internal val NoirInk = Color(0xFF0A0A0C)` pasaron a
+`internal val NoirInk: Color @Composable get() = MaterialTheme.colorScheme.background`.
+Es un `val` de nivel superior con getter `@Composable`, que Kotlin permite y el
+compilador de Compose resuelve en composición. Los sitios de uso no cambian —
+siguen escribiendo `NoirInk` — así que los diez pasos heredaron la piel nueva y
+el modo claro sin tocarlos uno por uno.
+
+Eso bajó los colores hardcodeados del archivo de 24 a 0, y el total del módulo
+de 113 a 62.
+
+**Cambios de estructura:**
+
+- `NoirBackground` ahora lleva grano y retícula al 4%, como el prototipo.
+- `PrimaryButton`, `SecondaryButton` y `DangerButton` delegan en `ZButton`
+  (variantes `Accent`, `Ghost`, `Danger`). Se conservan las firmas porque las
+  consume también `LoginScreen`.
+- `StepIndicator` se reemplazó por `StepProgress`: `STEP 03 / 10` a la izquierda,
+  el nombre del paso a la derecha, y diez segmentos de 2dp que abarcan todo el
+  ancho.
+- La cabecera lleva la marca a la izquierda y las dos pills del prototipo
+  (`Zero-Knowledge` en `info`, `Local-first` en `on`).
+- El pie va separado por una línea, con `Back` en `ghost` y la acción primaria en
+  `accent` tamaño `lg`.
+- **Se eliminó la tarjeta que envolvía los pasos.** El prototipo pone el título y
+  la bajada directo sobre el fondo y solo agrupa en paneles el contenido
+  estructurado. Los pasos ya traían sus propias superficies internas, así que
+  salió limpio. El contenedor queda a 860dp de ancho máximo.
+- `ScreenEyebrow` / `ScreenTitle` / `ScreenBody` pasan a los estilos del tema; el
+  eyebrow ahora va en `primary`, como en el prototipo.
+
+**Un bug latente que salió al pasar:** `NoirStatusPill` destructuraba un par
+`(dotColor, bgColor)` donde `bgColor` era un pastel clarísimo — `#F1F8F1` y
+compañía — que **nunca se usaba**, porque el fondo sale de `NoirCardGradient`. Si
+alguien lo hubiera cableado, habría quedado texto blanco sobre casi blanco. Se
+eliminó.
+
+**No se tocó la máquina de estados.** `OnboardingStep`, `canContinue()` y
+`primaryActionLabel()` quedaron intactos: los diez pasos ya mapeaban uno a uno.
+
+**Verificación:** la galería tiene un botón `Onboarding` que muestra el shell
+completo con las flechas para recorrer los diez pasos. Solo `Welcome` se
+renderiza con su contenido real, porque es el único paso que no necesita
+`ZSilentUiState`; el resto muestra el cromo (cabecera, progreso, pie), que es
+justo lo que cambió en esta etapa. Para verlos con datos hay que correr la app.
+
+### Referencia del prototipo
 
 **Los pasos mapean uno a uno.** No hay que tocar la máquina de estados: el enum
 `OnboardingStep` de `models/AppModels.kt:21` ya tiene exactamente los diez pasos

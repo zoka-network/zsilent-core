@@ -39,7 +39,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.zsilent.core.models.OnboardingStep
 import com.zsilent.core.ui.components.*
+import com.zsilent.core.ui.onboarding.OnboardingShell
+import com.zsilent.core.ui.onboarding.ScreenBody
+import com.zsilent.core.ui.onboarding.ScreenEyebrow
+import com.zsilent.core.ui.onboarding.ScreenTitle
+import com.zsilent.core.ui.onboarding.WelcomeStepNoir
 import com.zsilent.core.ui.theme.ZDensity
 import com.zsilent.core.ui.theme.ZSilentTheme
 import com.zsilent.core.ui.theme.ZTheme
@@ -66,6 +72,8 @@ fun main() = application {
     var dark by remember { mutableStateOf(true) }
     var density by remember { mutableStateOf(ZDensity.Cozy) }
     var animations by remember { mutableStateOf(true) }
+    var view by remember { mutableStateOf(GalleryView.Primitives) }
+    var onboardingStep by remember { mutableStateOf(OnboardingStep.Welcome) }
 
     Window(
         onCloseRequest = ::exitApplication,
@@ -73,33 +81,89 @@ fun main() = application {
         title = "ZSilent — galería de componentes",
     ) {
         ZSilentTheme(darkTheme = dark, density = density, animations = animations) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .zNoise(MaterialTheme.colorScheme.onSurface)
-                    .zGrid(MaterialTheme.colorScheme.onSurface, alpha = 0.03f)
-            ) {
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                        .padding(ZTheme.spacing.screen),
-                    verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap * 2),
-                ) {
-                    Controls(
-                        dark = dark, onDark = { dark = it },
-                        density = density, onDensity = { density = it },
-                        animations = animations, onAnimations = { animations = it },
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                when (view) {
+                    GalleryView.Primitives -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .zNoise(MaterialTheme.colorScheme.onSurface)
+                            .zGrid(MaterialTheme.colorScheme.onSurface, alpha = 0.03f)
+                    ) {
+                        Column(
+                            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                                .padding(ZTheme.spacing.screen),
+                            verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap * 2),
+                        ) {
+                            Controls(
+                                dark = dark, onDark = { dark = it },
+                                density = density, onDensity = { density = it },
+                                animations = animations, onAnimations = { animations = it },
+                                view = view, onView = { view = it },
+                            )
+                            PaletteSection()
+                            TypographySection()
+                            ButtonsSection()
+                            InputsSection()
+                            StatusSection()
+                            DataSection()
+                            StatesSection()
+                        }
+                    }
+
+                    // El onboarding real ocupa toda la ventana, así que se
+                    // muestra completo con su propio shell. Solo el paso Welcome
+                    // no necesita ZSilentUiState, así que es el único que se
+                    // puede renderizar suelto; el resto se recorre con las
+                    // flechas para ver el cromo (cabecera, progreso, pie).
+                    GalleryView.Onboarding -> OnboardingPreview(
+                        step = onboardingStep,
+                        onStep = { onboardingStep = it },
+                        onExit = { view = GalleryView.Primitives },
                     )
-                    PaletteSection()
-                    TypographySection()
-                    ButtonsSection()
-                    InputsSection()
-                    StatusSection()
-                    DataSection()
-                    StatesSection()
                 }
             }
         }
+    }
+}
+
+private enum class GalleryView { Primitives, Onboarding }
+
+@Composable
+private fun OnboardingPreview(
+    step: OnboardingStep,
+    onStep: (OnboardingStep) -> Unit,
+    onExit: () -> Unit,
+) {
+    val steps = OnboardingStep.entries
+    Box(Modifier.fillMaxSize()) {
+        OnboardingShell(
+            step = step,
+            busy = false,
+            canContinue = true,
+            primaryLabel = "Continue",
+            error = null,
+            canBack = step != OnboardingStep.Welcome,
+            onBack = { onStep(steps[(step.ordinal - 1).coerceAtLeast(0)]) },
+            onNext = { onStep(steps[(step.ordinal + 1).coerceAtMost(steps.lastIndex)]) },
+        ) {
+            if (step == OnboardingStep.Welcome) {
+                WelcomeStepNoir()
+            } else {
+                ScreenEyebrow(step.name)
+                ScreenTitle("Paso ${step.name}")
+                ScreenBody(
+                    "Este paso necesita ZSilentUiState, así que en la galería solo se " +
+                        "muestra el cromo del shell: cabecera, progreso y pie. Para verlo " +
+                        "con datos reales hay que correr la app."
+                )
+            }
+        }
+        ZButton(
+            onClick = onExit,
+            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+            variant = ZButtonVariant.Outline,
+            size = ZButtonSize.Small,
+        ) { ZButtonText("Volver") }
     }
 }
 
@@ -108,8 +172,22 @@ private fun Controls(
     dark: Boolean, onDark: (Boolean) -> Unit,
     density: ZDensity, onDensity: (ZDensity) -> Unit,
     animations: Boolean, onAnimations: (Boolean) -> Unit,
+    view: GalleryView, onView: (GalleryView) -> Unit,
 ) {
-    Panel(title = "Galería", meta = "etapa 0b") {
+    Panel(title = "Galería", meta = "etapa 1") {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZLabel("Ver")
+            ZButton(
+                onClick = { onView(GalleryView.Onboarding) },
+                variant = ZButtonVariant.Accent,
+                size = ZButtonSize.Small,
+            ) { ZButtonText("Onboarding") }
+        }
+        ThinDivider()
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(24.dp),

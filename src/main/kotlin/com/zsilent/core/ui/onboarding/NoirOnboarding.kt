@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -95,6 +96,15 @@ import com.zsilent.core.models.SeedWordCount
 import com.zsilent.core.models.WalletSetupMode
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
+import com.zsilent.core.ui.components.Pill
+import com.zsilent.core.ui.components.ZButton
+import com.zsilent.core.ui.components.ZButtonSize
+import com.zsilent.core.ui.components.ZButtonText
+import com.zsilent.core.ui.components.ZButtonVariant
+import com.zsilent.core.ui.components.ZTone
+import com.zsilent.core.ui.theme.ZTheme
+import com.zsilent.core.ui.theme.zGrid
+import com.zsilent.core.ui.theme.zNoise
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -104,61 +114,88 @@ import kotlin.math.sin
 // ─────────────────────────────────────────────────────────────────────────────
 //  PALETTE
 // ─────────────────────────────────────────────────────────────────────────────
+//
+//  Estos nombres se conservan pero ya no son constantes: cada uno lee del tema
+//  en tiempo de composición. Es lo que hace que el onboarding funcione en claro
+//  y en oscuro (decisión D2) sin tocar los diez pasos uno por uno.
+//
+//  No volver a poner literales acá. Si falta un color, va en ZSemanticColors.
+//
+//  Los nombres "Pastel*" quedaron del sistema anterior y ya no describen lo que
+//  devuelven — la paleta nueva es acromática y solo tiene cuatro estados
+//  semánticos. Se van borrando a medida que los pasos migran a ZTone.
 
-// "Zenith" palette — near-black surfaces, white text/icons, pastel accents
-// used only as small highlights (metrics, charts, the one essential button
-// per screen) rather than as a dominant section color.
-internal val NoirInk = Color(0xFF0A0A0C)             // app background — near black
-internal val NoirSurface = Color(0xFF16171B)         // card surface — a touch lighter than bg
-internal val NoirSurfaceElev = Color(0xFF1D1F24)     // input / elevated
-internal val NoirOutline = Color(0xFF2A2D33)         // hairline border
-internal val NoirOutlineStrong = Color(0xFF3A3D44)   // emphasized border
-internal val NoirText = Color(0xFFFFFFFF)            // primary text — WHITE
-internal val NoirTextMuted = Color(0xFFB8BCC4)       // secondary text
-internal val NoirTextSubtle = Color(0xFF7A7F88)      // tertiary
+internal val NoirInk: Color
+    @Composable get() = MaterialTheme.colorScheme.background
+internal val NoirSurface: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
+internal val NoirSurfaceElev: Color
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
+internal val NoirOutline: Color
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+internal val NoirOutlineStrong: Color
+    @Composable get() = ZTheme.semantics.borderStrong
+internal val NoirText: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurface
+internal val NoirTextMuted: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+internal val NoirTextSubtle: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
 
-// Pastel accent family — desaturated, used sparingly as detail color only.
-internal val PastelGreen = Color(0xFFA8E6B0)         // balance / success
-internal val PastelSalmon = Color(0xFFF2A99A)
-internal val PastelOrange = Color(0xFFF4C28A)
-internal val PastelViolet = Color(0xFFC3A8F2)
-internal val PastelPink = Color(0xFFF2A8D0)
+internal val PastelGreen: Color
+    @Composable get() = ZTheme.semantics.success
+internal val PastelSalmon: Color
+    @Composable get() = ZTheme.semantics.danger
+internal val PastelOrange: Color
+    @Composable get() = ZTheme.semantics.warning
+internal val PastelViolet: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
+internal val PastelPink: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
 
-internal val NoirSilver = PastelGreen                // green for labels/metrics
-internal val NoirAccent = PastelGreen                // green accent
-internal val NoirSuccess = PastelGreen               // green
-internal val NoirError = Color(0xFFE2918F)           // soft desaturated rose
-internal val NoirInfo = Color(0xFF9CB8F2)            // soft pastel blue for info
+/** El acento del prototipo es acromático: blanco en oscuro, casi negro en claro. */
+internal val NoirSilver: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
+internal val NoirAccent: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
+internal val NoirSuccess: Color
+    @Composable get() = ZTheme.semantics.success
+internal val NoirError: Color
+    @Composable get() = ZTheme.semantics.danger
+internal val NoirInfo: Color
+    @Composable get() = ZTheme.semantics.info
 
-// Subtle top-to-bottom gradient used to give flat cards a touch of depth so
-// they "pop" against the near-black background, without introducing a new
-// brightness level that would clash with NoirSurface elsewhere.
-internal val NoirCardGradient = Brush.verticalGradient(
-    listOf(Color(0xFF1B1D22), Color(0xFF101114))
-)
+/**
+ * Antes eran degradados verticales que daban profundidad a las tarjetas. El
+ * prototipo usa relleno plano translúcido y deja la separación al borde, así que
+ * quedan como color sólido — se conserva el tipo `Brush` para no tocar los
+ * usos.
+ */
+internal val NoirCardGradient: Brush
+    @Composable get() = SolidColor(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
 
-// Slightly brighter variant (based on NoirSurfaceElev) for cards that need to
-// read as "elevated/selected" while still getting the same depth treatment.
-internal val NoirCardGradientElev = Brush.verticalGradient(
-    listOf(Color(0xFF22242B), Color(0xFF16181D))
-)
+internal val NoirCardGradientElev: Brush
+    @Composable get() = SolidColor(ZTheme.semantics.elevated)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  BACKGROUND
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Application background. A deep carbon surface (#07080C) with two extremely
- * soft lilac glows — one top-left, one bottom-right — and a vertical gradient
- * toward darker tones. The result is calm, premium and silent: enough depth
- * to never look flat, but no animation and no neon. Pure black is avoided.
+ * Fondo de la aplicación: color base, grano de puntos y retícula ambiental.
+ *
+ * El prototipo pone la retícula al 40% de opacidad en el onboarding — bastante
+ * más marcada que en el shell, donde va al 20%.
  */
 @Composable
 fun NoirBackground(modifier: Modifier = Modifier) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(NoirInk)  // smoke gray
+            .background(MaterialTheme.colorScheme.background)
+            .zNoise(onSurface)
+            .zGrid(onSurface, alpha = 0.04f)
     )
 }
 
@@ -166,36 +203,27 @@ fun NoirBackground(modifier: Modifier = Modifier) {
 //  BUTTONS
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Los tres delegan en ZButton para que exista un solo botón en la app. Se
+// conservan las firmas porque las consumen el onboarding y LoginScreen.
+
 @Composable
 fun PrimaryButton(
     label: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     loading: Boolean = false,
-    // Optional pastel highlight for the one essential action on a screen
-    // (e.g. "Send", "Confirm transfer", "Unlock"). Leave null for the
-    // default off-white button used everywhere else.
+    /** Ignorado: el prototipo no tiene acentos por pantalla, el acento es uno. */
     accentColor: Color? = null,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(10.dp)
-    val bg = if (!enabled) Color(0xFF24292F) else accentColor ?: Color(0xFFE8EAEE)
-    val fg = if (enabled) NoirInk else NoirTextSubtle
-    Row(
-        modifier = modifier
-            .background(bg, shape)
-            .border(BorderStroke(1.dp, NoirOutlineStrong), shape)
-            .clickable(enabled = enabled && !loading, onClick = onClick)
-            .padding(horizontal = 22.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+    ZButton(
+        onClick = onClick,
+        modifier = modifier,
+        variant = ZButtonVariant.Accent,
+        size = ZButtonSize.Large,
+        enabled = enabled && !loading,
     ) {
-        Text(
-            if (loading) "Working..." else label,
-            color = fg,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.4.sp
-        )
+        ZButtonText(if (loading) "Working…" else label)
     }
 }
 
@@ -206,19 +234,14 @@ fun SecondaryButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(10.dp)
-    val border = if (enabled) NoirOutlineStrong else NoirOutline
-    val fg = if (enabled) NoirSilver else NoirTextSubtle
-    Row(
-        modifier = modifier
-            .background(Color.Transparent, shape)
-            .border(BorderStroke(1.dp, border), shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+    ZButton(
+        onClick = onClick,
+        modifier = modifier,
+        variant = ZButtonVariant.Ghost,
+        size = ZButtonSize.Large,
+        enabled = enabled,
     ) {
-        Text(label, color = fg, fontWeight = FontWeight.Medium, letterSpacing = 0.3.sp)
+        ZButtonText(label)
     }
 }
 
@@ -229,18 +252,14 @@ fun DangerButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(10.dp)
-    val color = if (enabled) NoirError else NoirError.copy(alpha = 0.4f)
-    Row(
-        modifier = modifier
-            .background(Color.Transparent, shape)
-            .border(BorderStroke(1.dp, color), shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+    ZButton(
+        onClick = onClick,
+        modifier = modifier,
+        variant = ZButtonVariant.Danger,
+        size = ZButtonSize.Large,
+        enabled = enabled,
     ) {
-        Text(label, color = color, fontWeight = FontWeight.SemiBold)
+        ZButtonText(label)
     }
 }
 
@@ -251,14 +270,14 @@ fun DangerButton(
 @Composable
 fun NoirCard(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(28.dp),
+    contentPadding: PaddingValues = PaddingValues(ZTheme.spacing.panel),
     content: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(26.dp)
+    val shape = MaterialTheme.shapes.medium
     Box(
         modifier = modifier
-            .background(NoirCardGradient, shape)
-            .border(BorderStroke(1.dp, NoirOutline), shape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), shape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
             .padding(contentPadding)
     ) {
         content()
@@ -324,115 +343,134 @@ fun OnboardingShell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 48.dp, vertical = 36.dp),
+                .widthIn(max = 1280.dp)
+                .padding(horizontal = ZTheme.spacing.screen, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top bar: brand + step indicator
+            // Cabecera: marca a la izquierda, dos pills de postura a la derecha.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    NoirBrandBadge(size = 34.dp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    NoirBrandBadge(size = 32.dp)
                     Column {
-                        Text("ZSILENT WALLET", color = NoirText, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, fontSize = 13.sp)
-                        Text("Zoka private gateway", color = NoirTextMuted, fontSize = 11.sp, letterSpacing = 0.4.sp)
+                        Text(
+                            "ZSilent",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "ZOKA NETWORK",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = ZTheme.text.navGroup
+                        )
                     }
                 }
-                StepIndicator(step)
-            }
-
-            Spacer(Modifier.height(28.dp))
-
-            if (step == OnboardingStep.Welcome) {
-                Image(
-                    painter = painterResource("welcome-banner.png"),
-                    contentDescription = "Zoka Network",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .widthIn(min = 520.dp, max = 760.dp)
-                        .fillMaxWidth()
-                        .height(168.dp)
-                )
-                Spacer(Modifier.height(20.dp))
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = true),
-                contentAlignment = Alignment.Center
-            ) {
-                NoirCard(
-                    modifier = Modifier
-                        .widthIn(min = 520.dp, max = 760.dp)
-                        .heightIn(min = 360.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(20.dp)
-                    ) {
-                        content()
-                        error?.let {
-                            SecurityWarningCard(
-                                title = "Something went wrong",
-                                detail = it,
-                                accent = NoirError
-                            )
-                        }
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Zero-Knowledge", ZTone.Info)
+                    Pill("Local-first", ZTone.On)
                 }
             }
 
             Spacer(Modifier.height(20.dp))
 
-            Row(
-                modifier = Modifier.widthIn(min = 520.dp, max = 760.dp).fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            StepProgress(step)
+
+            Spacer(Modifier.height(24.dp))
+
+            // El prototipo no envuelve los pasos en una tarjeta: el título y la
+            // bajada van directo sobre el fondo, y solo el contenido agrupado
+            // vive dentro de paneles. Los pasos ya traen sus propias
+            // superficies internas, así que no hace falta un contenedor acá.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = true),
+                contentAlignment = Alignment.TopCenter
             ) {
-                if (canBack) {
-                    SecondaryButton(label = "Back", enabled = !busy, onClick = onBack)
-                } else {
-                    Spacer(Modifier.width(1.dp))
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 860.dp)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+                ) {
+                    content()
+                    error?.let {
+                        SecurityWarningCard(
+                            title = "Something went wrong",
+                            detail = it,
+                            accent = NoirError
+                        )
+                    }
                 }
-                PrimaryButton(
-                    label = primaryLabel,
-                    enabled = canContinue && !busy,
-                    loading = busy,
-                    onClick = onNext
-                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Pie separado por una línea, como en el prototipo.
+            Column(Modifier.fillMaxWidth()) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (canBack) {
+                        SecondaryButton(label = "Back", enabled = !busy, onClick = onBack)
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
+                    PrimaryButton(
+                        label = primaryLabel,
+                        enabled = canContinue && !busy,
+                        loading = busy,
+                        onClick = onNext
+                    )
+                }
             }
         }
     }
 }
 
+/**
+ * Progreso del prototipo: `STEP 03 / 10` a la izquierda, el nombre del paso a la
+ * derecha, y debajo un segmento de 2dp por paso que abarca todo el ancho.
+ */
 @Composable
-private fun StepIndicator(current: OnboardingStep) {
+private fun StepProgress(current: OnboardingStep) {
     val steps = OnboardingStep.entries
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("STEP", color = NoirTextSubtle, fontSize = 11.sp, letterSpacing = 1.4.sp)
-        Text(
-            "${current.ordinal + 1}",
-            color = NoirText,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.Monospace
-        )
-        Text("/", color = NoirTextSubtle, fontFamily = FontFamily.Monospace)
-        Text("${steps.size}", color = NoirTextMuted, fontFamily = FontFamily.Monospace)
-        Spacer(Modifier.width(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "STEP ${(current.ordinal + 1).toString().padStart(2, '0')} / ${steps.size}",
+                style = ZTheme.text.eyebrow,
+                color = scheme.onSurfaceVariant
+            )
+            Text(
+                current.name.uppercase(),
+                style = ZTheme.text.eyebrow,
+                color = scheme.onSurfaceVariant
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             steps.forEachIndexed { idx, _ ->
-                val active = idx <= current.ordinal
                 Box(
                     modifier = Modifier
-                        .size(width = 16.dp, height = 3.dp)
+                        .weight(1f)
+                        .height(2.dp)
                         .background(
-                            if (active) NoirAccent else NoirOutline,
-                            RoundedCornerShape(2.dp)
+                            if (idx <= current.ordinal) scheme.primary else scheme.outlineVariant,
+                            CircleShape
                         )
                 )
             }
@@ -448,10 +486,8 @@ private fun StepIndicator(current: OnboardingStep) {
 fun ScreenEyebrow(text: String) {
     Text(
         text.uppercase(),
-        color = NoirTextSubtle,
-        fontSize = 11.sp,
-        letterSpacing = 2.sp,
-        fontWeight = FontWeight.Medium
+        style = ZTheme.text.eyebrow,
+        color = MaterialTheme.colorScheme.primary
     )
 }
 
@@ -459,10 +495,8 @@ fun ScreenEyebrow(text: String) {
 fun ScreenTitle(text: String) {
     Text(
         text,
-        color = NoirText,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 26.sp,
-        letterSpacing = 0.2.sp
+        style = MaterialTheme.typography.headlineLarge,
+        color = MaterialTheme.colorScheme.onSurface
     )
 }
 
@@ -470,9 +504,9 @@ fun ScreenTitle(text: String) {
 fun ScreenBody(text: String) {
     Text(
         text,
-        color = NoirTextMuted,
-        fontSize = 13.sp,
-        lineHeight = 19.sp
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.widthIn(max = 640.dp)
     )
 }
 
@@ -535,10 +569,10 @@ fun PasswordStrengthMeter(password: String) {
     val active = score.coerceIn(0, bars)
     val color = when (active) {
         0 -> NoirOutline
-        1 -> NoirError
-        2 -> Color(0xFFE2A348)
-        3 -> Color(0xFF8FB48F)
-        else -> NoirSuccess
+        1 -> ZTheme.semantics.danger
+        2 -> ZTheme.semantics.warning
+        3 -> ZTheme.semantics.success.copy(alpha = 0.7f)
+        else -> ZTheme.semantics.success
     }
     val label = when (active) {
         0 -> "empty"
@@ -1497,11 +1531,13 @@ fun NoirStatusPill(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val (dotColor, bgColor) = when (tone) {
-        NoirStatusTone.Ok      -> Color(0xFF81C784) to Color(0xFFF1F8F1)  // pastel green
-        NoirStatusTone.Warn    -> Color(0xFFFFB74D) to Color(0xFFFFF8F0)  // pastel orange
-        NoirStatusTone.Bad     -> Color(0xFFEF9A9A) to Color(0xFFFFF0F0)  // pastel red
-        NoirStatusTone.Neutral -> Color(0xFFB0BEC5) to Color(0xFFF8F9FA)  // pastel blue-gray
+    // El segundo color del par anterior era un fondo pastel clarísimo que nunca
+    // se usaba — el fondo sale de NoirCardGradient. Se elimina.
+    val dotColor = when (tone) {
+        NoirStatusTone.Ok      -> ZTheme.semantics.success
+        NoirStatusTone.Warn    -> ZTheme.semantics.warning
+        NoirStatusTone.Bad     -> ZTheme.semantics.danger
+        NoirStatusTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     androidx.compose.material3.Surface(
         modifier = modifier,
