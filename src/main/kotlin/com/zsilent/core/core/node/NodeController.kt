@@ -41,6 +41,7 @@ class NodeController(private val cli: ZokaCli) {
         val torProxy: String,
         val torOnly: Boolean,
         val externalAddrs: List<String>,
+        val tronNetwork: String,
         val tronApiUrl: String,
         val tronApiKey: String,
         val tronFallbackUrls: String
@@ -62,6 +63,7 @@ class NodeController(private val cli: ZokaCli) {
         torProxy: String = "",
         torOnly: Boolean = false,
         externalAddrs: List<String> = emptyList(),
+        tronNetwork: String = "",
         tronApiUrl: String = "",
         tronApiKey: String = "",
         tronFallbackUrls: String = ""
@@ -104,6 +106,7 @@ class NodeController(private val cli: ZokaCli) {
             torProxy,
             torOnly,
             cleanExternalAddrs,
+            tronNetwork,
             tronApiUrl,
             tronApiKey,
             tronFallbackUrls
@@ -165,6 +168,13 @@ class NodeController(private val cli: ZokaCli) {
         // Enable the runtime mining-control RPC (/mining/start|stop) so mining can
         // be toggled in-process without restarting the node.
         builder.environment()["ZOKA_API_ENABLE_MINING_CONTROL"] = "true"
+        // Read before tronApiUrl on the Rust side (TronConfig::from_env), so
+        // an unset tronApiUrl there defaults to *this* network's endpoint
+        // rather than always mainnet's. Left unset here, the node's own
+        // fallback to "mainnet" applies — the same real-funds-aware default.
+        tronNetwork.trim().takeIf { it.isNotBlank() }?.let {
+            builder.environment()["ZOKA_TRON_NETWORK"] = it
+        }
         tronApiUrl.trim().takeIf { it.isNotBlank() }?.let {
             builder.environment()["ZOKA_TRON_API_URL"] = it
         }

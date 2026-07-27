@@ -573,6 +573,11 @@ data class PersistedSetup(
     // so it is absent from the sidebar until explicitly enabled.
     val teamMiningEnabled: Boolean = false,
     val p2pExchangeRisksAccepted: Boolean = false,
+    // "mainnet" or "nile". Absent (older setup files) must read as mainnet —
+    // the same real-funds-aware default the node's own ZOKA_TRON_NETWORK
+    // parser falls back to, so a stale setup file can never silently start
+    // verifying real trades against testnet money.
+    val tronNetwork: String = "mainnet",
     val tronApiUrl: String = "https://api.trongrid.io",
     val tronApiKey: String = "",
     val tronFallbackUrls: String = "",

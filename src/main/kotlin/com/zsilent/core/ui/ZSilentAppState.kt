@@ -88,6 +88,7 @@ data class ZSilentUiState(
     val p2pExchangeEnabled: Boolean = false,
     val teamMiningEnabled: Boolean = false,
     val p2pExchangeRisksAccepted: Boolean = false,
+    val tronNetwork: String = "mainnet",
     val tronApiUrl: String = "https://api.trongrid.io",
     val tronApiKey: String = "",
     val tronFallbackUrls: String = "",
@@ -266,6 +267,7 @@ class ZSilentAppState(
                     p2pExchangeEnabled = setup.p2pExchangeEnabled,
                     teamMiningEnabled = setup.teamMiningEnabled,
                     p2pExchangeRisksAccepted = setup.p2pExchangeRisksAccepted,
+                    tronNetwork = setup.tronNetwork,
                     tronApiUrl = setup.tronApiUrl,
                     tronApiKey = setup.tronApiKey,
                     tronFallbackUrls = setup.tronFallbackUrls,
@@ -492,6 +494,7 @@ class ZSilentAppState(
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                    tronNetwork = snapshot.tronNetwork,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
                     tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -587,6 +590,7 @@ class ZSilentAppState(
                 p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                 teamMiningEnabled = snapshot.teamMiningEnabled,
                 p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                tronNetwork = snapshot.tronNetwork,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,
                 tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -666,6 +670,7 @@ class ZSilentAppState(
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                    tronNetwork = snapshot.tronNetwork,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
                     tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -718,6 +723,7 @@ class ZSilentAppState(
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                    tronNetwork = snapshot.tronNetwork,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
                     tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -789,6 +795,20 @@ class ZSilentAppState(
                 lastActivityMillis = System.currentTimeMillis()
             )
         }
+        persistCurrentSetup()
+    }
+
+    /**
+     * Which Tron network the node verifies USDT payments against.
+     *
+     * Takes effect on the next node start, not live: the running node already
+     * built its TronClient from the environment it launched with. Restarting
+     * the node is the same mechanism Tor availability already requires before
+     * selling, so this does not introduce a new pattern.
+     */
+    fun setTronNetwork(network: String) {
+        val normalized = if (network.trim().equals("nile", ignoreCase = true)) "nile" else "mainnet"
+        update { it.copy(tronNetwork = normalized, lastActivityMillis = System.currentTimeMillis()) }
         persistCurrentSetup()
     }
 
@@ -1114,6 +1134,7 @@ class ZSilentAppState(
                     p2pExchangeEnabled = current.p2pExchangeEnabled,
                     teamMiningEnabled = current.teamMiningEnabled,
                     p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
+                    tronNetwork = current.tronNetwork,
                     tronApiUrl = current.tronApiUrl,
                     tronApiKey = current.tronApiKey,
                     tronFallbackUrls = current.tronFallbackUrls,
@@ -1256,6 +1277,7 @@ class ZSilentAppState(
                         p2pExchangeEnabled = current.p2pExchangeEnabled,
                         teamMiningEnabled = current.teamMiningEnabled,
                         p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
+                        tronNetwork = current.tronNetwork,
                         tronApiUrl = current.tronApiUrl,
                         tronApiKey = current.tronApiKey,
                         tronFallbackUrls = current.tronFallbackUrls,
@@ -1410,6 +1432,7 @@ class ZSilentAppState(
                         p2pExchangeEnabled = current.p2pExchangeEnabled,
                         teamMiningEnabled = current.teamMiningEnabled,
                         p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
+                        tronNetwork = current.tronNetwork,
                         tronApiUrl = current.tronApiUrl,
                         tronApiKey = current.tronApiKey,
                         tronFallbackUrls = current.tronFallbackUrls,
@@ -2012,6 +2035,7 @@ class ZSilentAppState(
                 torProxy = torProxy,
                 torOnly = snapshot.torOnly,
                 externalAddrs = externalAddrs,
+                tronNetwork = snapshot.tronNetwork,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,
                 tronFallbackUrls = snapshot.tronFallbackUrls
@@ -2953,6 +2977,7 @@ class ZSilentAppState(
                 p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                 teamMiningEnabled = snapshot.teamMiningEnabled,
                 p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
+                tronNetwork = snapshot.tronNetwork,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,
                 tronFallbackUrls = snapshot.tronFallbackUrls,

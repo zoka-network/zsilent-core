@@ -2716,6 +2716,28 @@ private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppSta
         )
     }
 
+    Panel(
+        title = "Tron network",
+        meta = if (ui.tronNetwork == "nile") "Nile testnet" else "Mainnet"
+    ) {
+        com.zsilent.core.ui.components.SegmentedSelector(
+            options = listOf("Mainnet", "Nile testnet"),
+            selected = if (ui.tronNetwork == "nile") "Nile testnet" else "Mainnet",
+            onSelect = { appState.setTronNetwork(if (it == "Nile testnet") "nile" else "mainnet") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (ui.tronNetwork == "nile") {
+            HintText(
+                "Nile is play money — for testing the exchange flow without Tor or real " +
+                    "USDT at risk. Payments never cross networks: a Nile transfer cannot " +
+                    "settle a mainnet offer, or the reverse."
+            )
+        } else {
+            HintText("Real USDT. Payment checks require Tor — this is not optional on mainnet.")
+        }
+        HintText("Applies the next time the node starts.")
+    }
+
     Panel(title = "Tron payment provider", meta = "applies after node restart") {
         OutlinedTextField(
             value = tronUrl,
