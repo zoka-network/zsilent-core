@@ -46,6 +46,7 @@ import com.zsilent.core.ui.onboarding.ScreenBody
 import com.zsilent.core.ui.onboarding.ScreenEyebrow
 import com.zsilent.core.ui.onboarding.ScreenTitle
 import com.zsilent.core.ui.onboarding.WelcomeStepNoir
+import com.zsilent.core.ui.screens.IntroScreen
 import com.zsilent.core.ui.screens.LoginContent
 import com.zsilent.core.ui.theme.ZDensity
 import com.zsilent.core.ui.theme.ZSilentTheme
@@ -122,6 +123,19 @@ fun main() = application {
                         onExit = { view = GalleryView.Primitives },
                     )
 
+                    // El Intro solo se ve en la primera corrida tras instalar,
+                    // así que sin la galería habría que borrar el setup.json
+                    // para poder mirarlo.
+                    GalleryView.Intro -> Box(Modifier.fillMaxSize()) {
+                        IntroScreen(onLaunch = { view = GalleryView.Primitives })
+                        ZButton(
+                            onClick = { view = GalleryView.Primitives },
+                            modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                            variant = ZButtonVariant.Outline,
+                            size = ZButtonSize.Small,
+                        ) { ZButtonText("Volver") }
+                    }
+
                     // LoginContent no depende de ZSilentAppState, así que se
                     // renderiza con datos de mentira y callbacks vacíos.
                     GalleryView.Login -> Box(Modifier.fillMaxSize()) {
@@ -154,7 +168,7 @@ fun main() = application {
     }
 }
 
-private enum class GalleryView { Primitives, Onboarding, Login }
+private enum class GalleryView { Primitives, Onboarding, Login, Intro }
 
 @Composable
 private fun OnboardingPreview(
@@ -219,6 +233,11 @@ private fun Controls(
                 variant = ZButtonVariant.Accent,
                 size = ZButtonSize.Small,
             ) { ZButtonText("Login") }
+            ZButton(
+                onClick = { onView(GalleryView.Intro) },
+                variant = ZButtonVariant.Accent,
+                size = ZButtonSize.Small,
+            ) { ZButtonText("Intro") }
         }
         ThinDivider()
         Row(

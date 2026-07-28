@@ -75,6 +75,7 @@ import com.zsilent.core.ui.theme.zNoise
 import com.zsilent.core.ui.theme.zPulseAlpha
 import com.zsilent.core.ui.screens.DashboardScreen
 import com.zsilent.core.ui.screens.ExplorerScreen
+import com.zsilent.core.ui.screens.IntroScreen
 import com.zsilent.core.ui.screens.LoginScreen
 import com.zsilent.core.ui.screens.LogsScreen
 import com.zsilent.core.ui.screens.MiningPoolScreen
@@ -114,6 +115,9 @@ private val AppSection.group: NavGroup
 fun ZSilentApp(appState: ZSilentAppState) {
     val uiState by appState.state.collectAsState()
 
+    // Primera corrida tras instalar: el Intro va antes de todo, incluso del
+    // onboarding. Se marca visto al pulsar Launch y no vuelve a aparecer.
+    if (!uiState.introSeen) { IntroScreen(onLaunch = appState::markIntroSeen); return }
     if (!uiState.onboardingComplete) { OnboardingScreen(uiState, appState); return }
     if (uiState.appLocked) { LoginScreen(uiState, appState); return }
 

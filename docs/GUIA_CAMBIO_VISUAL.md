@@ -30,7 +30,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 0 | Tokens, tipografía, formas, movimiento (`Theme.kt`) | ✅ hecha |
 | 0b | Primitivos (`Components.kt`) y efectos (`Effects.kt`) | ✅ hecha |
 | 1 | Onboarding | ✅ hecha |
-| 2 | Intro (pantalla nueva) | ⬜ pendiente — ver nota de orden |
+| 2 | Intro (pantalla nueva) | ✅ hecha |
 | 3 | Login | ✅ hecha |
 | 4 | Shell de navegación | ✅ hecha |
 | 5 | Dashboard | ✅ hecha |
@@ -475,7 +475,44 @@ barra tiene que reflejar el estado real.
 
 ---
 
-## Etapa 2 — Intro (pantalla nueva)
+## Etapa 2 — Intro ✅
+
+**Decisión tomada: se muestra una sola vez, en la primera corrida tras instalar.**
+
+### El detalle que importa: defaults asimétricos
+
+El control es `introSeen`, y los dos defaults son opuestos a propósito:
+
+- `PersistedSetup.introSeen = true`
+- `ZSilentUiState.introSeen = false`
+
+Un archivo de setup que ya existe es de alguien que viene usando ZSilent, y
+**actualizar no es instalar**. Como el campo falta en los archivos previos, se lee
+el default `true` y esa persona no ve el Intro. En una instalación limpia no hay
+archivo, se arranca de los defaults de `ZSilentUiState` — donde es `false` — y el
+Intro aparece una vez.
+
+Si los dos defaults fueran `false`, todos los usuarios existentes verían una
+pantalla de bienvenida al actualizar, que es justo lo contrario de lo decidido.
+
+### Sobre las seis líneas de arranque
+
+Son una secuencia fija con retardo y **no reflejan el arranque real del nodo**. En
+ese punto ni siquiera hay sesión desbloqueada, así que no hay nada real que
+informar. Por eso el pie dice `standby` en las tres columnas en vez de inventar
+métricas: mostrar números falsos ahí sería exactamente lo que la leyenda del
+Mining Pool existe para evitar.
+
+Si alguna vez se quiere que digan la verdad, hay que moverlo a después del login
+y engancharlo al `NodeController` — pero entonces deja de ser un intro y pasa a
+ser una pantalla de arranque, que es otra cosa.
+
+### Cómo verlo sin reinstalar
+
+La galería tiene un botón `Intro`. Sin eso habría que borrar el `setup.json`.
+
+### Referencia del prototipo
+
 
 Prototipo: `src/components/zs/Intro.tsx` (175 líneas). **No existe en ZSilent.**
 

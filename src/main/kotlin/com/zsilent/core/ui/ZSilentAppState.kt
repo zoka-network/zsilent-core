@@ -76,6 +76,8 @@ data class ZSilentUiState(
     val onboardingRecoveryPhrase: String? = null,
     val onboardingRecoveryConfirmed: Boolean = false,
     val selectedSection: AppSection = AppSection.Dashboard,
+    /** Ver la nota en PersistedSetup.introSeen: acá el default es el opuesto. */
+    val introSeen: Boolean = false,
     val darkTheme: Boolean = true,
     val compactDensity: Boolean = false,
     val animationsEnabled: Boolean = true,
@@ -264,6 +266,7 @@ class ZSilentAppState(
                     onboardingMiningEnabled = setup.miningEnabled,
                     onboardingAutoLockMinutes = setup.autoLockMinutes,
                     balancesHidden = setup.balancesHidden,
+                    introSeen = setup.introSeen,
                     darkTheme = setup.darkTheme,
                     compactDensity = setup.compactDensity,
                     animationsEnabled = setup.animationsEnabled,
@@ -493,7 +496,8 @@ class ZSilentAppState(
                     miningEnabled = snapshot.onboardingMiningEnabled,
                     balancesHidden = snapshot.balancesHidden,
                     autoLockMinutes = value,
-                    darkTheme = snapshot.darkTheme,
+                    introSeen = snapshot.introSeen,
+                darkTheme = snapshot.darkTheme,
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
@@ -591,6 +595,7 @@ class ZSilentAppState(
                 miningEnabled = snapshot.onboardingMiningEnabled,
                 balancesHidden = snapshot.balancesHidden,
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
+                introSeen = snapshot.introSeen,
                 darkTheme = snapshot.darkTheme,
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
@@ -673,7 +678,8 @@ class ZSilentAppState(
                     miningEnabled = snapshot.onboardingMiningEnabled,
                     balancesHidden = hidden,
                     autoLockMinutes = snapshot.onboardingAutoLockMinutes,
-                    darkTheme = snapshot.darkTheme,
+                    introSeen = snapshot.introSeen,
+                darkTheme = snapshot.darkTheme,
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
@@ -728,7 +734,8 @@ class ZSilentAppState(
                     miningEnabled = snapshot.onboardingMiningEnabled,
                     balancesHidden = snapshot.balancesHidden,
                     autoLockMinutes = snapshot.onboardingAutoLockMinutes,
-                    darkTheme = snapshot.darkTheme,
+                    introSeen = snapshot.introSeen,
+                darkTheme = snapshot.darkTheme,
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = enabled,
@@ -858,6 +865,13 @@ class ZSilentAppState(
         }
         persistCurrentSetup()
         appendLog(RuntimeLog("exchange", "Saved Tron provider settings; restart the node to apply them."))
+    }
+
+    /** Marca el Intro como visto. Se llama una sola vez, al pulsar Launch. */
+    fun markIntroSeen() {
+        if (_uiState.value.introSeen) return
+        update { it.copy(introSeen = true) }
+        persistCurrentSetup()
     }
 
     /** Densidad compacta o comoda (D4). */
@@ -3016,6 +3030,7 @@ class ZSilentAppState(
                 miningEnabled = snapshot.onboardingMiningEnabled,
                 balancesHidden = snapshot.balancesHidden,
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
+                introSeen = snapshot.introSeen,
                 darkTheme = snapshot.darkTheme,
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,

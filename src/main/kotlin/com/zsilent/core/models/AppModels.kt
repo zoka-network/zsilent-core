@@ -570,6 +570,14 @@ data class PersistedSetup(
     val miningEnabled: Boolean = false,
     val balancesHidden: Boolean = false,
     val autoLockMinutes: Int = 10,
+    // El Intro se muestra una sola vez, en la primera corrida tras instalar.
+    //
+    // Default TRUE a proposito, al reves que en ZSilentUiState: un archivo de
+    // setup que ya existe es de alguien que viene usando la app, y actualizar
+    // no es instalar. Si el campo falta, esa persona no ve el Intro. En una
+    // instalacion limpia no hay archivo, se arranca de los defaults de
+    // ZSilentUiState -- donde es false -- y el Intro aparece una vez.
+    val introSeen: Boolean = true,
     val darkTheme: Boolean = true,
     // Ajustes de apariencia (D4). Ausentes en archivos previos: cozy y
     // animaciones activas son lo que veian esos usuarios, asi que ese es el
