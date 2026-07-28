@@ -93,6 +93,10 @@ import com.zsilent.core.models.ServiceStatus
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.alpha
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -2210,6 +2214,20 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             StatusCard("Height", ui.chainHeight.toString(), "network ${ui.networkHeight}", Modifier.weight(1f))
         }
 
+        MiningHashrateChart(
+            hashrate = effectiveHashrate,
+            running = ui.mining.running || ui.localMiningEnabled,
+        )
+
+        MiningPreflightPanel(
+            sessionUnlocked = ui.sessionUnlocked,
+            nodeOnline = ui.nodeStatus == ServiceStatus.Online,
+            syncReady = ui.miningSyncReady,
+            rewardAddressOk = rewardAddress.startsWith("zka1"),
+            threadsOk = (parsedThreads ?: 0) >= 1,
+            binariesOk = ui.zokaReady,
+        )
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Panel(title = "Reward target", meta = "address only", modifier = Modifier.weight(1f)) {
                 CopyableKeyValueRow("Wallet", activeWallet?.name ?: ui.activeWalletName.ifBlank { "not selected" })
@@ -2259,6 +2277,98 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 ui.pendingPrivateTransfers.pendingPrivateTxHashes.take(8).forEachIndexed { index, hash ->
                     CopyableKeyValueRow("Tx ${index + 1}", hash)
                 }
+            }
+        }
+    }
+}
+
+
+/**
+ * Histograma de hashrate en vivo. El prototipo muestra 30 barras que se
+ * actualizan cada 700 ms; con el minero parado quedan al 25% de opacidad en vez
+ * de desaparecer, para que se vea que el panel sigue vivo y no colgado.
+ */
+@Composable
+private fun MiningHashrateChart(hashrate: Long, running: Boolean) {
+    val current = rememberUpdatedState(hashrate)
+    val live = rememberUpdatedState(running)
+    val samples = remember { mutableStateListOf<Long>().apply { repeat(30) { add(0L) } } }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(700)
+            samples.removeAt(0)
+            samples.add(if (live.value) current.value else 0L)
+        }
+    }
+    val max = maxOf(1L, samples.maxOrNull() ?: 1L)
+    val accent = MaterialTheme.colorScheme.primary
+    Panel(title = "Live hashrate", meta = if (running) "running" else "idle") {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(128.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            samples.forEach { value ->
+                val fraction = (value.toFloat() / max.toFloat()).coerceIn(0.02f, 1f)
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight(fraction)
+                        .alpha(if (running) 1f else 0.25f)
+                        .background(accent.copy(alpha = 0.7f), RoundedCornerShape(2.dp))
+                )
+            }
+        }
+        Text(
+            "Last ~20 seconds · peak ${formatHashrate(max)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Condiciones que tienen que cumplirse antes de minar.
+ *
+ * Antes esto vivía como mensajes de error sueltos repartidos por la pantalla:
+ * había que leerlos todos para entender por qué el interruptor no respondía. El
+ * prototipo lo resuelve con una lista de condiciones, que además dice cuáles SÍ
+ * se cumplen — es la diferencia entre "algo falla" y "falta esto".
+ */
+@Composable
+private fun MiningPreflightPanel(
+    sessionUnlocked: Boolean,
+    nodeOnline: Boolean,
+    syncReady: Boolean,
+    rewardAddressOk: Boolean,
+    threadsOk: Boolean,
+    binariesOk: Boolean,
+) {
+    val checks = listOf(
+        "Wallet session unlocked" to sessionUnlocked,
+        "Node online" to nodeOnline,
+        "Chain synced to network head" to syncReady,
+        "Reward address configured" to rewardAddressOk,
+        "Valid thread count" to threadsOk,
+        "Node binaries present" to binariesOk,
+    )
+    val blocked = checks.count { !it.second }
+    Panel(
+        title = "Pre-flight",
+        meta = if (blocked == 0) "ready" else "$blocked blocking"
+    ) {
+        checks.forEach { (label, ok) ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = ZTheme.spacing.row / 2),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Pill(if (ok) "ok" else "blocked", if (ok) ZTone.On else ZTone.Err)
             }
         }
     }

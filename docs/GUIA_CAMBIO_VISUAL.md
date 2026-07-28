@@ -36,7 +36,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 5 | Dashboard | ✅ hecha |
 | 6 | Wallet (+ Send, Receive) | ✅ hecha |
 | 7 | Node | ✅ hecha |
-| 8 | Mining | ⬜ pendiente |
+| 8 | Mining | ✅ hecha |
 | 9 | Mining Pool | ⬜ pendiente |
 | 10 | P2P Exchange | ⬜ pendiente |
 | 11 | Explorer | ⬜ pendiente |
@@ -841,7 +841,27 @@ minutos. Si ZSilent tiene una estimación mejor desde el nodo, se usa esa.
 
 ---
 
-## Etapa 8 — Mining
+## Etapa 8 — Mining ✅
+
+### Cómo quedó
+
+Se portaron las dos piezas del prototipo que ZSilent no tenía.
+
+**Histograma de hashrate en vivo.** Treinta barras que se actualizan cada 700 ms.
+Con el minero parado quedan al 25% de opacidad en vez de desaparecer, para que se
+lea "apagado" y no "colgado".
+
+**Panel pre-flight.** Seis condiciones con pill `ok` / `blocked`: sesión
+desbloqueada, nodo online, cadena sincronizada, dirección de recompensa, hilos
+válidos y binarios presentes.
+
+Esto último importa más de lo que parece. Antes las razones de bloqueo vivían como
+`ErrorText` sueltos repartidos por la pantalla, y había que leerlos todos para
+entender por qué el interruptor no respondía. La lista además dice cuáles **sí** se
+cumplen, que es la diferencia entre "algo falla" y "falta esto".
+
+### Referencia del prototipo
+
 
 Prototipo: `sections/Mining.tsx` (139). ZSilent: `Screens.kt:1839` `MiningScreen`.
 
