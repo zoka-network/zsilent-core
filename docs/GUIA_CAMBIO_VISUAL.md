@@ -35,7 +35,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 4 | Shell de navegación | ✅ hecha |
 | 5 | Dashboard | ✅ hecha |
 | 6 | Wallet (+ Send, Receive) | ✅ hecha |
-| 7 | Node | ⬜ pendiente |
+| 7 | Node | ✅ hecha |
 | 8 | Mining | ⬜ pendiente |
 | 9 | Mining Pool | ⬜ pendiente |
 | 10 | P2P Exchange | ⬜ pendiente |
@@ -801,7 +801,28 @@ en `Components.kt:533`, así que ahí se usa el de verdad.
 
 ---
 
-## Etapa 7 — Node
+## Etapa 7 — Node ✅
+
+### Cómo quedó
+
+**El hallazgo: media app no tenía encabezado de sección.** `ScreenScaffold` acepta
+`title` y `subtitle` y **los descarta** — el comentario del parámetro lo decía
+("se conserva por compatibilidad de API, no se muestra"), pero cuatro pantallas
+seguían pasándolos creyendo que se veían: Node, Mining, Privacy y Logs. Dashboard
+y Wallet usaban `NoirScreenShell`, que sí los renderiza, así que la mitad de la
+app tenía eyebrow + título y la otra mitad arrancaba directo con un panel.
+
+Las cuatro pasaron a `NoirScreenShell` con el texto del prototipo. Es un arreglo
+que se adelanta a las etapas 8, 12 y 13, pero era una línea por pantalla y dejarlo
+roto tres etapas más no tenía sentido. Esas etapas siguen debiendo su trabajo de
+composición.
+
+Se agregó el **ETA de sincronización** que muestra el prototipo, derivado de los
+bloques que faltan. Cuando ya está sincronizado muestra un guion en vez de un cero,
+que se leería como "faltan 0 minutos" en vez de "no hay nada que estimar".
+
+### Referencia del prototipo
+
 
 Prototipo: `sections/Node.tsx` (125). ZSilent: `Screens.kt:1651` `NodeScreen`.
 

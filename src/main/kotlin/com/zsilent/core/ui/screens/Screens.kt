@@ -1838,7 +1838,11 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
     }
 
-    ScreenScaffold("Node", "Run and monitor the Zoka full node.") {
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "Node",
+        title = "Zoka core runtime",
+        subtitle = "Operate your local node — the source of truth for balances, mining and privacy."
+    ) {
         Panel(title = "Node controls", meta = ui.nodeStatus.name) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 SessionReadyCard(
@@ -1915,6 +1919,16 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             StatusCard("Height", ui.chainHeight.toString(), "node chain tip", Modifier.weight(1f))
             StatusCard("Queue", ui.pendingPrivateTransfers.count.toString(), "private txs waiting", Modifier.weight(1f))
             StatusCard("Difficulty", ui.stats.difficulty.toString(), "network", Modifier.weight(1f))
+            // El prototipo muestra ETA junto a las alturas. Se deriva de los
+            // bloques que faltan; si ya esta sincronizado no hay nada que
+            // estimar y se muestra un guion en vez de un cero enganoso.
+            StatusCard(
+                "ETA",
+                if (ui.networkSynced || ui.syncRemainingBlocks <= 0L) "—"
+                else "${maxOf(1L, ui.syncRemainingBlocks / 120L)} min",
+                if (ui.networkSynced) "synced" else "to chain tip",
+                Modifier.weight(1f)
+            )
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2030,7 +2044,11 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
     }
 
-    ScreenScaffold("Mining", "Configure mining without exposing wallet secrets.") {
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "Mining",
+        title = "Solo mining",
+        subtitle = "Contribute hashrate directly to the network. All rewards land in your local wallet."
+    ) {
         Panel(title = "Mining controls", meta = ui.miningStatus.name) {
             val miningFullyOn = ui.localMiningEnabled ||
                 ui.mining.running ||
@@ -2248,7 +2266,11 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
 @Composable
 fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
-    ScreenScaffold("Privacy", "Privacy controls for secrets, logs and display safety.") {
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "Privacy",
+        title = "Privacy stack",
+        subtitle = "Tor routing, discreet mode, and posture disclosure."
+    ) {
         Panel(
             title = "Tor network",
             meta = if (ui.torEnabled) ui.torStatus.name.lowercase() else "off"
@@ -2323,7 +2345,11 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
 @Composable
 fun LogsScreen(ui: ZSilentUiState) {
-    ScreenScaffold("Logs", "Runtime logs with sensitive lines redacted.") {
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "Logs",
+        title = "Runtime log stream",
+        subtitle = "Sanitized, local, redacted. Private data never appears."
+    ) {
         Panel(title = "Runtime log", meta = "${ui.logs.size} lines") {
             if (ui.logs.isEmpty()) {
                 EmptyState("No runtime logs yet.")
