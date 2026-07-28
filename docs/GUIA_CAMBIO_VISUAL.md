@@ -37,12 +37,12 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 6 | Wallet (+ Send, Receive) | ✅ hecha |
 | 7 | Node | ✅ hecha |
 | 8 | Mining | ✅ hecha |
-| 9 | Mining Pool | ⬜ pendiente |
-| 10 | P2P Exchange | ⬜ pendiente |
-| 11 | Explorer | ⬜ pendiente |
-| 12 | Privacy | ⬜ pendiente |
-| 13 | Logs | ⬜ pendiente |
-| 14 | Settings | ⬜ pendiente |
+| 9 | Mining Pool | ✅ hecha |
+| 10 | P2P Exchange | ✅ hecha |
+| 11 | Explorer | ✅ hecha |
+| 12 | Privacy | ✅ hecha |
+| 13 | Logs | ✅ hecha |
+| 14 | Settings | ✅ hecha |
 
 ---
 
@@ -883,7 +883,14 @@ mostrar actividad real o no mostrarse.
 
 ---
 
-## Etapa 9 — Mining Pool
+## Etapa 9 — Mining Pool ✅
+
+Se portó la **leyenda de procedencia de los datos**: cuatro pills que distinguen
+`local` (métrica real del dispositivo), `estimation` (derivada), `simulation`
+(valor de demo) y `future` (espera protocolo). Esta pantalla mezcla los cuatro
+tipos, y sin decir cuál es cuál una estimación con el mismo aspecto que una
+lectura real invita a decidir sobre un número que nadie midió.
+
 
 Prototipo: `sections/Pool.tsx` (143).
 ZSilent: `ui/screens/MiningPoolScreen.kt` (549) — ya tiene `RiskPanel`,
@@ -953,7 +960,12 @@ salidas detectadas. Mapea a `ViewKeyScanPanel`.
 
 ---
 
-## Etapa 12 — Privacy
+## Etapa 12 — Privacy ✅
+
+El panel "Security posture" pasa de pares clave/valor a pills, y suma las filas
+que faltaban del prototipo. `warn` significa "esta promesa no se está cumpliendo
+ahora" — Tor apagado, auto-lock deshabilitado — y no "error".
+
 
 Prototipo: `sections/Privacy.tsx` (114). ZSilent: `Screens.kt:2096` `PrivacyScreen`.
 
@@ -971,7 +983,22 @@ está, no porque es una constante.
 
 ---
 
-## Etapa 13 — Logs
+## Etapa 13 — Logs ✅
+
+Se agregó la **columna de hora** `HH:MM:SS` que muestra el prototipo. El dato ya
+estaba en `RuntimeLog.timestampMillis` y simplemente no se renderizaba.
+
+### La deuda de la etapa 5 no se pudo saldar como estaba planteada
+
+Anoté en la etapa 5 que la coloración por nivel llegaría acá. **No es posible sin
+cambiar el modelo**: `RuntimeLog` tiene `source`, `message` y `timestampMillis` —
+no tiene nivel. La coloración por `INFO`/`SUCCESS`/`WARNING`/`ERROR` del prototipo
+requiere agregar el campo y poblarlo en cada `appendLog`, que es trabajo de la
+capa de estado y no de presentación.
+
+Queda como pendiente real, con su alcance ya medido: agregar `level` a
+`RuntimeLog` con default `Info` y clasificar los call sites que importan.
+
 
 Prototipo: `sections/Logs.tsx` (138). ZSilent: `Screens.kt:2171` `LogsScreen`,
 con `logSourceColor` y `logCategoryLabel` ya definidos.
@@ -992,7 +1019,24 @@ Pie: `N of M entries` y pills de `live`/`paused` y `redacted`.
 
 ---
 
-## Etapa 14 — Settings
+## Etapa 14 — Settings ✅ — **D4 cerrada**
+
+Entra la categoría **Appearance** con los tres controles: tema, densidad y
+animaciones.
+
+Esto cierra D4. El tema soportaba densidad y movimiento desde la etapa 0, pero
+nada los exponía: los valores viajaban por `CompositionLocal` con su default y no
+había forma de cambiarlos. Ahora `PersistedSetup` tiene `compactDensity` y
+`animationsEnabled`, `ZSilentAppState` sus setters, y `Main.kt` se los pasa a
+`ZSilentTheme`.
+
+Los defaults son `cozy` y animaciones activas — lo que veían los usuarios
+anteriores, así que actualizar no les cambia nada.
+
+**Falta todavía** la categoría `Wallets` del prototipo (exportar, importar,
+borrar, marcar por defecto). Esas operaciones ya existen dentro de la pantalla
+Wallet, así que es reorganización, no funcionalidad nueva.
+
 
 Prototipo: `sections/Settings.tsx` (287). ZSilent: `Screens.kt:2269`
 `SettingsScreen`, con `SettingsHome`, `SettingsMenuCard`, `SettingsSecurityPage`,

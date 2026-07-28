@@ -71,8 +71,9 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
     }
 
-    ScreenScaffold(
-        title = "Explorer",
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "Explorer",
+        title = "Local-first block explorer",
         subtitle = "Clean access to chain state without exposing wallet data."
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {

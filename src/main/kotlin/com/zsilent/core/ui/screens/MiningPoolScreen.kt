@@ -35,6 +35,9 @@ import com.zsilent.core.ui.components.HintText
 import com.zsilent.core.ui.components.KeyValueRow
 import com.zsilent.core.ui.components.LegendDot
 import com.zsilent.core.ui.components.MeterBar
+import androidx.compose.foundation.layout.padding
+import com.zsilent.core.ui.components.Pill
+import com.zsilent.core.ui.components.ZTone
 import com.zsilent.core.ui.components.MetricAccent
 import com.zsilent.core.ui.components.Panel
 import com.zsilent.core.ui.components.ScreenScaffold
@@ -118,8 +121,9 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     val availableCores = ui.mining.availableCpuThreads.coerceAtLeast(1)
     val contributedCores = powerLevel.coresFrom(availableCores)
 
-    ScreenScaffold(
-        title = "Mining Pool",
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "Mining pool",
+        title = "Team mining · experimental",
         subtitle = "Combine hashrate without handing anyone your rewards."
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -168,6 +172,8 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 style = MaterialTheme.typography.bodySmall
             )
         }
+
+        DataLegendPanel()
 
         RiskPanel(
             checked = risksUnderstood,
@@ -267,6 +273,40 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     }
                 }
             )
+        }
+    }
+}
+
+/**
+ * Leyenda de procedencia de los números, portada del prototipo.
+ *
+ * Esta pantalla mezcla métricas reales del dispositivo con estimaciones y con
+ * valores que todavía no produce el protocolo. Sin decir cuál es cuál, una
+ * estimación con el mismo aspecto que una lectura real invita a tomar
+ * decisiones sobre un número que nadie midió.
+ */
+@Composable
+private fun DataLegendPanel() {
+    val rows = listOf(
+        Triple("local", ZTone.On, "Métrica real de tu dispositivo"),
+        Triple("estimation", ZTone.Info, "Derivada de lo local más los peers"),
+        Triple("simulation", ZTone.Warn, "Valor de demostración en este build"),
+        Triple("future", ZTone.Off, "Espera protocolo real"),
+    )
+    Panel(title = "De dónde salen estos números", meta = "leyenda") {
+        rows.forEach { (label, tone, detail) ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Pill(label, tone)
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

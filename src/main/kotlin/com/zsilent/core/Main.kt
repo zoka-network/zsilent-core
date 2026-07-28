@@ -51,6 +51,7 @@ import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZButtonSize
 import com.zsilent.core.ui.components.ZButtonText
 import com.zsilent.core.ui.components.ZButtonVariant
+import com.zsilent.core.ui.theme.ZDensity
 import com.zsilent.core.ui.theme.ZSilentTheme
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.foundation.layout.Spacer
@@ -245,7 +246,11 @@ private fun WindowScope.ZSilentRoot(
     // `ZSilentTheme {}` sin argumentos, así que siempre ganaba el default. La
     // preferencia existía y el valor ya estaba en alcance — solo faltaba
     // pasarlo.
-    ZSilentTheme(darkTheme = ui.darkTheme) {
+    ZSilentTheme(
+        darkTheme = ui.darkTheme,
+        density = if (ui.compactDensity) ZDensity.Compact else ZDensity.Cozy,
+        animations = ui.animationsEnabled,
+    ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 WindowTitleBar(

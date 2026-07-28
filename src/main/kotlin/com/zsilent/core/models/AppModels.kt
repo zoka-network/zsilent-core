@@ -562,6 +562,11 @@ data class PersistedSetup(
     val balancesHidden: Boolean = false,
     val autoLockMinutes: Int = 10,
     val darkTheme: Boolean = true,
+    // Ajustes de apariencia (D4). Ausentes en archivos previos: cozy y
+    // animaciones activas son lo que veian esos usuarios, asi que ese es el
+    // default que no cambia nada al actualizar.
+    val compactDensity: Boolean = false,
+    val animationsEnabled: Boolean = true,
     // Absent in setup files written before the explorer existed. Those users
     // saw an Explorer entry in 1.9.1, so defaulting to true keeps it where
     // they expect rather than making the section disappear on upgrade.

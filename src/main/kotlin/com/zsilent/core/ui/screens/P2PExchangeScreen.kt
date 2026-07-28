@@ -78,8 +78,9 @@ fun P2PExchangeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
  */
 @Composable
 private fun ExchangeRiskGate(onAccept: () -> Unit) {
-    ScreenScaffold(
-        title = "P2P Exchange",
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "P2P Exchange",
+        title = "Risk acknowledgement",
         subtitle = "Read this before trading."
     ) {
         Panel(title = "Before you trade", meta = "read once") {
@@ -173,8 +174,9 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
     }
 
-    ScreenScaffold(
-        title = "P2P Exchange",
+    com.zsilent.core.ui.onboarding.NoirScreenShell(
+        eyebrow = "P2P Exchange",
+        title = "Trade peer-to-peer",
         subtitle = "Sell ZKA for USDT, directly with another peer."
     ) {
         val loaded = state as? OfferFeed.Loaded

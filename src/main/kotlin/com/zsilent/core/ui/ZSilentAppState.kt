@@ -77,6 +77,8 @@ data class ZSilentUiState(
     val onboardingRecoveryConfirmed: Boolean = false,
     val selectedSection: AppSection = AppSection.Dashboard,
     val darkTheme: Boolean = true,
+    val compactDensity: Boolean = false,
+    val animationsEnabled: Boolean = true,
     // Gate for the in-app chain explorer, toggleable under Settings.
     //
     // On by default. Shipping it off hid a section that 1.9.1 already showed,
@@ -263,6 +265,8 @@ class ZSilentAppState(
                     onboardingAutoLockMinutes = setup.autoLockMinutes,
                     balancesHidden = setup.balancesHidden,
                     darkTheme = setup.darkTheme,
+                    compactDensity = setup.compactDensity,
+                    animationsEnabled = setup.animationsEnabled,
                     explorerEnabled = setup.explorerEnabled,
                     p2pExchangeEnabled = setup.p2pExchangeEnabled,
                     teamMiningEnabled = setup.teamMiningEnabled,
@@ -490,6 +494,8 @@ class ZSilentAppState(
                     balancesHidden = snapshot.balancesHidden,
                     autoLockMinutes = value,
                     darkTheme = snapshot.darkTheme,
+                compactDensity = snapshot.compactDensity,
+                animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
@@ -586,6 +592,8 @@ class ZSilentAppState(
                 balancesHidden = snapshot.balancesHidden,
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                 darkTheme = snapshot.darkTheme,
+                compactDensity = snapshot.compactDensity,
+                animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
                 p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                 teamMiningEnabled = snapshot.teamMiningEnabled,
@@ -666,6 +674,8 @@ class ZSilentAppState(
                     balancesHidden = hidden,
                     autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                     darkTheme = snapshot.darkTheme,
+                compactDensity = snapshot.compactDensity,
+                animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
@@ -719,6 +729,8 @@ class ZSilentAppState(
                     balancesHidden = snapshot.balancesHidden,
                     autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                     darkTheme = snapshot.darkTheme,
+                compactDensity = snapshot.compactDensity,
+                animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = enabled,
                     p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
@@ -846,6 +858,20 @@ class ZSilentAppState(
         }
         persistCurrentSetup()
         appendLog(RuntimeLog("exchange", "Saved Tron provider settings; restart the node to apply them."))
+    }
+
+    /** Densidad compacta o comoda (D4). */
+    fun setCompactDensity(enabled: Boolean) {
+        if (_uiState.value.compactDensity == enabled) return
+        update { it.copy(compactDensity = enabled) }
+        persistCurrentSetup()
+    }
+
+    /** Interruptor global de movimiento (D4). */
+    fun setAnimationsEnabled(enabled: Boolean) {
+        if (_uiState.value.animationsEnabled == enabled) return
+        update { it.copy(animationsEnabled = enabled) }
+        persistCurrentSetup()
     }
 
     fun setTorEnabled(enabled: Boolean) {
@@ -2991,6 +3017,8 @@ class ZSilentAppState(
                 balancesHidden = snapshot.balancesHidden,
                 autoLockMinutes = snapshot.onboardingAutoLockMinutes,
                 darkTheme = snapshot.darkTheme,
+                compactDensity = snapshot.compactDensity,
+                animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
                 p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                 teamMiningEnabled = snapshot.teamMiningEnabled,

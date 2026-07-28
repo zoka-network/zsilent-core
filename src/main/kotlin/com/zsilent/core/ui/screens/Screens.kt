@@ -97,6 +97,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.alpha
+import androidx.compose.material.icons.outlined.Palette
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -2443,13 +2444,49 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     "contacted — so it can only show what your node has already synced."
             )
         }
-        Panel(title = "Security posture", meta = "default") {
-            KeyValueRow("Telemetry", "disabled")
-            KeyValueRow("Private keys in logs", "blocked")
-            KeyValueRow("Encrypted exports", "required")
-            KeyValueRow("Auto-lock", "${ui.onboardingAutoLockMinutes} min")
-            KeyValueRow("Network privacy", if (ui.torEnabled) "Tor onion" else "direct clearnet")
+        // El prototipo muestra la postura con pills y no como pares clave/valor:
+        // de un vistazo se ve si algo esta fuera de lugar, sin leer cada linea.
+        Panel(title = "Security posture", meta = "what this build promises") {
+            PostureRow("Telemetry", true, "disabled")
+            PostureRow("Private keys in logs", true, "blocked")
+            PostureRow("Local-first execution", true, "yes")
+            PostureRow("Encrypted exports", true, "required")
+            PostureRow("Remote node", true, "disabled by default")
+            PostureRow(
+                "Tor transport",
+                ui.torEnabled,
+                if (ui.torEnabled) "onion" else "clearnet"
+            )
+            PostureRow(
+                "Auto-lock",
+                ui.onboardingAutoLockMinutes > 0,
+                if (ui.onboardingAutoLockMinutes > 0) "${ui.onboardingAutoLockMinutes} min" else "disabled"
+            )
         }
+    }
+}
+
+
+/**
+ * Fila de postura de seguridad: etiqueta a la izquierda, pill a la derecha.
+ *
+ * `ok = false` no significa error, significa "esta promesa no se esta
+ * cumpliendo ahora mismo" — por ejemplo Tor apagado. Por eso usa `warn` y no
+ * `err`.
+ */
+@Composable
+private fun PostureRow(label: String, ok: Boolean, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = ZTheme.spacing.row / 2),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Pill(value, if (ok) ZTone.On else ZTone.Warn)
     }
 }
 
@@ -2476,12 +2513,19 @@ fun LogsScreen(ui: ZSilentUiState) {
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.Top
                         ) {
+                            // El prototipo abre cada linea con la hora. El dato
+                            // ya estaba en RuntimeLog.timestampMillis y no se
+                            // mostraba.
+                            Text(
+                                formatLogClock(log.timestampMillis),
+                                modifier = Modifier.widthIn(min = 64.dp),
+                                style = ZTheme.text.mono,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
                             Text(
                                 logCategoryLabel(log.source),
                                 modifier = Modifier.widthIn(min = 72.dp, max = 96.dp),
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodySmall,
+                                style = ZTheme.text.mono,
                                 color = logSourceColor(log.source)
                             )
                             Text(
@@ -2510,6 +2554,13 @@ fun LogsScreen(ui: ZSilentUiState) {
  * Acá se neutraliza. La coloración por nivel llega en la etapa 13, que es la
  * que porta la pantalla de Logs completa.
  */
+/** `HH:MM:SS` local, como la primera columna del visor del prototipo. */
+private fun formatLogClock(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .toLocalTime()
+        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+
 @Composable
 private fun logSourceColor(source: String): Color =
     MaterialTheme.colorScheme.onSurfaceVariant
@@ -2597,7 +2648,8 @@ fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     SettingsPage.Security -> SettingsSecurityPage(ui, appState)
                     SettingsPage.Network -> SettingsNetworkPage(ui)
                     SettingsPage.Experimental -> SettingsExperimentalPage(ui, appState)
-                    SettingsPage.About -> SettingsAboutPage(ui)
+                    SettingsPage.Appearance -> SettingsAppearancePage(ui, appState)
+            SettingsPage.About -> SettingsAboutPage(ui)
                     SettingsPage.Danger -> SettingsDangerPage(
                         confirmReset = confirmReset,
                         onAskConfirm = { confirmReset = true },
@@ -2621,6 +2673,7 @@ private enum class SettingsPage(
     Home("Settings", "Personal controls for ZSilent Core."),
     Security("Security", "Change PIN, reveal recovery phrase and private keys."),
     Network("Network", "RPC endpoint and connection status."),
+    Appearance("Appearance", "Theme, density and motion."),
     Experimental("Experimental", "Opt in to features that can move funds."),
     About("About", "ZSilent Core details and runtime status."),
     Danger("Danger zone", "Reset app setup deliberately.")
@@ -2681,6 +2734,13 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
             )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsMenuCard(
+                title = "Appearance",
+                detail = "Theme, density and motion.",
+                icon = Icons.Outlined.Palette,
+                meta = "display",
+                onClick = { onOpen(SettingsPage.Appearance) }
+            )
             SettingsMenuCard(
                 title = "About",
                 detail = "ZSilent Core, Zoka and runtime details",
@@ -3091,6 +3151,33 @@ private fun isHttpProviderUrl(value: String): Boolean = runCatching {
     val uri = URI(value.trim())
     (uri.scheme == "http" || uri.scheme == "https") && !uri.host.isNullOrBlank()
 }.getOrDefault(false)
+
+
+/**
+ * Ajustes de apariencia (decisión D4).
+ *
+ * El tema ya soportaba densidad y animaciones desde la etapa 0, pero nada las
+ * exponía: los tres valores viajaban por `CompositionLocal` con su default y no
+ * había forma de cambiarlos. Acá se cierra ese circuito.
+ */
+@Composable
+private fun SettingsAppearancePage(ui: ZSilentUiState, appState: ZSilentAppState) {
+    Panel(title = "Theme", meta = if (ui.darkTheme) "dark" else "light") {
+        ToggleRow("Dark theme", ui.darkTheme) { appState.setDarkTheme(it) }
+        HintText("También se puede cambiar desde el interruptor de la barra superior.")
+    }
+    Panel(title = "Density", meta = if (ui.compactDensity) "compact" else "cozy") {
+        ToggleRow("Compact density", ui.compactDensity) { appState.setCompactDensity(it) }
+        HintText("Compacta reduce rellenos y altura de controles. Útil en pantallas chicas.")
+    }
+    Panel(title = "Motion", meta = if (ui.animationsEnabled) "on" else "off") {
+        ToggleRow("Enable animations", ui.animationsEnabled) { appState.setAnimationsEnabled(it) }
+        HintText(
+            "Apaga las transiciones y los indicadores que laten. Recomendado en " +
+                "máquinas lentas o si el movimiento molesta."
+        )
+    }
+}
 
 @Composable
 private fun SettingsAboutPage(ui: ZSilentUiState) {
