@@ -394,10 +394,19 @@ data class SendResult(
     val queuedDb: String?
 )
 
+/** Severidad de una línea de log. El prototipo colorea por esto, no por fuente. */
+enum class LogLevel { Info, Success, Warning, Error }
+
 data class RuntimeLog(
     val source: String,
     val message: String,
-    val timestampMillis: Long = System.currentTimeMillis()
+    val timestampMillis: Long = System.currentTimeMillis(),
+    /**
+     * Por defecto `Info` para que los 92 sitios que ya construían `RuntimeLog`
+     * sigan compilando sin tocarse. Los que sepan su severidad pueden
+     * declararla; el visor solo aplica su heurística cuando esto es `Info`.
+     */
+    val level: LogLevel = LogLevel.Info
 )
 
 @Serializable

@@ -988,16 +988,25 @@ está, no porque es una constante.
 Se agregó la **columna de hora** `HH:MM:SS` que muestra el prototipo. El dato ya
 estaba en `RuntimeLog.timestampMillis` y simplemente no se renderizaba.
 
-### La deuda de la etapa 5 no se pudo saldar como estaba planteada
+### La deuda de la etapa 5, saldada en dos mitades
 
-Anoté en la etapa 5 que la coloración por nivel llegaría acá. **No es posible sin
-cambiar el modelo**: `RuntimeLog` tiene `source`, `message` y `timestampMillis` —
-no tiene nivel. La coloración por `INFO`/`SUCCESS`/`WARNING`/`ERROR` del prototipo
-requiere agregar el campo y poblarlo en cada `appendLog`, que es trabajo de la
-capa de estado y no de presentación.
+`RuntimeLog` no tenía nivel — solo `source`, `message` y `timestampMillis` — y hay
+**92 sitios** que lo construyen. Clasificarlos todos a mano era caro y propenso a
+error, así que se hizo en dos mitades:
 
-Queda como pendiente real, con su alcance ya medido: agregar `level` a
-`RuntimeLog` con default `Info` y clasificar los call sites que importan.
+1. `RuntimeLog` gana `level: LogLevel = LogLevel.Info`. El default hace que los 92
+   sitios sigan compilando sin tocarse, y quien sepa su severidad puede
+   declararla.
+2. El visor aplica una heurística sobre el texto **solo cuando el nivel es
+   `Info`**, o sea cuando nadie lo declaró. Un nivel explícito siempre gana.
+
+La heurística es deliberadamente conservadora: marca `Error` o `Warning` solo ante
+señales fuertes y ante la duda devuelve `Info`. Una línea pintada de rojo por
+equivocación es peor que una sin color, porque manda a buscar un problema que no
+existe.
+
+Es una medida de transición: a medida que los call sites declaren su nivel, la
+heurística deja de intervenir sola.
 
 
 Prototipo: `sections/Logs.tsx` (138). ZSilent: `Screens.kt:2171` `LogsScreen`,
@@ -1033,9 +1042,20 @@ había forma de cambiarlos. Ahora `PersistedSetup` tiene `compactDensity` y
 Los defaults son `cozy` y animaciones activas — lo que veían los usuarios
 anteriores, así que actualizar no les cambia nada.
 
-**Falta todavía** la categoría `Wallets` del prototipo (exportar, importar,
-borrar, marcar por defecto). Esas operaciones ya existen dentro de la pantalla
-Wallet, así que es reorganización, no funcionalidad nueva.
+**Categoría `Wallets`:** entra con la lista de cuentas y el marcado de la activa.
+
+**Corrección de lo que dije antes:** afirmé que era "reorganización, no
+funcionalidad nueva". Eso vale para tres de las cuatro operaciones —
+`selectWallet`, `exportWalletBackup` y `restoreWalletBackup` existen — pero
+**borrar no**. `ZSilentAppState` no expone ninguna operación de borrado de wallet,
+así que sumarla no sería reorganizar sino agregar una acción destructiva sobre
+material de claves. Necesita su propio diseño (confirmación, verificación de que
+existe backup) y no corresponde a una etapa de porteo visual. Queda fuera,
+deliberadamente.
+
+Exportar e importar tampoco se duplican en Settings: sus formularios, con ruta y
+contraseña, ya viven en la pantalla Wallet, y tener dos caminos al mismo archivo
+cifrado es una forma barata de que alguien pise un backup.
 
 
 Prototipo: `sections/Settings.tsx` (287). ZSilent: `Screens.kt:2269`

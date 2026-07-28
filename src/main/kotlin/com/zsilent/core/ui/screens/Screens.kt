@@ -98,11 +98,15 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.outlined.Palette
+import com.zsilent.core.models.LogLevel
+import com.zsilent.core.models.RuntimeLog
+import com.zsilent.core.ui.components.Truncate
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZButtonVariant
+import com.zsilent.core.ui.components.ZButtonSize
 import com.zsilent.core.ui.components.ZButtonText
 import com.zsilent.core.ui.components.Pill
 import com.zsilent.core.ui.components.ZTone
@@ -2528,6 +2532,13 @@ fun LogsScreen(ui: ZSilentUiState) {
                                 style = ZTheme.text.mono,
                                 color = logSourceColor(log.source)
                             )
+                            val level = effectiveLogLevel(log)
+                            Text(
+                                level.name.uppercase(),
+                                modifier = Modifier.widthIn(min = 62.dp),
+                                style = ZTheme.text.pill,
+                                color = logLevelColor(level)
+                            )
                             Text(
                                 log.message,
                                 modifier = Modifier.weight(1f),
@@ -2564,6 +2575,40 @@ private fun formatLogClock(millis: Long): String =
 @Composable
 private fun logSourceColor(source: String): Color =
     MaterialTheme.colorScheme.onSurfaceVariant
+
+/**
+ * Severidad efectiva de una línea.
+ *
+ * Si el emisor declaró un nivel, gana ese. Si no —que es el caso de casi todos
+ * los sitios hoy— se infiere del texto con una heurística **deliberadamente
+ * conservadora**: solo marca error o warning ante señales fuertes, y ante la
+ * duda devuelve `Info`. Un log pintado de rojo por equivocación es peor que uno
+ * sin color, porque manda a buscar un problema que no existe.
+ *
+ * Es una medida de transición: a medida que los call sites declaren su nivel,
+ * la heurística deja de intervenir sola.
+ */
+private fun effectiveLogLevel(log: RuntimeLog): LogLevel {
+    if (log.level != LogLevel.Info) return log.level
+    val m = log.message.lowercase()
+    return when {
+        listOf("failed", "failure", "error", "could not", "cannot ", "unreachable",
+               "denied", "rejected", "invalid", "missing").any { it in m } -> LogLevel.Error
+        listOf("warning", "retry", "retrying", "timeout", "timed out", "waiting",
+               "unsupported", "outdated").any { it in m } -> LogLevel.Warning
+        listOf("started", "online", "connected", "completed", "success", "ready",
+               "accepted", "synced").any { it in m } -> LogLevel.Success
+        else -> LogLevel.Info
+    }
+}
+
+@Composable
+private fun logLevelColor(level: LogLevel): Color = when (level) {
+    LogLevel.Success -> ZTheme.semantics.success
+    LogLevel.Warning -> ZTheme.semantics.warning
+    LogLevel.Error -> ZTheme.semantics.danger
+    LogLevel.Info -> MaterialTheme.colorScheme.onSurfaceVariant
+}
 
 private fun logCategoryLabel(source: String): String {
     return "[${source.ifBlank { "runtime" }.uppercase()}]"
@@ -2648,7 +2693,8 @@ fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     SettingsPage.Security -> SettingsSecurityPage(ui, appState)
                     SettingsPage.Network -> SettingsNetworkPage(ui)
                     SettingsPage.Experimental -> SettingsExperimentalPage(ui, appState)
-                    SettingsPage.Appearance -> SettingsAppearancePage(ui, appState)
+                    SettingsPage.Wallets -> SettingsWalletsPage(ui, appState)
+            SettingsPage.Appearance -> SettingsAppearancePage(ui, appState)
             SettingsPage.About -> SettingsAboutPage(ui)
                     SettingsPage.Danger -> SettingsDangerPage(
                         confirmReset = confirmReset,
@@ -2674,6 +2720,7 @@ private enum class SettingsPage(
     Security("Security", "Change PIN, reveal recovery phrase and private keys."),
     Network("Network", "RPC endpoint and connection status."),
     Appearance("Appearance", "Theme, density and motion."),
+    Wallets("Wallets", "Accounts on this device."),
     Experimental("Experimental", "Opt in to features that can move funds."),
     About("About", "ZSilent Core details and runtime status."),
     Danger("Danger zone", "Reset app setup deliberately.")
@@ -2734,6 +2781,13 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
             )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsMenuCard(
+                title = "Wallets",
+                detail = "Accounts on this device and which one is active.",
+                icon = Icons.Outlined.AccountBalanceWallet,
+                meta = "accounts",
+                onClick = { onOpen(SettingsPage.Wallets) }
+            )
             SettingsMenuCard(
                 title = "Appearance",
                 detail = "Theme, density and motion.",
@@ -3160,6 +3214,61 @@ private fun isHttpProviderUrl(value: String): Boolean = runCatching {
  * exponía: los tres valores viajaban por `CompositionLocal` con su default y no
  * había forma de cambiarlos. Acá se cierra ese circuito.
  */
+
+/**
+ * Categoría Wallets del prototipo.
+ *
+ * Lista las cuentas y permite marcar la activa. **No incluye borrar**, que el
+ * prototipo sí ofrece: `ZSilentAppState` no expone ninguna operación de borrado
+ * de wallet, así que no sería reorganizar sino agregar una acción destructiva
+ * sobre material de claves. Eso necesita su propio diseño — confirmación,
+ * verificación de que hay backup — y no corresponde a una etapa de porteo
+ * visual.
+ *
+ * Exportar e importar tampoco se duplican acá: sus formularios, con ruta y
+ * contraseña, ya viven en la pantalla Wallet.
+ */
+@Composable
+private fun SettingsWalletsPage(ui: ZSilentUiState, appState: ZSilentAppState) {
+    Panel(title = "Accounts", meta = "${ui.wallets.size} on this device") {
+        if (ui.wallets.isEmpty()) {
+            EmptyState("No wallets yet.")
+        } else {
+            ui.wallets.forEach { wallet ->
+                val active = wallet.address == ui.activeWalletAddress
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = ZTheme.spacing.row / 2),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            wallet.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Truncate(
+                            wallet.address,
+                            head = 14, tail = 6,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (active) {
+                        Pill("default", ZTone.On)
+                    } else {
+                        ZButton(
+                            onClick = { appState.selectWallet(wallet.name) },
+                            variant = ZButtonVariant.Outline,
+                            size = ZButtonSize.Small,
+                        ) { ZButtonText("Set default") }
+                    }
+                }
+            }
+        }
+        HintText("Exportar e importar backups se hace desde la pantalla Wallet, donde están los formularios de ruta y contraseña.")
+    }
+}
+
 @Composable
 private fun SettingsAppearancePage(ui: ZSilentUiState, appState: ZSilentAppState) {
     Panel(title = "Theme", meta = if (ui.darkTheme) "dark" else "light") {
