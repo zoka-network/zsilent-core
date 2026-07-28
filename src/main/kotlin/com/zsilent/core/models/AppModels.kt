@@ -256,7 +256,17 @@ data class OfferSummary(
 
 @Serializable
 data class OfferList(
-    val offers: List<OfferSummary> = emptyList()
+    val offers: List<OfferSummary> = emptyList(),
+    val verification: String = "unknown"
+)
+
+@Serializable
+data class ClaimOfferResponse(
+    @SerialName("offer_id")
+    val offerId: String = "",
+    @SerialName("seller_address")
+    val sellerAddress: String = "",
+    val status: String = "claim_requested"
 )
 
 @Serializable
@@ -267,6 +277,27 @@ data class CreateOfferRequest(
     val microUsdt: Long,
     @SerialName("usdt_receive_address")
     val usdtReceiveAddress: String
+)
+
+@Serializable
+data class ReportPaymentFailureRequest(
+    @SerialName("tron_tx_hash")
+    val tronTxHash: String,
+    @SerialName("acknowledge_public_disclosure")
+    val acknowledgePublicDisclosure: Boolean
+)
+
+@Serializable
+data class PaymentFailureSummary(
+    @SerialName("offer_id")
+    val offerId: String = "",
+    @SerialName("seller_address")
+    val sellerAddress: String = "",
+    @SerialName("buyer_address")
+    val buyerAddress: String = "",
+    @SerialName("tron_tx_hash")
+    val tronTxHash: String = "",
+    val timestamp: Long = 0
 )
 
 // GET /mempool/tx/:hash — only ever describes an unconfirmed transaction.
@@ -440,6 +471,86 @@ data class PendingPrivateTransfers(
 )
 
 @Serializable
+data class TeamMiningControlRequest(
+    val threads: Int = 1
+)
+
+@Serializable
+data class JoinMiningTeamRequest(
+    @SerialName("invite_code")
+    val inviteCode: String
+)
+
+@Serializable
+data class TeamMiningMember(
+    val address: String = "",
+    val active: Boolean = false,
+    val expelled: Boolean = false,
+    @SerialName("total_work")
+    val totalWork: Long = 0,
+    @SerialName("accepted_shares")
+    val acceptedShares: Long = 0,
+    @SerialName("blocks_paid")
+    val blocksPaid: Long = 0,
+    @SerialName("share_difficulty_bits")
+    val shareDifficultyBits: Int = 0,
+    @SerialName("estimated_hashrate_hps")
+    val estimatedHashrateHps: Long = 0
+)
+
+@Serializable
+data class TeamMiningTemplate(
+    val id: String = "",
+    val height: Long = 0,
+    @SerialName("recipient_address")
+    val recipientAddress: String = "",
+    @SerialName("network_difficulty_bits")
+    val networkDifficultyBits: Int = 0
+)
+
+@Serializable
+data class MiningTeam(
+    @SerialName("team_id")
+    val teamId: String = "",
+    @SerialName("invite_code")
+    val inviteCode: String = "",
+    val coordinator: String = "",
+    @SerialName("backup_coordinator")
+    val backupCoordinator: String? = null,
+    val epoch: Long = 0,
+    val revision: Long = 0,
+    val members: Map<String, TeamMiningMember> = emptyMap(),
+    @SerialName("total_work")
+    val totalWork: Long = 0,
+    @SerialName("confirmed_blocks")
+    val confirmedBlocks: Long = 0,
+    @SerialName("active_template")
+    val activeTemplate: TeamMiningTemplate? = null,
+    @SerialName("last_hijacked_recipient")
+    val lastHijackedRecipient: String? = null
+)
+
+@Serializable
+data class TeamMiningStatus(
+    val enabled: Boolean = false,
+    val hashing: Boolean = false,
+    val threads: Long = 1,
+    @SerialName("join_status")
+    val joinStatus: String = "not_joined",
+    @SerialName("local_address")
+    val localAddress: String = "",
+    val team: MiningTeam? = null,
+    @SerialName("combined_hashrate_hps")
+    val combinedHashrateHps: Long = 0,
+    @SerialName("local_accepted_shares")
+    val localAcceptedShares: Long = 0,
+    @SerialName("team_accepted_shares")
+    val teamAcceptedShares: Long = 0,
+    @SerialName("estimated_turn")
+    val estimatedTurn: Int? = null
+)
+
+@Serializable
 data class PersistedSetup(
     val onboardingComplete: Boolean = false,
     val walletName: String = "",
@@ -455,6 +566,21 @@ data class PersistedSetup(
     // saw an Explorer entry in 1.9.1, so defaulting to true keeps it where
     // they expect rather than making the section disappear on upgrade.
     val explorerEnabled: Boolean = true,
+    // Moves real funds, so legacy setup files and fresh installs stay opted
+    // out until the user enables the experimental section deliberately.
+    val p2pExchangeEnabled: Boolean = false,
+    // Team mining is experimental and can produce uneven short-term payouts,
+    // so it is absent from the sidebar until explicitly enabled.
+    val teamMiningEnabled: Boolean = false,
+    val p2pExchangeRisksAccepted: Boolean = false,
+    // "mainnet" or "nile". Absent (older setup files) must read as mainnet —
+    // the same real-funds-aware default the node's own ZOKA_TRON_NETWORK
+    // parser falls back to, so a stale setup file can never silently start
+    // verifying real trades against testnet money.
+    val tronNetwork: String = "mainnet",
+    val tronApiUrl: String = "https://api.trongrid.io",
+    val tronApiKey: String = "",
+    val tronFallbackUrls: String = "",
     val torEnabled: Boolean = true,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",

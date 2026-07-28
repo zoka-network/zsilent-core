@@ -119,6 +119,7 @@ import com.zsilent.core.ui.components.zButtonColors
 import com.zsilent.core.ui.components.zPastelButtonColors
 import com.zsilent.core.ui.components.zOutlinedButtonColors
 import kotlinx.coroutines.delay
+import java.net.URI
 import java.nio.file.Path
 
 @Composable
@@ -2372,6 +2373,7 @@ fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     SettingsPage.Home -> SettingsHome(ui) { page = it }
                     SettingsPage.Security -> SettingsSecurityPage(ui, appState)
                     SettingsPage.Network -> SettingsNetworkPage(ui)
+                    SettingsPage.Experimental -> SettingsExperimentalPage(ui, appState)
                     SettingsPage.About -> SettingsAboutPage(ui)
                     SettingsPage.Danger -> SettingsDangerPage(
                         confirmReset = confirmReset,
@@ -2396,6 +2398,7 @@ private enum class SettingsPage(
     Home("Settings", "Personal controls for ZSilent Core."),
     Security("Security", "Change PIN, reveal recovery phrase and private keys."),
     Network("Network", "RPC endpoint and connection status."),
+    Experimental("Experimental", "Opt in to features that can move funds."),
     About("About", "ZSilent Core details and runtime status."),
     Danger("Danger zone", "Reset app setup deliberately.")
 }
@@ -2472,6 +2475,17 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
                 onClick = { onOpen(SettingsPage.Danger) }
             )
         }
+        SettingsMenuCard(
+            title = "Experimental",
+            detail = listOfNotNull(
+                "P2P Exchange".takeIf { ui.p2pExchangeEnabled },
+                "Team Mining".takeIf { ui.teamMiningEnabled }
+            ).takeIf { it.isNotEmpty() }?.joinToString(" + ") ?: "experimental features are off",
+            icon = Icons.Outlined.CurrencyExchange,
+            meta = "opt-in",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { onOpen(SettingsPage.Experimental) }
+        )
     }
 }
 
@@ -2727,6 +2741,133 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
         KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
     }
 }
+
+@Composable
+private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppState) {
+    var tronUrl by remember(ui.tronApiUrl) { mutableStateOf(ui.tronApiUrl) }
+    var tronApiKey by remember(ui.tronApiKey) { mutableStateOf(ui.tronApiKey) }
+    var fallbackUrls by remember(ui.tronFallbackUrls) { mutableStateOf(ui.tronFallbackUrls) }
+    var providerError by remember { mutableStateOf<String?>(null) }
+    var providerNotice by remember { mutableStateOf<String?>(null) }
+
+    Panel(title = "P2P Exchange", meta = "experimental opt-in") {
+        ToggleRow("Enable P2P Exchange", ui.p2pExchangeEnabled) {
+            appState.setP2PExchangeEnabled(it)
+        }
+        Text(
+            "This section can move real ZKA and USDT. It stays out of the sidebar until " +
+                "you opt in, and the first entry still requires explicit risk acceptance.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        KeyValueRow(
+            "Risk acknowledgement",
+            if (ui.p2pExchangeRisksAccepted) "accepted" else "required on first entry"
+        )
+        HintText("There is no escrow, arbiter, refund or per-offer amount cap in v1.")
+    }
+
+    Panel(title = "Team Mining", meta = "experimental opt-in") {
+        ToggleRow("Enable Team Mining", ui.teamMiningEnabled) {
+            appState.setTeamMiningEnabled(it)
+        }
+        Text(
+            "This section coordinates mining with people you know. It stays out of the " +
+                "sidebar until you opt in. There is no team wallet and no coordinator fee.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        HintText(
+            "Whole block rewards rotate by contributed work. Short-term payouts are uneven, " +
+                "and a member can hijack a block; the team can detect and expel them but cannot " +
+                "make that otherwise-valid block impossible."
+        )
+    }
+
+    Panel(
+        title = "Tron network",
+        meta = if (ui.tronNetwork == "nile") "Nile testnet" else "Mainnet"
+    ) {
+        com.zsilent.core.ui.components.SegmentedSelector(
+            options = listOf("Mainnet", "Nile testnet"),
+            selected = if (ui.tronNetwork == "nile") "Nile testnet" else "Mainnet",
+            onSelect = { appState.setTronNetwork(if (it == "Nile testnet") "nile" else "mainnet") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (ui.tronNetwork == "nile") {
+            HintText(
+                "Nile is play money — for testing the exchange flow without Tor or real " +
+                    "USDT at risk. Payments never cross networks: a Nile transfer cannot " +
+                    "settle a mainnet offer, or the reverse."
+            )
+        } else {
+            HintText("Real USDT. Payment checks require Tor — this is not optional on mainnet.")
+        }
+        HintText("Applies the next time the node starts.")
+    }
+
+    Panel(title = "Tron payment provider", meta = "applies after node restart") {
+        OutlinedTextField(
+            value = tronUrl,
+            onValueChange = { tronUrl = it.trim() },
+            label = { Text("Primary Tron API URL") },
+            singleLine = true,
+            colors = zFieldColors(),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        PasswordField(
+            value = tronApiKey,
+            onValueChange = { tronApiKey = it },
+            label = "Optional API key",
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = fallbackUrls,
+            onValueChange = { fallbackUrls = it },
+            label = { Text("Fallback URLs (comma or newline separated)") },
+            minLines = 2,
+            colors = zFieldColors(),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        providerError?.let { ErrorText(it) }
+        providerNotice?.let {
+            Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+        }
+        Button(
+            onClick = {
+                val urls = listOf(tronUrl) + fallbackUrls
+                    .split(',', '\n')
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                val invalid = urls.firstOrNull { !isHttpProviderUrl(it) }
+                if (invalid != null) {
+                    providerError = "Use a complete http:// or https:// URL: $invalid"
+                    providerNotice = null
+                } else {
+                    appState.setTronApiSettings(tronUrl, tronApiKey, fallbackUrls)
+                    providerError = null
+                    providerNotice = "Saved. Restart the local node to apply these provider settings."
+                }
+            },
+            colors = zButtonColors(),
+            shape = MaterialTheme.shapes.small,
+            contentPadding = SettingsButtonPadding
+        ) {
+            Text("Save provider settings")
+        }
+        HintText(
+            "The node always sends these queries through its SOCKS proxy. It refuses to " +
+                "verify payments when Tor is unavailable; there is no direct fallback."
+        )
+    }
+}
+
+private fun isHttpProviderUrl(value: String): Boolean = runCatching {
+    val uri = URI(value.trim())
+    (uri.scheme == "http" || uri.scheme == "https") && !uri.host.isNullOrBlank()
+}.getOrDefault(false)
 
 @Composable
 private fun SettingsAboutPage(ui: ZSilentUiState) {

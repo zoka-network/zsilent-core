@@ -4,249 +4,313 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.zsilent.core.models.ServiceStatus
+import com.zsilent.core.models.MiningTeam
+import com.zsilent.core.models.TeamMiningStatus
+import com.zsilent.core.rpc.ZokaRpcClient
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
+import com.zsilent.core.ui.components.CopyableKeyValueRow
+import com.zsilent.core.ui.components.EmptyState
+import com.zsilent.core.ui.components.ErrorText
 import com.zsilent.core.ui.components.HintText
 import com.zsilent.core.ui.components.KeyValueRow
 import com.zsilent.core.ui.components.LegendDot
 import com.zsilent.core.ui.components.MeterBar
 import com.zsilent.core.ui.components.MetricAccent
-import com.zsilent.core.ui.components.MetricTile
 import com.zsilent.core.ui.components.Panel
 import com.zsilent.core.ui.components.ScreenScaffold
 import com.zsilent.core.ui.components.SegmentedSelector
+import com.zsilent.core.ui.components.StatusCard
+import com.zsilent.core.ui.components.zButtonColors
 import com.zsilent.core.ui.components.zFieldColors
-import com.zsilent.core.ui.components.zSwitchColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * Team mining.
+ * Non-custodial team mining backed entirely by the user's local node.
  *
- * Small miners pool hashrate and take turns collecting the block reward. There
- * is no team wallet: the coinbase pays whichever member is next in line, so
- * nobody ever custodies anyone else's earnings.
- *
- * The pooling protocol is not built yet, so every team figure renders dimmed
- * through [MetricTile]'s `dimmed` flag. Styling an unmeasured number exactly
- * like a live one invites a miner to plan around it — the controls are laid
- * out and legible, but never dressed up as readings.
+ * The coordinator never owns a team wallet. Every candidate commits one
+ * member's normal address as coinbase recipient, and partial solutions only
+ * affect whose turn is next.
  */
 @Composable
 fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
-    val soloMining = ui.miningStatus == ServiceStatus.Online
-    val availableCores = ui.mining.availableCpuThreads.coerceAtLeast(1)
-
-    var teamEnabled by remember { mutableStateOf(false) }
+    var feed by remember { mutableStateOf<TeamMiningFeed>(TeamMiningFeed.Loading) }
+    var inviteCode by remember { mutableStateOf("") }
+    var risksUnderstood by remember { mutableStateOf(false) }
     var powerLevel by remember { mutableStateOf(PowerLevel.Normal) }
-    var teamCode by remember { mutableStateOf("") }
+    var actionBusy by remember { mutableStateOf<String?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    var actionNotice by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
+    suspend fun reload() {
+        feed = withContext(Dispatchers.IO) {
+            try {
+                TeamMiningFeed.Loaded(appState.localRpc.teamMiningStatus())
+            } catch (_: ZokaRpcClient.EndpointUnsupported) {
+                TeamMiningFeed.Unsupported
+            } catch (t: Throwable) {
+                TeamMiningFeed.Failed(t.message ?: "Could not reach the local node")
+            }
+        }
+    }
+
+    fun runAction(
+        label: String,
+        action: suspend () -> TeamMiningStatus
+    ) {
+        if (actionBusy != null) return
+        actionBusy = label
+        actionError = null
+        actionNotice = null
+        scope.launch {
+            try {
+                val status = withContext(Dispatchers.IO) { action() }
+                feed = TeamMiningFeed.Loaded(status)
+                actionNotice = label
+            } catch (_: ZokaRpcClient.EndpointUnsupported) {
+                feed = TeamMiningFeed.Unsupported
+            } catch (t: Throwable) {
+                actionError = t.message ?: "Team Mining request failed"
+            } finally {
+                actionBusy = null
+            }
+        }
+    }
+
+    LaunchedEffect(ui.localRpcOnline) {
+        if (!ui.localRpcOnline) {
+            feed = TeamMiningFeed.NodeOffline
+            return@LaunchedEffect
+        }
+        while (isActive) {
+            reload()
+            delay(5_000)
+        }
+    }
+
+    val status = (feed as? TeamMiningFeed.Loaded)?.status
+    val team = status?.team
+    val localMember = team?.members?.get(status.localAddress)
+    val availableCores = ui.mining.availableCpuThreads.coerceAtLeast(1)
     val contributedCores = powerLevel.coresFrom(availableCores)
-    val soloHashrate = ui.mining.hashrateHps
 
     ScreenScaffold(
         title = "Mining Pool",
-        subtitle = "Combine hashrate with other miners and take turns on the reward."
+        subtitle = "Combine hashrate without handing anyone your rewards."
     ) {
-        // ── Live metrics ─────────────────────────────────────────────────
-        // Solo figures are real; team figures are dimmed until the protocol
-        // exists.
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricTile(
-                label = "Your hashrate",
-                value = formatHashrate(soloHashrate),
-                caption = if (soloMining) "mining solo right now" else "mining stopped",
-                accent = if (soloMining) MetricAccent.Green else MetricAccent.Neutral,
-                dimmed = !soloMining,
-                modifier = Modifier.weight(1f)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            StatusCard(
+                "Your hashrate",
+                formatHashrate(localMember?.estimatedHashrateHps ?: 0),
+                if (status?.hashing == true) "submitting shares" else "team worker stopped",
+                Modifier.weight(1f)
             )
-            MetricTile(
-                label = "Contributed",
-                value = "$contributedCores / $availableCores",
-                caption = "cores you would share",
-                accent = MetricAccent.Blue,
-                fraction = contributedCores.toFloat() / availableCores.toFloat(),
-                dimmed = !teamEnabled,
-                modifier = Modifier.weight(1f)
+            StatusCard(
+                "Team hashrate",
+                formatHashrate(status?.combinedHashrateHps ?: 0),
+                "${team?.members?.values?.count { it.active && !it.expelled } ?: 0} active member(s)",
+                Modifier.weight(1f)
             )
-            MetricTile(
-                label = "Team hashrate",
-                value = "—",
-                caption = "needs the pooling protocol",
-                accent = MetricAccent.Violet,
-                dimmed = true,
-                modifier = Modifier.weight(1f)
+            StatusCard(
+                "Shares",
+                "${status?.localAcceptedShares ?: 0} / ${status?.teamAcceptedShares ?: 0}",
+                "yours / team",
+                Modifier.weight(1f)
             )
-            MetricTile(
-                label = "Next payout",
-                value = "—",
-                caption = "no team yet",
-                accent = MetricAccent.Amber,
-                dimmed = true,
-                modifier = Modifier.weight(1f)
+            StatusCard(
+                "Est. turn",
+                status?.estimatedTurn?.let { "#$it" } ?: "—",
+                team?.activeTemplate?.let { "block ${it.height}" } ?: "waiting for template",
+                Modifier.weight(1f)
             )
         }
 
-        // ── Master control ───────────────────────────────────────────────
-        Panel(
-            title = "Team mining",
-            meta = if (teamEnabled) "armed" else "off"
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        when (val current = feed) {
+            TeamMiningFeed.Loading -> LoadingPanel()
+            TeamMiningFeed.NodeOffline -> NodeOfflinePanel()
+            TeamMiningFeed.Unsupported -> UnsupportedNodePanel()
+            is TeamMiningFeed.Failed -> Panel(title = "Team Mining unavailable", meta = "error") {
+                ErrorText(current.message)
+                HintText("The app only talks to the node on this device. Start or restart it and try again.")
+            }
+            is TeamMiningFeed.Loaded -> Unit
+        }
+
+        actionError?.let { ErrorText(it) }
+        actionNotice?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.secondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        RiskPanel(
+            checked = risksUnderstood,
+            onCheckedChange = { risksUnderstood = it }
+        )
+
+        if (status != null && team == null) {
+            Panel(
+                title = "Create or join a team",
+                meta = status.joinStatus.replace('_', ' ')
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        "Share hashrate with a team",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                OutlinedTextField(
+                    value = inviteCode,
+                    onValueChange = {
+                        inviteCode = it
+                            .trim()
+                            .uppercase()
+                            .filter { char -> char.isLetterOrDigit() || char == '-' }
+                    },
+                    label = { Text("Team invite code") },
+                    singleLine = true,
+                    colors = zFieldColors(),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            runAction("Team created.") {
+                                appState.localRpc.createMiningTeam()
+                            }
+                        },
+                        enabled = risksUnderstood && actionBusy == null,
+                        colors = zButtonColors()
+                    ) {
+                        Text("Create team")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            runAction("Join request sent; waiting for the coordinator.") {
+                                appState.localRpc.joinMiningTeam(inviteCode)
+                            }
+                        },
+                        enabled = risksUnderstood &&
+                            inviteCode.isNotBlank() &&
+                            actionBusy == null
+                    ) {
+                        Text("Join team")
+                    }
+                    ActionProgress(actionBusy)
+                }
+                if (status.joinStatus == "join_requested") {
+                    HintText(
+                        "The signed join request is in gossip. Keep both nodes online; this " +
+                            "screen will update when the coordinator accepts it."
                     )
-                    Text(
-                        "Off by default. Your solo mining is unaffected either way.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    HintText(
+                        "Invite codes are discovered through the live P2P mesh. The coordinator " +
+                            "must be online; there is no central team directory."
                     )
                 }
-                Switch(
-                    checked = teamEnabled,
-                    onCheckedChange = { teamEnabled = it },
-                    colors = zSwitchColors()
-                )
-            }
-
-            if (teamEnabled) {
-                HintText(
-                    "Saved as a preference only. Nothing is shared yet — the pooling " +
-                        "protocol still has to ship before this connects to anyone."
-                )
             }
         }
 
-        // ── Power allocation ─────────────────────────────────────────────
-        Panel(title = "Power to contribute", meta = "$availableCores cores detected") {
-            SegmentedSelector(
-                options = PowerLevel.entries.map { it.label },
-                selected = powerLevel.label,
-                onSelect = { picked ->
-                    powerLevel = PowerLevel.entries.first { it.label == picked }
+        if (status != null && team != null) {
+            TeamIdentityPanel(status, team)
+            MiningControlPanel(
+                status = status,
+                team = team,
+                powerLevel = powerLevel,
+                availableCores = availableCores,
+                contributedCores = contributedCores,
+                actionBusy = actionBusy,
+                onPowerLevel = { powerLevel = it },
+                onStart = {
+                    runAction("Team Mining started with $contributedCores core(s).") {
+                        appState.localRpc.startTeamMining(contributedCores)
+                    }
                 },
-                enabled = teamEnabled,
-                modifier = Modifier.fillMaxWidth()
+                onStop = {
+                    runAction("Team Mining stopped; the node remains online.") {
+                        appState.localRpc.stopTeamMining()
+                    }
+                }
             )
-            MeterBar(
-                fraction = contributedCores.toFloat() / availableCores.toFloat(),
-                accent = MetricAccent.Blue,
-                dimmed = !teamEnabled
-            )
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                LegendDot("$contributedCores shared", MetricAccent.Blue)
-                LegendDot("${availableCores - contributedCores} kept", MetricAccent.Neutral)
-            }
-            Text(
-                powerLevel.explanation,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            MembersPanel(status, team)
+            TeamExitPanel(
+                status = status,
+                actionBusy = actionBusy,
+                onLeave = {
+                    runAction("Leave request sent.") {
+                        appState.localRpc.leaveMiningTeam()
+                    }
+                }
             )
         }
-
-        // ── Team membership ──────────────────────────────────────────────
-        Panel(title = "Your team", meta = "none joined") {
-            OutlinedTextField(
-                value = teamCode,
-                onValueChange = { teamCode = it.trim().uppercase() },
-                label = { Text("Team invite code") },
-                singleLine = true,
-                enabled = false,
-                colors = zFieldColors(),
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth()
-            )
-            HintText("Joining opens once the pooling protocol ships.")
-        }
-
-        // ── Design notes ─────────────────────────────────────────────────
-        Panel(title = "How it will work", meta = "design") {
-            PlannedPoint(
-                "Nobody holds your rewards",
-                "There is no team wallet. Each block pays a member's own address " +
-                    "directly, so no coordinator ever holds funds that belong to you."
-            )
-            PlannedPoint(
-                "Turns follow contribution",
-                "Members submit partial solutions to show how much work they did. " +
-                    "Whoever is owed the most is named as the next block's recipient."
-            )
-            PlannedPoint(
-                "Payouts even out over time",
-                "Whole blocks rotate rather than being split, so short-term earnings " +
-                    "are uneven and only average out across many blocks."
-            )
-            PlannedPoint(
-                "Built for people who know each other",
-                "A member who finds a block could rewrite it to pay themselves. The " +
-                    "team sees it happened and removes them, but nothing at protocol " +
-                    "level can prevent it."
-            )
-        }
-
-        // ── What works today ─────────────────────────────────────────────
-        Panel(title = "Today", meta = "solo mining") {
-            KeyValueRow("Block reward", "12 ZKA to whoever mines the block")
-            KeyValueRow("Blocks you mined", ui.mining.blocksMined.toString())
-            KeyValueRow("Total rewards", "${ui.mining.totalRewards} ZKA")
-            KeyValueRow("Your mining", if (soloMining) "running" else "stopped")
-            KeyValueRow("Node", if (ui.localRpcOnline) "online" else "offline")
-        }
-    }
-}
-
-/** How much of the machine to hand to the team. */
-private enum class PowerLevel(
-    val label: String,
-    val explanation: String
-) {
-    Low(
-        "Low",
-        "About a quarter of your cores. Leaves the machine comfortable for everyday use."
-    ),
-    Normal(
-        "Normal",
-        "About half your cores. A balance between contributing and keeping the machine responsive."
-    ),
-    Max(
-        "Max",
-        "Every core. Fastest contribution, and the machine will feel it."
-    );
-
-    /** Cores this level allocates, never zero and never above what exists. */
-    fun coresFrom(available: Int): Int = when (this) {
-        Low -> (available / 4).coerceAtLeast(1)
-        Normal -> (available / 2).coerceAtLeast(1)
-        Max -> available
     }
 }
 
 @Composable
-private fun PlannedPoint(title: String, body: String) {
+private fun RiskPanel(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Panel(title = "Understand the payout model", meta = "required before joining") {
+        TeamRiskLine(
+            "Rewards are statistical",
+            "Whole block rewards rotate by contributed work. A short run can be very uneven; " +
+                "the result only converges toward your share over many blocks."
+        )
+        TeamRiskLine(
+            "Hijacking is detectable, not preventable",
+            "A member who finds a valid block can rewrite its coinbase to pay themselves. The " +
+                "team detects that receiver and expels the signed member when attributable, " +
+                "but the wider network must still accept an otherwise-valid block."
+        )
+        TeamRiskLine(
+            "Mine with people you know",
+            "There is no team wallet, fee, escrow or recovery desk. The coordinator tracks work " +
+                "and templates; it never holds your reward keys."
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+            Text(
+                "I understand the uneven payouts and hijack limitation.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun TeamRiskLine(title: String, body: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
         Text(
             body,
             style = MaterialTheme.typography.bodySmall,
@@ -254,6 +318,226 @@ private fun PlannedPoint(title: String, body: String) {
         )
     }
 }
+
+@Composable
+private fun TeamIdentityPanel(status: TeamMiningStatus, team: MiningTeam) {
+    val role = when (status.localAddress) {
+        team.coordinator -> "coordinator"
+        team.backupCoordinator -> "backup coordinator"
+        else -> "member"
+    }
+    Panel(title = "Your team", meta = role) {
+        CopyableKeyValueRow("Invite code", team.inviteCode)
+        CopyableKeyValueRow("Team id", team.teamId)
+        KeyValueRow("Epoch / revision", "${team.epoch} / ${team.revision}")
+        KeyValueRow("Confirmed team blocks", team.confirmedBlocks.toString())
+        team.activeTemplate?.let {
+            KeyValueRow("Current block", it.height.toString())
+            CopyableKeyValueRow("Assigned coinbase", it.recipientAddress)
+            KeyValueRow("Network difficulty", "${it.networkDifficultyBits} bits")
+        } ?: HintText("The coordinator will publish a template while Team Mining is running.")
+        team.lastHijackedRecipient?.let {
+            ErrorText("Last hijacked coinbase receiver: $it")
+        }
+    }
+}
+
+@Composable
+private fun MiningControlPanel(
+    status: TeamMiningStatus,
+    team: MiningTeam,
+    powerLevel: PowerLevel,
+    availableCores: Int,
+    contributedCores: Int,
+    actionBusy: String?,
+    onPowerLevel: (PowerLevel) -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
+    Panel(
+        title = "Power to contribute",
+        meta = when {
+            status.hashing -> "hashing"
+            status.enabled -> "waiting for template"
+            else -> "stopped"
+        }
+    ) {
+        SegmentedSelector(
+            options = PowerLevel.entries.map { it.label },
+            selected = powerLevel.label,
+            onSelect = { picked ->
+                onPowerLevel(PowerLevel.entries.first { it.label == picked })
+            },
+            enabled = !status.enabled && actionBusy == null,
+            modifier = Modifier.fillMaxWidth()
+        )
+        MeterBar(
+            fraction = contributedCores.toFloat() / availableCores.toFloat(),
+            accent = MetricAccent.Blue,
+            dimmed = false
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            LegendDot("$contributedCores team", MetricAccent.Blue)
+            LegendDot("${availableCores - contributedCores} free", MetricAccent.Neutral)
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (status.enabled) {
+                OutlinedButton(onClick = onStop, enabled = actionBusy == null) {
+                    Text("Stop Team Mining")
+                }
+            } else {
+                Button(
+                    onClick = onStart,
+                    enabled = actionBusy == null,
+                    colors = zButtonColors()
+                ) {
+                    Text("Start Team Mining")
+                }
+            }
+            ActionProgress(actionBusy)
+        }
+        val local = team.members[status.localAddress]
+        KeyValueRow("Assigned share target", "${local?.shareDifficultyBits ?: 0} bits")
+        KeyValueRow("Accepted work", (local?.totalWork ?: 0).toString())
+        HintText(
+            "Share difficulty adjusts automatically for a steady submission rate. Team " +
+                "Mining takes precedence over solo mining on this same fullnode."
+        )
+    }
+}
+
+@Composable
+private fun MembersPanel(status: TeamMiningStatus, team: MiningTeam) {
+    val members = team.members.values.sortedWith(
+        compareByDescending<com.zsilent.core.models.TeamMiningMember> {
+            it.active && !it.expelled
+        }.thenBy { it.address }
+    )
+    Panel(
+        title = "Members",
+        meta = "${members.count { it.active && !it.expelled }} active"
+    ) {
+        if (members.isEmpty()) {
+            EmptyState("No members have been synchronized yet.")
+        } else {
+            members.forEach { member ->
+                val roles = buildList {
+                    if (member.address == status.localAddress) add("you")
+                    if (member.address == team.coordinator) add("coordinator")
+                    if (member.address == team.backupCoordinator) add("backup")
+                    if (member.expelled) add("expelled")
+                    else if (!member.active) add("inactive")
+                }
+                KeyValueRow(
+                    shortAddress(member.address),
+                    listOf(
+                        roles.joinToString(", ").ifBlank { "member" },
+                        formatHashrate(member.estimatedHashrateHps),
+                        "${member.acceptedShares} shares",
+                        "${member.blocksPaid} paid"
+                    ).joinToString(" · ")
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamExitPanel(
+    status: TeamMiningStatus,
+    actionBusy: String?,
+    onLeave: () -> Unit
+) {
+    val coordinator = status.team?.coordinator == status.localAddress
+    Panel(title = "Membership", meta = if (coordinator) "coordinator" else "member") {
+        OutlinedButton(
+            onClick = onLeave,
+            enabled = !coordinator && actionBusy == null
+        ) {
+            Text("Leave team")
+        }
+        HintText(
+            if (coordinator) {
+                "The coordinator cannot leave abruptly because that would discard the handoff. " +
+                    "Stop Team Mining; the signed backup promotes automatically after the timeout " +
+                    "if this node goes offline."
+            } else {
+                "Leaving sends a signed request to the coordinator. Keep both nodes online until " +
+                    "your membership disappears from this screen."
+            }
+        )
+    }
+}
+
+@Composable
+private fun LoadingPanel() {
+    Panel(title = "Connecting to Team Mining", meta = "local node") {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text("Reading team state…", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun NodeOfflinePanel() {
+    Panel(title = "Local node offline", meta = "waiting") {
+        EmptyState("Start the local Zoka node. Team Mining never uses a third-party RPC.")
+    }
+}
+
+@Composable
+private fun UnsupportedNodePanel() {
+    Panel(title = "Node update required", meta = "unsupported") {
+        ErrorText("This node does not expose /team-mining/status.")
+        HintText(
+            "Rebuild and restart the local node from the matching release. A 404 here means " +
+                "the running binary predates Team Mining; it is not an empty team."
+        )
+    }
+}
+
+@Composable
+private fun ActionProgress(actionBusy: String?) {
+    if (actionBusy != null) {
+        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+    }
+}
+
+/** How much of the machine to contribute to the team worker. */
+private enum class PowerLevel(val label: String) {
+    Low("Low"),
+    Normal("Normal"),
+    Max("Max");
+
+    fun coresFrom(available: Int): Int = when (this) {
+        Low -> (available / 4).coerceAtLeast(1)
+        Normal -> (available / 2).coerceAtLeast(1)
+        Max -> available
+    }
+}
+
+private sealed interface TeamMiningFeed {
+    data object Loading : TeamMiningFeed
+    data object NodeOffline : TeamMiningFeed
+    data object Unsupported : TeamMiningFeed
+    data class Loaded(val status: TeamMiningStatus) : TeamMiningFeed
+    data class Failed(val message: String) : TeamMiningFeed
+}
+
+private fun shortAddress(address: String): String =
+    if (address.length <= 20) address
+    else "${address.take(10)}…${address.takeLast(8)}"
 
 /** Hashes per second in the largest unit that keeps the figure readable. */
 private fun formatHashrate(hps: Long): String = when {

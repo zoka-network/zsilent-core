@@ -171,13 +171,17 @@ fun ZSilentApp(appState: ZSilentAppState) {
                         AppSection.Receive   -> ReceiveScreen(uiState, appState)
                         AppSection.Node      -> NodeScreen(uiState, appState)
                         AppSection.Mining    -> MiningScreen(uiState, appState)
-                        AppSection.MiningPool  -> MiningPoolScreen(uiState, appState)
-                        AppSection.P2PExchange -> P2PExchangeScreen(uiState, appState)
+                        // Las tres secciones opcionales son opt-in. Si el
+                        // interruptor se apaga desde otra superficie, el router
+                        // no puede seguir renderizando una sección que la
+                        // sidebar ya no lista.
+                        AppSection.MiningPool  ->
+                            if (uiState.teamMiningEnabled) MiningPoolScreen(uiState, appState)
+                            else DashboardScreen(uiState, appState)
+                        AppSection.P2PExchange ->
+                            if (uiState.p2pExchangeEnabled) P2PExchangeScreen(uiState, appState)
+                            else DashboardScreen(uiState, appState)
                         AppSection.Explorer    ->
-                            // Reachable only while the opt-in holds; if it is
-                            // switched off from another surface the router must
-                            // not keep rendering a section the sidebar no longer
-                            // lists.
                             if (uiState.explorerEnabled) ExplorerScreen(uiState, appState)
                             else DashboardScreen(uiState, appState)
                         AppSection.Privacy   -> PrivacyScreen(uiState, appState)
@@ -273,6 +277,8 @@ private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
     AppSection.entries.filter { section ->
         when (section) {
             AppSection.Explorer -> uiState.explorerEnabled
+            AppSection.P2PExchange -> uiState.p2pExchangeEnabled
+            AppSection.MiningPool -> uiState.teamMiningEnabled
             else -> true
         }
     }
