@@ -92,6 +92,14 @@ import com.zsilent.core.models.SendResult
 import com.zsilent.core.models.ServiceStatus
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
+import com.zsilent.core.ui.theme.ZTheme
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.PowerSettingsNew
+import com.zsilent.core.ui.components.ZButton
+import com.zsilent.core.ui.components.ZButtonVariant
+import com.zsilent.core.ui.components.ZButtonText
+import com.zsilent.core.ui.components.Pill
+import com.zsilent.core.ui.components.ZTone
 import com.zsilent.core.ui.components.CopyIconButton
 import com.zsilent.core.ui.components.CopyableKeyValueRow
 import com.zsilent.core.ui.components.EmptyState
@@ -240,6 +248,8 @@ fun DashboardScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             }
         }
 
+        DashboardActions(ui, appState)
+
         com.zsilent.core.ui.onboarding.NoirSection(
             title = "Recent private activity",
             meta = "last 5"
@@ -263,6 +273,63 @@ fun DashboardScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Fila de acciones del Dashboard, portada del prototipo.
+ *
+ * ZSilent no tenía ninguna: para arrancar el nodo, el minero o Tor había que
+ * navegar a Node, Mining o Privacy. El prototipo las pone acá porque son las
+ * tres cosas que uno quiere hacer apenas abre la app.
+ *
+ * El minero queda deshabilitado si el nodo no está `Online` — minar sin nodo no
+ * hace nada, y un botón que acepta el clic y no produce efecto se lee como un
+ * bug. El motivo se muestra al lado en vez de dejar el botón mudo.
+ */
+@Composable
+private fun DashboardActions(ui: ZSilentUiState, appState: ZSilentAppState) {
+    val nodeOnline = ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Online
+    val nodeBusy = ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Starting ||
+        ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Stopping
+    val mining = ui.mining.running
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ZButton(
+            onClick = { if (nodeOnline) appState.stopNode() else appState.startNode() },
+            variant = ZButtonVariant.Accent,
+            enabled = !nodeBusy,
+        ) {
+            Icon(Icons.Outlined.PowerSettingsNew, null, modifier = Modifier.size(14.dp))
+            ZButtonText(if (nodeOnline) "Stop node" else "Start node")
+        }
+        ZButton(
+            // Mismo default que usa ZSilentAppState cuando no hay una elección
+            // previa de hilos.
+            onClick = {
+                if (mining) appState.stopMining()
+                else appState.startMining(ui.mining.availableCpuThreads.coerceAtLeast(1))
+            },
+            variant = ZButtonVariant.Outline,
+            enabled = nodeOnline,
+        ) {
+            Icon(Icons.Outlined.Bolt, null, modifier = Modifier.size(14.dp))
+            ZButtonText(if (mining) "Stop miner" else "Start miner")
+        }
+        ZButton(
+            onClick = { appState.setTorEnabled(!ui.torEnabled) },
+            variant = ZButtonVariant.Outline,
+        ) {
+            Icon(Icons.Outlined.Security, null, modifier = Modifier.size(14.dp))
+            ZButtonText(if (ui.torEnabled) "Disable Tor" else "Enable Tor")
+        }
+        if (!nodeOnline && !nodeBusy) {
+            Pill("node offline — miner disabled", ZTone.Warn)
         }
     }
 }
@@ -1037,7 +1104,7 @@ private fun BlackIconButton(icon: androidx.compose.ui.graphics.vector.ImageVecto
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .size(34.dp)
-            .background(androidx.compose.ui.graphics.Color(0xFF050506), shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest, shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -1443,7 +1510,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         }
                     )
                     ui.sendFeeEstimate?.let { fee ->
-                        Row(Modifier.fillMaxWidth().background(Color(0xFF3C3E44), RoundedCornerShape(10.dp)).padding(12.dp),
+                        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(10.dp)).padding(12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Estimated fee", color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
                             Text(fee.fee, color = com.zsilent.core.ui.onboarding.NoirText, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -1505,23 +1572,23 @@ private fun SendSuccessPanel(
         Box(
             modifier = Modifier
                 .size(88.dp)
-                .background(Color(0xFF4CAF50).copy(alpha = 0.12f), CircleShape)
-                .border(BorderStroke(2.dp, Color(0xFF4CAF50).copy(alpha = 0.4f)), CircleShape),
+                .background(ZTheme.semantics.success.copy(alpha = 0.12f), CircleShape)
+                .border(BorderStroke(2.dp, ZTheme.semantics.success.copy(alpha = 0.4f)), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
                     .size(64.dp)
-                    .background(Color(0xFF4CAF50), CircleShape)
+                    .background(ZTheme.semantics.success, CircleShape)
                     .graphicsLayer(scaleX = checkScale.value, scaleY = checkScale.value),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Outlined.CheckCircle, null, tint = Color.White, modifier = Modifier.size(40.dp))
+                Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(40.dp))
             }
         }
 
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Transfer sent!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+            Text("Transfer sent!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ZTheme.semantics.success)
             Text("Private · Zero-knowledge · Broadcasting to network",
                 color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
         }
@@ -1585,9 +1652,9 @@ private fun SendingPanel() {
 @Composable
 private fun SendActivityRow(tx: com.zsilent.core.models.WalletHistoryEntry) {
     val statusColor = when (tx.status.lowercase()) {
-        "confirmed", "finalized" -> Color(0xFF2E7D32)
-        "pending"                -> Color(0xFFF57C00)
-        "failed"                 -> Color(0xFFD32F2F)
+        "confirmed", "finalized" -> ZTheme.semantics.success
+        "pending"                -> ZTheme.semantics.warning
+        "failed"                 -> ZTheme.semantics.danger
         else                     -> com.zsilent.core.ui.onboarding.NoirTextMuted
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -1664,9 +1731,9 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         !miningOwnsLocalState
     val canStopNode = ui.nodeStatus == ServiceStatus.Online || ui.nodeStatus == ServiceStatus.Starting
     val nodeSwitchEnabled = if (nodeOn) canStopNode else canStartNode
-    val dotOn = Color(0xFF22C55E)
-    val dotWarming = Color(0xFFEAB308)
-    val dotOff = Color(0xFF722F37)
+    val dotOn = ZTheme.semantics.success
+    val dotWarming = ZTheme.semantics.warning
+    val dotOff = MaterialTheme.colorScheme.onSurfaceVariant
     val nodeDotColor = when {
         nodeFullyOn -> dotOn
         nodeWarming -> dotWarming
@@ -1891,9 +1958,9 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             val nodeOnline = ui.nodeStatus == ServiceStatus.Online
             val miningPrereqs = nodeOnline && ui.miningSyncReady
             val miningSwitchEnabled = if (miningOn) canStopMining else (canStart && miningPrereqs)
-            val dotColorOn = Color(0xFF22C55E)
-            val dotColorWarming = Color(0xFFEAB308)
-            val dotColorOff = Color(0xFF722F37)
+            val dotColorOn = ZTheme.semantics.success
+            val dotColorWarming = ZTheme.semantics.warning
+            val dotColorOff = MaterialTheme.colorScheme.onSurfaceVariant
             val miningDotColor = when {
                 miningFaulted -> dotColorOff
                 miningFullyOn -> dotColorOn
@@ -2208,19 +2275,20 @@ fun LogsScreen(ui: ZSilentUiState) {
     }
 }
 
+/**
+ * Color del prefijo `[FUENTE]` en los logs.
+ *
+ * Antes cada fuente tenía su propio matiz (amarillo, verde, azul, violeta,
+ * rosa). En una paleta acromática eso no tiene dónde ir, y además el prototipo
+ * no colorea por fuente sino por NIVEL: `[FUENTE]` va siempre en muted y el
+ * color lo lleva INFO/SUCCESS/WARNING/ERROR.
+ *
+ * Acá se neutraliza. La coloración por nivel llega en la etapa 13, que es la
+ * que porta la pantalla de Logs completa.
+ */
 @Composable
-private fun logSourceColor(source: String): Color {
-    return when (source.lowercase()) {
-        "mining" -> Color(0xFFEAB308)
-        "node" -> Color(0xFF22C55E)
-        "wallet" -> Color(0xFF79A7FF)
-        "sync" -> MaterialTheme.colorScheme.tertiary
-        "privacy" -> Color(0xFFA78BFA)
-        "send" -> Color(0xFFFB7185)
-        "system", "app" -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-}
+private fun logSourceColor(source: String): Color =
+    MaterialTheme.colorScheme.onSurfaceVariant
 
 private fun logCategoryLabel(source: String): String {
     return "[${source.ifBlank { "runtime" }.uppercase()}]"

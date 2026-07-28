@@ -33,7 +33,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 2 | Intro (pantalla nueva) | ⬜ pendiente — ver nota de orden |
 | 3 | Login | ✅ hecha |
 | 4 | Shell de navegación | ✅ hecha |
-| 5 | Dashboard | ⬜ pendiente |
+| 5 | Dashboard | ✅ hecha |
 | 6 | Wallet (+ Send, Receive) | ⬜ pendiente |
 | 7 | Node | ⬜ pendiente |
 | 8 | Mining | ⬜ pendiente |
@@ -659,7 +659,49 @@ cambiar de sección reanima.
 
 ---
 
-## Etapa 5 — Dashboard
+## Etapa 5 — Dashboard ✅
+
+### Cómo quedó
+
+**Se llegó a cero colores literales en todo el módulo.** Los últimos 20 vivían en
+`Screens.kt` y se limpiaron en esta etapa. Ya no queda ningún punto conocido
+donde el tema claro se rompa.
+
+**Se agregó la fila de acciones del prototipo**, que ZSilent no tenía: arrancar y
+parar el nodo, el minero y Tor desde el propio Dashboard. Antes había que navegar
+a Node, Mining o Privacy para cada cosa. El botón del minero queda deshabilitado
+si el nodo no está `Online` — minar sin nodo no hace nada — y el motivo se
+muestra en una pill al lado, en vez de dejar un botón mudo que acepta el clic sin
+efecto.
+
+### Tres colores que estaban mal, no solo fuera del tema
+
+`#2E7D32` es el verde 800 de Material, un verde **diseñado para fondo claro**. Se
+usaba en dos lugares: el titular "Transfer sent!" del panel de éxito y el estado
+`confirmed` de las transacciones. Sobre el fondo casi negro quedaba oscuro y sin
+contraste — justo en la pantalla que confirma que mandaste plata, que es donde
+más claridad hace falta.
+
+`#722F37` era el punto de estado "apagado": un granate oscuro, prácticamente
+invisible sobre negro. Aparecía dos veces, en el Dashboard y en la pantalla de
+Mining.
+
+Los dos ahora salen de `ZTheme.semantics`, que sí tiene versiones distintas para
+claro y oscuro.
+
+### Coloreado de logs: cambio de criterio
+
+`logSourceColor` daba un matiz propio a cada fuente — amarillo para mining, verde
+para node, azul para wallet, violeta para privacy, rosa para send. En una paleta
+acromática eso no tiene dónde ir, y además **el prototipo no colorea por fuente
+sino por nivel**: `[FUENTE]` va siempre en muted y el color lo lleva
+`INFO`/`SUCCESS`/`WARNING`/`ERROR`.
+
+Se neutralizó por ahora. La coloración por nivel llega en la etapa 13, que porta
+la pantalla de Logs completa. Es una pérdida temporal de información — queda
+anotado para no olvidarlo.
+
+### Referencia del prototipo
 
 Prototipo: `sections/Dashboard.tsx` (192).
 ZSilent: `Screens.kt:118` `DashboardScreen`, con `DashboardMetricStripNoir`,
