@@ -5,9 +5,9 @@ import kotlinx.serialization.Serializable
 
 enum class AppSection {
     Dashboard,
+    // Send y Receive dejaron de ser secciones: viven como pestañas dentro de
+    // Wallet, igual que en el prototipo. Ver docs/GUIA_CAMBIO_VISUAL.md, D3.
     Wallet,
-    Send,
-    Receive,
     Node,
     Mining,
     MiningPool,

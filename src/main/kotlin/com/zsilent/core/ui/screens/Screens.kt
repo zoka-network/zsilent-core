@@ -92,6 +92,7 @@ import com.zsilent.core.models.SendResult
 import com.zsilent.core.models.ServiceStatus
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
+import androidx.compose.material3.HorizontalDivider
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -704,9 +705,79 @@ private fun SparklineChart(
     }
 }
 
+/**
+ * Contenedor de sección que se puede embeber.
+ *
+ * `ScreenScaffold` aporta fondo, scroll y relleno de pantalla completa. Cuando
+ * Send y Receive se renderizan como pestañas dentro de Wallet, ese cromo ya lo
+ * pone el shell de Wallet: anidarlo daría doble scroll y doble relleno.
+ */
+@Composable
+private fun EmbeddableShell(
+    embedded: Boolean,
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit
+) {
+    if (embedded) {
+        Column(
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+        ) { content() }
+    } else {
+        ScreenScaffold(title, subtitle) { content() }
+    }
+}
+
 private enum class WalletPage {
     Home,
-    Create
+    Create,
+    Send,
+    Receive
+}
+
+/**
+ * Fila de pestañas del Wallet: subrayado de 2dp bajo la activa, etiqueta en mono
+ * mayúscula con tracking, como en el prototipo.
+ */
+@Composable
+private fun WalletTabs(selected: WalletPage, onSelect: (WalletPage) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val tabs = listOf(
+        WalletPage.Home to "overview",
+        WalletPage.Send to "send",
+        WalletPage.Receive to "receive",
+    )
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth()) {
+            tabs.forEach { (page, label) ->
+                val active = selected == page
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clickable { onSelect(page) }
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Text(
+                        label.uppercase(),
+                        style = ZTheme.text.eyebrow,
+                        color = if (active) scheme.onSurface else scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(
+                                if (active) scheme.primary else Color.Transparent,
+                                RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
+                            )
+                    )
+                }
+            }
+        }
+        HorizontalDivider(color = scheme.outlineVariant)
+    }
 }
 
 @Composable
@@ -738,13 +809,27 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "Wallet",
-        title = if (walletPage == WalletPage.Create) "Add wallet" else "Your accounts",
-        subtitle = if (walletPage == WalletPage.Create) {
-            "Create an additional private account inside ZSilent Core."
-        } else {
-            "Manage private wallets without exposing keys."
+        title = when (walletPage) {
+            WalletPage.Create -> "Add wallet"
+            WalletPage.Send -> "Send"
+            WalletPage.Receive -> "Receive"
+            WalletPage.Home -> "Your accounts"
+        },
+        subtitle = when (walletPage) {
+            WalletPage.Create -> "Create an additional private account inside ZSilent Core."
+            WalletPage.Send -> "Private zero-knowledge transfer."
+            WalletPage.Receive -> "Show a receive address and QR code."
+            WalletPage.Home -> "Manage private wallets without exposing keys."
         }
     ) {
+        // Pestañas del prototipo. Send y Receive dejaron de ser secciones del
+        // menú (D3) y viven acá. `Create` no es una pestaña: es una subpágina a
+        // la que se llega desde Home, así que no aparece en la fila.
+        WalletTabs(
+            selected = walletPage,
+            onSelect = { walletPage = it },
+        )
+
         Crossfade(
             targetState = walletPage,
             animationSpec = tween(180),
@@ -843,6 +928,8 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
                     }
 
+                    WalletPage.Send -> SendScreen(ui, appState, embedded = true)
+                    WalletPage.Receive -> ReceiveScreen(ui, appState, embedded = true)
                     WalletPage.Create -> {
                         OutlinedButton(
                             colors = zOutlinedButtonColors(),
@@ -1327,7 +1414,7 @@ private fun truncateAddressForHero(addr: String): String {
 }
 
 @Composable
-fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
+fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean = false) {
     var fromWallet  by remember { mutableStateOf("") }
     var address     by remember { mutableStateOf("") }
     var amount      by remember { mutableStateOf("") }
@@ -1348,7 +1435,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
     }
 
-    ScreenScaffold("Send", "Private zero-knowledge transfer.") {
+    EmbeddableShell(embedded, "Send", "Private zero-knowledge transfer.") {
         when {
             // ── SUCCESS ────────────────────────────────────────────────────
             ui.sendResult != null -> {
@@ -1678,8 +1765,8 @@ private fun SendActivityRow(tx: com.zsilent.core.models.WalletHistoryEntry) {
 }
 
 @Composable
-fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
-    ScreenScaffold("Receive", "Show a receive address and QR code.") {
+fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean = false) {
+    EmbeddableShell(embedded, "Receive", "Show a receive address and QR code.") {
         Panel(title = "Wallet selector", meta = "${ui.wallets.size} accounts") {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 ui.wallets.forEach { wallet ->

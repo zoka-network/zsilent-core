@@ -31,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CurrencyExchange
@@ -41,7 +40,6 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Terminal
@@ -85,8 +83,6 @@ import com.zsilent.core.ui.screens.NodeScreen
 import com.zsilent.core.ui.screens.OnboardingScreen
 import com.zsilent.core.ui.screens.P2PExchangeScreen
 import com.zsilent.core.ui.screens.PrivacyScreen
-import com.zsilent.core.ui.screens.ReceiveScreen
-import com.zsilent.core.ui.screens.SendScreen
 import com.zsilent.core.ui.screens.SettingsScreen
 import com.zsilent.core.ui.screens.WalletScreen
 
@@ -108,7 +104,7 @@ private enum class NavGroup(val label: String) {
 
 private val AppSection.group: NavGroup
     get() = when (this) {
-        AppSection.Dashboard, AppSection.Wallet, AppSection.Send, AppSection.Receive -> NavGroup.Core
+        AppSection.Dashboard, AppSection.Wallet -> NavGroup.Core
         AppSection.Node, AppSection.Mining, AppSection.MiningPool, AppSection.P2PExchange -> NavGroup.Network
         AppSection.Explorer, AppSection.Privacy, AppSection.Logs -> NavGroup.Insight
         AppSection.Settings -> NavGroup.System
@@ -167,8 +163,6 @@ fun ZSilentApp(appState: ZSilentAppState) {
                     when (section) {
                         AppSection.Dashboard -> DashboardScreen(uiState, appState)
                         AppSection.Wallet    -> WalletScreen(uiState, appState)
-                        AppSection.Send      -> SendScreen(uiState, appState)
-                        AppSection.Receive   -> ReceiveScreen(uiState, appState)
                         AppSection.Node      -> NodeScreen(uiState, appState)
                         AppSection.Mining    -> MiningScreen(uiState, appState)
                         // Las tres secciones opcionales son opt-in. Si el
@@ -548,8 +542,6 @@ private data class NavItem(val label: String, val icon: ImageVector)
 private fun AppSection.navItem(): NavItem = when (this) {
     AppSection.Dashboard -> NavItem("Dashboard", Icons.Outlined.Dashboard)
     AppSection.Wallet    -> NavItem("Wallet",    Icons.Outlined.AccountBalanceWallet)
-    AppSection.Send      -> NavItem("Send",      Icons.AutoMirrored.Outlined.Send)
-    AppSection.Receive   -> NavItem("Receive",   Icons.Outlined.QrCode)
     AppSection.Node      -> NavItem("Node",      Icons.Outlined.Memory)
     AppSection.Mining    -> NavItem("Mining",    Icons.Outlined.Bolt)
     AppSection.MiningPool  -> NavItem("Mining Pool",  Icons.Outlined.Groups)

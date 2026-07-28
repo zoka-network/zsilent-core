@@ -34,7 +34,7 @@ Esto es un cambio de capa de presentación exclusivamente.
 | 3 | Login | ✅ hecha |
 | 4 | Shell de navegación | ✅ hecha |
 | 5 | Dashboard | ✅ hecha |
-| 6 | Wallet (+ Send, Receive) | ⬜ pendiente |
+| 6 | Wallet (+ Send, Receive) | ✅ hecha |
 | 7 | Node | ⬜ pendiente |
 | 8 | Mining | ⬜ pendiente |
 | 9 | Mining Pool | ⬜ pendiente |
@@ -729,7 +729,48 @@ Al final, tres botones de acción: arrancar/parar nodo, arrancar/parar minero
 
 ---
 
-## Etapa 6 — Wallet, Send y Receive
+## Etapa 6 — Wallet, Send y Receive ✅
+
+### Cómo quedó
+
+**D3 aplicado.** `AppSection` baja de 12 a 10: se eliminaron `Send` y `Receive`.
+Ahora son pestañas dentro de Wallet (`overview` / `send` / `receive`), con el
+subrayado de 2dp en `accent` bajo la activa. `Create` no es pestaña — es una
+subpágina a la que se llega desde Home, así que no aparece en la fila.
+
+El enum y las pestañas cayeron en el mismo commit, como estaba planeado, para no
+dejar Send inalcanzable en el medio.
+
+**`EmbeddableShell`.** `ScreenScaffold` aporta fondo, scroll y relleno de pantalla
+completa. Al renderizar Send y Receive como pestañas dentro de Wallet, ese cromo
+ya lo pone el shell de Wallet: anidarlos daba doble scroll y doble relleno. Los
+dos aceptan ahora `embedded: Boolean = false`, y el helper elige entre el
+scaffold completo y una `Column` simple.
+
+### Antes de esta etapa: el merge
+
+Se mergeó `etapa2-p2p-ui-integration` primero, porque sin eso las etapas 9 y 10
+se habrían portado contra código viejo — faltaban 284 líneas de
+`MiningPoolScreen` y 240 de `P2PExchangeScreen`.
+
+**El merge destapó un bug que la resolución evitó.** `setDarkTheme`, escrito en la
+etapa 4, construía el `PersistedSetup` campo por campo copiando el patrón de
+`setExplorerEnabled`. Pero la otra rama le agregó **siete campos** al record:
+`p2pExchangeEnabled`, `teamMiningEnabled`, `p2pExchangeRisksAccepted` y los cuatro
+de Tron. Tras el merge, tocar el tema habría escrito los siete con su default:
+apagando el exchange, apagando team mining, re-mostrando la compuerta de riesgo y
+**devolviendo a mainnet a quien estuviera probando en Nile** — y `tronNetwork`
+decide si los trades se verifican contra plata real.
+
+Se verificó que `setDarkTheme` era la única de las nueve construcciones del
+archivo que omitía los campos nuevos. Ahora usa `persistCurrentSetup()`, el helper
+que introdujo la otra rama y que se mantiene correcto cuando el record crece.
+
+**Lección para las etapas que quedan:** no construir `PersistedSetup` a mano
+nunca más. Siempre `persistCurrentSetup()`.
+
+### Referencia del prototipo
+
 
 Prototipo: `sections/Wallet.tsx` (293), con `Send()` y `Receive()` dentro.
 ZSilent: `Screens.kt:646` `WalletScreen`, `:1263` `SendScreen`, `:1614`
