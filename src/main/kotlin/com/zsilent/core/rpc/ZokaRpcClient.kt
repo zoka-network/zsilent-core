@@ -206,6 +206,10 @@ class ZokaRpcClient(val baseUrl: String) {
     suspend fun leaveMiningTeam(): TeamMiningStatus =
         postTeamMining("/team-mining/leave")
 
+    /** Disuelve el equipo. Solo el coordinador puede; el resto usa leave. */
+    suspend fun disbandMiningTeam(): TeamMiningStatus =
+        postTeamMining("/team-mining/disband")
+
     suspend fun startTeamMining(threads: Int): TeamMiningStatus =
         postTeamMining(
             "/team-mining/start",

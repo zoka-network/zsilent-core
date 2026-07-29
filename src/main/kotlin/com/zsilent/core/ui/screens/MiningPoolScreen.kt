@@ -46,6 +46,12 @@ import androidx.compose.foundation.background
 import com.zsilent.core.ui.components.PanelHeader
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import com.zsilent.core.ui.components.ZButton
+import com.zsilent.core.ui.components.ZButtonSize
+import com.zsilent.core.ui.components.ZButtonText
+import com.zsilent.core.ui.components.ZButtonVariant
 import com.zsilent.core.ui.components.Pill
 import com.zsilent.core.ui.components.ZTone
 import com.zsilent.core.ui.components.MetricAccent
@@ -72,7 +78,6 @@ import kotlinx.coroutines.withContext
 fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     var feed by remember { mutableStateOf<TeamMiningFeed>(TeamMiningFeed.Loading) }
     var inviteCode by remember { mutableStateOf("") }
-    var risksUnderstood by remember { mutableStateOf(false) }
     var powerLevel by remember { mutableStateOf(PowerLevel.Normal) }
     var actionBusy by remember { mutableStateOf<String?>(null) }
     var actionError by remember { mutableStateOf<String?>(null) }
@@ -188,10 +193,7 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         // ingles. La distincion entre dato real y simulado sigue viva en las
         // pills de cada metrica.
 
-        RiskPanel(
-            checked = risksUnderstood,
-            onCheckedChange = { risksUnderstood = it }
-        )
+        HowTeamMiningWorks()
 
         if (status != null && team == null) {
             Panel(
@@ -222,7 +224,7 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                                 appState.localRpc.createMiningTeam()
                             }
                         },
-                        enabled = risksUnderstood && actionBusy == null,
+                        enabled = actionBusy == null,
                         colors = zButtonColors()
                     ) {
                         Text("Create team")
@@ -233,7 +235,7 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                                 appState.localRpc.joinMiningTeam(inviteCode)
                             }
                         },
-                        enabled = risksUnderstood &&
+                        enabled =
                             inviteCode.isNotBlank() &&
                             actionBusy == null
                     ) {
@@ -290,46 +292,57 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     runAction("Leave request sent.") {
                         appState.localRpc.leaveMiningTeam()
                     }
+                },
+                onDisband = {
+                    runAction("Team disbanded.") {
+                        appState.localRpc.disbandMiningTeam()
+                    }
                 }
             )
         }
     }
 }
 
+/**
+ * Tira "como funciona el team mining", en el formato compacto del prototipo.
+ *
+ * Antes esto era una compuerta con checkbox que bloqueaba crear y unirse. Se
+ * saco el bloqueo, pero **no** el contenido: el punto del hijacking describe un
+ * ataque que el protocolo detecta y no puede prevenir, y esconderlo antes de que
+ * alguien ponga su hashrate en un equipo ajeno seria dejarlo entrar a ciegas.
+ */
 @Composable
-private fun RiskPanel(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Panel(title = "Understand the payout model", meta = "required before joining") {
-        TeamRiskLine(
-            "Rewards are statistical",
-            "Whole block rewards rotate by contributed work. A short run can be very uneven; " +
-                "the result only converges toward your share over many blocks."
-        )
-        TeamRiskLine(
-            "Hijacking is detectable, not preventable",
-            "A member who finds a valid block can rewrite its coinbase to pay themselves. The " +
-                "team detects that receiver and expels the signed member when attributable, " +
-                "but the wider network must still accept an otherwise-valid block."
-        )
-        TeamRiskLine(
-            "Mine with people you know",
-            "There is no team wallet, fee, escrow or recovery desk. The coordinator tracks work " +
-                "and templates; it never holds your reward keys."
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-            Text(
-                "I understand the uneven payouts and hijack limitation.",
-                style = MaterialTheme.typography.bodySmall
+private fun HowTeamMiningWorks() {
+    Panel(title = "How team mining works", meta = "read before joining") {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+        ) {
+            TeamRiskLine(
+                "01  Rewards are statistical",
+                "Whole block rewards rotate by contributed work. A short run can be very " +
+                    "uneven; it only converges toward your share over many blocks.",
+                Modifier.weight(1f)
+            )
+            TeamRiskLine(
+                "02  Hijacking is detectable, not preventable",
+                "A member who finds a valid block can rewrite its coinbase to pay themselves. " +
+                    "The team detects it and expels them, but the network still accepts an " +
+                    "otherwise-valid block.",
+                Modifier.weight(1f)
+            )
+            TeamRiskLine(
+                "03  Mine with people you know",
+                "No team wallet, fee, escrow or recovery desk. The coordinator tracks work and " +
+                    "templates; it never holds your reward keys.",
+                Modifier.weight(1f)
             )
         }
     }
 }
 
 @Composable
-private fun TeamRiskLine(title: String, body: String) {
+private fun TeamRiskLine(title: String, body: String, modifier: Modifier = Modifier) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
             title,
@@ -527,26 +540,88 @@ private fun MembersPanel(status: TeamMiningStatus, team: MiningTeam) {
 private fun TeamExitPanel(
     status: TeamMiningStatus,
     actionBusy: String?,
-    onLeave: () -> Unit
+    onLeave: () -> Unit,
+    onDisband: () -> Unit,
 ) {
     val coordinator = status.team?.coordinator == status.localAddress
+    val successor = status.team?.backupCoordinator
+    var confirmDisband by remember { mutableStateOf(false) }
+
     Panel(title = "Membership", meta = if (coordinator) "coordinator" else "member") {
-        OutlinedButton(
-            onClick = onLeave,
-            enabled = !coordinator && actionBusy == null
-        ) {
-            Text("Leave team")
+        if (!coordinator) {
+            ZButton(
+                onClick = onLeave,
+                variant = ZButtonVariant.Outline,
+                enabled = actionBusy == null,
+            ) { ZButtonText("Leave team") }
+            HintText(
+                "Leaving sends a signed request to the coordinator. Keep both nodes online " +
+                    "until your membership disappears from this screen."
+            )
+            return@Panel
         }
+
+        // Coordinador: salir traspasa la coordinacion al backup. Disolver es un
+        // camino aparte y con confirmacion, porque afecta a todo el equipo y no
+        // solo a quien lo pulsa.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ZButton(
+                onClick = onLeave,
+                variant = ZButtonVariant.Outline,
+                enabled = successor != null && actionBusy == null,
+            ) { ZButtonText("Hand over and leave") }
+            ZButton(
+                onClick = { confirmDisband = true },
+                variant = ZButtonVariant.Danger,
+                enabled = actionBusy == null,
+            ) { ZButtonText("Disband team") }
+        }
+
         HintText(
-            if (coordinator) {
-                "The coordinator cannot leave abruptly because that would discard the handoff. " +
-                    "Stop Team Mining; the signed backup promotes automatically after the timeout " +
-                    "if this node goes offline."
+            if (successor != null) {
+                "Leaving promotes the backup coordinator and you stay out as a regular member. " +
+                    "The team keeps mining."
             } else {
-                "Leaving sends a signed request to the coordinator. Keep both nodes online until " +
-                    "your membership disappears from this screen."
+                "There is nobody to hand over to yet, so leaving is not possible. Disbanding is " +
+                    "the only way out while you are alone in the team."
             }
         )
+
+        if (confirmDisband) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        ZTheme.semantics.danger.copy(alpha = 0.08f),
+                        MaterialTheme.shapes.small
+                    )
+                    .border(
+                        BorderStroke(1.dp, ZTheme.semantics.danger.copy(alpha = 0.3f)),
+                        MaterialTheme.shapes.small
+                    )
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ErrorText("Disband this team?")
+                HintText(
+                    "The team code stops working and every member loses the group. Creating a " +
+                        "team again gives you a NEW code — this one is not recoverable, so anyone " +
+                        "holding it will not be able to rejoin."
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ZButton(
+                        onClick = { confirmDisband = false },
+                        variant = ZButtonVariant.Ghost,
+                        size = ZButtonSize.Small,
+                    ) { ZButtonText("Cancel") }
+                    ZButton(
+                        onClick = { confirmDisband = false; onDisband() },
+                        variant = ZButtonVariant.Danger,
+                        size = ZButtonSize.Small,
+                    ) { ZButtonText("Disband") }
+                }
+            }
+        }
     }
 }
 
