@@ -52,6 +52,16 @@ import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZButtonSize
 import com.zsilent.core.ui.components.ZButtonText
 import com.zsilent.core.ui.components.ZButtonVariant
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.automirrored.outlined.Login
+import androidx.compose.material3.Icon
+import com.zsilent.core.ui.components.ZInput
+import com.zsilent.core.ui.components.ZLabel
+import androidx.compose.foundation.layout.IntrinsicSize
+import com.zsilent.core.ui.components.Stat
+import com.zsilent.core.ui.components.Truncate
+import com.zsilent.core.ui.components.CopyIconButton
 import com.zsilent.core.ui.components.Pill
 import com.zsilent.core.ui.components.ZTone
 import com.zsilent.core.ui.components.MetricAccent
@@ -196,68 +206,89 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         HowTeamMiningWorks()
 
         if (status != null && team == null) {
-            Panel(
-                title = "Create or join a team",
-                meta = status.joinStatus.replace('_', ' ')
+            // Dos paneles lado a lado, como el prototipo: crear a la izquierda,
+            // unirse con codigo a la derecha. Antes era un solo panel con el
+            // campo de codigo arriba de los dos botones, lo que sugeria que
+            // hacia falta un codigo tambien para crear.
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
             ) {
-                OutlinedTextField(
-                    value = inviteCode,
-                    onValueChange = {
-                        inviteCode = it
-                            .trim()
-                            .uppercase()
-                            .filter { char -> char.isLetterOrDigit() || char == '-' }
-                    },
-                    label = { Text("Team invite code") },
-                    singleLine = true,
-                    colors = zFieldColors(),
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
+                Panel(modifier = Modifier.weight(1f)) {
+                    PanelHeader(
+                        title = "Create a team",
+                        subtitle = "Generate a shareable code peers can join"
+                    )
+                    HintText(
+                        "Creates an ad-hoc mining group with pass-through payout. Membership is " +
+                            "signed peer-to-peer, and the code stays yours until you disband it."
+                    )
+                    ZButton(
                         onClick = {
                             runAction("Team created.") {
                                 appState.localRpc.createMiningTeam()
                             }
                         },
+                        variant = ZButtonVariant.Accent,
                         enabled = actionBusy == null,
-                        colors = zButtonColors()
                     ) {
-                        Text("Create team")
+                        Icon(Icons.Outlined.Add, null, modifier = Modifier.size(14.dp))
+                        ZButtonText("Create team")
                     }
-                    OutlinedButton(
-                        onClick = {
-                            runAction("Join request sent; waiting for the coordinator.") {
-                                appState.localRpc.joinMiningTeam(inviteCode)
-                            }
-                        },
-                        enabled =
-                            inviteCode.isNotBlank() &&
-                            actionBusy == null
-                    ) {
-                        Text("Join team")
-                    }
-                    ActionProgress(actionBusy)
                 }
-                if (status.joinStatus == "join_requested") {
-                    HintText(
-                        "The signed join request is in gossip. Keep both nodes online; this " +
-                            "screen will update when the coordinator accepts it."
+
+                Panel(modifier = Modifier.weight(1f)) {
+                    PanelHeader(
+                        title = "Join with code",
+                        subtitle = "Enter a code from your peer",
+                        right = { Pill(status.joinStatus.replace('_', ' '), ZTone.Default) }
                     )
-                } else {
+                    ZLabel("Team code")
+                    ZInput(
+                        value = inviteCode,
+                        onValueChange = {
+                            inviteCode = it
+                                .trim()
+                                .uppercase()
+                                .filter { char -> char.isLetterOrDigit() || char == '-' }
+                        },
+                        placeholder = "TEAM-XXXXXX",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ZButton(
+                            onClick = {
+                                runAction("Join request sent; waiting for the coordinator.") {
+                                    appState.localRpc.joinMiningTeam(inviteCode)
+                                }
+                            },
+                            variant = ZButtonVariant.Outline,
+                            enabled = inviteCode.isNotBlank() && actionBusy == null,
+                        ) {
+                            Icon(Icons.AutoMirrored.Outlined.Login, null, modifier = Modifier.size(14.dp))
+                            ZButtonText("Join")
+                        }
+                        ActionProgress(actionBusy)
+                    }
                     HintText(
-                        "Invite codes are discovered through the live P2P mesh. The coordinator " +
-                            "must be online; there is no central team directory."
+                        if (status.joinStatus == "join_requested") {
+                            "The signed join request is in gossip. Keep both nodes online; this " +
+                                "screen updates when the coordinator accepts it."
+                        } else {
+                            "Invite codes travel through the live P2P mesh. The coordinator must " +
+                                "be online; there is no central team directory."
+                        }
                     )
                 }
             }
         }
 
         if (status != null && team != null) {
+            TeamSummaryCards(status, team)
+
             TeamIdentityPanel(status, team)
 
             TeamHashrateChart(
@@ -402,6 +433,68 @@ private fun TeamHashrateChart(hashrate: Long, running: Boolean, members: Int) {
                         .background(bar, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
                 )
             }
+        }
+    }
+}
+
+/**
+ * Las cuatro tarjetas de arriba del prototipo: codigo, hashrate propio,
+ * hashrate del equipo y participacion estimada.
+ *
+ * La participacion se marca como estimacion y no como dato: sale de comparar tu
+ * trabajo contra el del equipo, y ambos se mueven. Mostrarla como un numero
+ * firme invitaria a planificar sobre algo que cambia con cada share.
+ */
+@Composable
+private fun TeamSummaryCards(status: TeamMiningStatus, team: MiningTeam) {
+    val local = team.members[status.localAddress]
+    val activeWork = team.members.values
+        .filter { it.active && !it.expelled }
+        .sumOf { it.totalWork }
+    val sharePct = if (activeWork > 0 && local != null) {
+        100.0 * local.totalWork.toDouble() / activeWork.toDouble()
+    } else {
+        0.0
+    }
+
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+    ) {
+        Panel(modifier = Modifier.weight(1f)) {
+            ZLabel("Team code")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Truncate(
+                    team.inviteCode,
+                    head = 12, tail = 4,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                CopyIconButton(team.inviteCode)
+            }
+        }
+        Panel(modifier = Modifier.weight(1f)) {
+            Stat(
+                "Your hashrate",
+                formatHashrate(local?.estimatedHashrateHps ?: 0),
+                hint = if (status.hashing) "submitting shares" else "worker stopped"
+            )
+        }
+        Panel(modifier = Modifier.weight(1f)) {
+            Stat(
+                "Team hashrate",
+                formatHashrate(status.combinedHashrateHps),
+                hint = "" + team.members.values.count { it.active && !it.expelled } + " active member(s)"
+            )
+        }
+        Panel(modifier = Modifier.weight(1f)) {
+            Stat(
+                "Your share",
+                String.format("%.1f%%", sharePct),
+                hint = "estimate · moves with every share"
+            )
         }
     }
 }
