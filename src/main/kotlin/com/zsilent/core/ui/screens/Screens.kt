@@ -102,6 +102,7 @@ import com.zsilent.core.models.LogLevel
 import com.zsilent.core.models.RuntimeLog
 import com.zsilent.core.ui.components.Truncate
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.material.icons.outlined.QrCode
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -119,6 +120,7 @@ import com.zsilent.core.ui.components.HintText
 import com.zsilent.core.ui.components.KeyValueRow
 import com.zsilent.core.ui.components.MonoText
 import com.zsilent.core.ui.components.Panel
+import com.zsilent.core.ui.components.PanelHeader
 import com.zsilent.core.ui.components.PasswordField
 import com.zsilent.core.ui.components.QrCode
 import com.zsilent.core.ui.components.ScreenScaffold
@@ -832,26 +834,43 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "Wallet",
-        title = when (walletPage) {
-            WalletPage.Create -> "Add wallet"
-            WalletPage.Send -> "Send"
-            WalletPage.Receive -> "Receive"
-            WalletPage.Home -> "Your accounts"
-        },
-        subtitle = when (walletPage) {
-            WalletPage.Create -> "Create an additional private account inside ZSilent Core."
-            WalletPage.Send -> "Private zero-knowledge transfer."
-            WalletPage.Receive -> "Show a receive address and QR code."
-            WalletPage.Home -> "Manage private wallets without exposing keys."
+        // El prototipo titula con el NOMBRE de la wallet, no con un rotulo
+        // generico: es el dato que identifica en que cuenta estas parado.
+        title = if (walletPage == WalletPage.Create) "Add wallet"
+                else activeWallet?.name ?: ui.activeWalletName.ifBlank { "Wallet" },
+        subtitle = if (walletPage == WalletPage.Create) {
+            "Create an additional private account inside ZSilent Core."
+        } else {
+            "Balances, sending and receiving. Every operation is private by default."
         }
     ) {
         // Pestañas del prototipo. Send y Receive dejaron de ser secciones del
         // menú (D3) y viven acá. `Create` no es una pestaña: es una subpágina a
         // la que se llega desde Home, así que no aparece en la fila.
-        WalletTabs(
-            selected = walletPage,
-            onSelect = { walletPage = it },
-        )
+        // La tarjeta de balance y el desglose viven ARRIBA de las pestanas y
+        // fuera del Crossfade, como en el prototipo: siguen visibles en Send y
+        // en Receive. Antes desaparecian al cambiar de pestana, y perdias de
+        // vista cuanto tenias justo cuando ibas a enviar.
+        if (walletPage != WalletPage.Create) {
+            WalletHeroCard(
+                ui = ui,
+                activeWallet = activeWallet,
+                onAddWallet = {
+                    appState.clearWalletCreationResult()
+                    walletPage = WalletPage.Create
+                },
+                onToggleHide = appState::toggleBalances,
+                onRefresh = { appState.refreshWallets() },
+                onSend = { walletPage = WalletPage.Send },
+                onReceive = { walletPage = WalletPage.Receive },
+            )
+            WalletBreakdownRow(ui = ui, activeWallet = activeWallet)
+
+            WalletTabs(
+                selected = walletPage,
+                onSelect = { walletPage = it },
+            )
+        }
 
         Crossfade(
             targetState = walletPage,
@@ -864,25 +883,6 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             ) {
                 when (page) {
                     WalletPage.Home -> {
-                        // El refresh vivia tambien aca arriba, duplicando el
-                        // que ya esta dentro de la tarjeta de balance. Se dejo
-                        // uno solo, el de la tarjeta.
-
-                        // ── Hero balance card ─────────────────────────────────
-                        WalletHeroCard(
-                            ui = ui,
-                            activeWallet = activeWallet,
-                            onAddWallet = {
-                                appState.clearWalletCreationResult()
-                                walletPage = WalletPage.Create
-                            },
-                            onToggleHide = appState::toggleBalances,
-                            onRefresh = { appState.refreshWallets() }
-                        )
-
-                        // ── Balance breakdown chips ──────────────────────────
-                        WalletBreakdownRow(ui = ui, activeWallet = activeWallet)
-
                         // ── Wallets list (only when there's more than one) ──
                         if (ui.wallets.size > 1) {
                             WalletsListSection(ui = ui, onSelect = appState::selectWallet) {
@@ -896,49 +896,7 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         ui.walletCreationError?.let { WalletErrorRow(it) }
 
                         // ── Recent activity ────────────────────────────────
-                        com.zsilent.core.ui.onboarding.NoirSection(
-                            title = "Recent private activity",
-                            meta = if (ui.walletLocked) "locked" else "last ${ui.walletHistory.transactions.size.coerceAtMost(8)}"
-                        ) {
-                            if (ui.walletLocked) {
-                                Text(
-                                    "Unlock the wallet to load history.",
-                                    color = com.zsilent.core.ui.onboarding.NoirTextMuted,
-                                    fontSize = 12.sp
-                                )
-                            } else if (ui.walletHistory.transactions.isEmpty()) {
-                                Text(
-                                    "No private transactions yet.",
-                                    color = com.zsilent.core.ui.onboarding.NoirTextMuted,
-                                    fontSize = 12.sp
-                                )
-                            } else {
-                                ui.walletHistory.transactions.take(8).forEach { tx ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Text(
-                                                shortHash(tx.txHash),
-                                                color = com.zsilent.core.ui.onboarding.NoirText,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 12.sp
-                                            )
-                                            CopyIconButton(tx.txHash, enabled = tx.txHash.isNotBlank())
-                                        }
-                                        Text(
-                                            tx.status,
-                                            color = com.zsilent.core.ui.onboarding.NoirTextMuted,
-                                            fontSize = 11.sp,
-                                            letterSpacing = 0.5.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
+                        WalletHistoryTable(ui)
                     }
 
                     WalletPage.Send -> SendScreen(ui, appState, embedded = true)
@@ -1079,7 +1037,9 @@ private fun WalletHeroCard(
     activeWallet: LocalWallet?,
     onAddWallet: () -> Unit,
     onToggleHide: () -> Unit,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    onSend: () -> Unit = {},
+    onReceive: () -> Unit = {}
 ) {
     val shape = MaterialTheme.shapes.medium
     val address = activeWallet?.address ?: ui.activeWalletAddress.ifBlank { "" }
@@ -1118,7 +1078,16 @@ private fun WalletHeroCard(
                 if (address.isNotBlank()) CopyIconButton(address)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Refresh — black button, actually triggers refresh
+                // El prototipo pone SEND y RECEIVE aca, pegados al balance:
+                // es donde uno los busca despues de mirar cuanto tiene.
+                ZButton(onClick = onSend, variant = ZButtonVariant.Accent, size = ZButtonSize.Small) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, modifier = Modifier.size(12.dp))
+                    ZButtonText("Send")
+                }
+                ZButton(onClick = onReceive, variant = ZButtonVariant.Outline, size = ZButtonSize.Small) {
+                    Icon(Icons.Outlined.QrCode, null, modifier = Modifier.size(12.dp))
+                    ZButtonText("Receive")
+                }
                 BlackIconButton(icon = Icons.Outlined.Sync, contentDescription = "Refresh balance", onClick = onRefresh)
                 BlackIconButton(
                     icon = com.zsilent.core.ui.onboarding.BootstrapIcons.PatchPlus,
@@ -1217,6 +1186,111 @@ private fun BlackIconButton(icon: androidx.compose.ui.graphics.vector.ImageVecto
     ) {
         Icon(icon, contentDescription = contentDescription,
             tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
+    }
+}
+
+
+/**
+ * Historial como tabla, siguiendo el prototipo.
+ *
+ * **Las columnas no son las del prototipo, y es a proposito.** Alli la tabla
+ * muestra KIND, COUNTERPARTY y AMOUNT, pero esas tres no existen en
+ * `WalletHistoryEntry`: solo hay hash, estado, hora, salidas y las banderas
+ * `amountHidden` / `feeHidden`. El prototipo puede mostrarlas porque son datos
+ * inventados.
+ *
+ * Reproducirlas aca significaria fabricar valores o exponer justo lo que el
+ * protocolo oculta — la contraparte es precisamente lo que protege la
+ * inenlazabilidad. Asi que la columna de monto dice "private" en vez de un
+ * numero: es la verdad, y ademas es la promesa del producto.
+ */
+@Composable
+private fun WalletHistoryTable(ui: ZSilentUiState) {
+    val scheme = MaterialTheme.colorScheme
+    val txs = ui.walletHistory.transactions
+    Panel(contentPadding = PaddingValues(0.dp)) {
+        Column(Modifier.padding(ZTheme.spacing.panel)) {
+            PanelHeader(
+                title = "Transaction history",
+                subtitle = "Wallet-local view — private by construction",
+                right = {
+                    Pill(
+                        if (ui.walletLocked) "locked" else "${txs.size} entries",
+                        if (ui.walletLocked) ZTone.Warn else ZTone.Default
+                    )
+                }
+            )
+        }
+        when {
+            ui.walletLocked -> Box(Modifier.padding(ZTheme.spacing.panel)) {
+                EmptyState("Wallet locked", sub = "Unlock the wallet to load history.")
+            }
+            txs.isEmpty() -> Box(Modifier.padding(ZTheme.spacing.panel)) {
+                EmptyState("No transactions yet", sub = "Receive ZKA or start mining to see activity.")
+            }
+            else -> Column {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = ZTheme.spacing.panel, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    listOf("HASH" to 3f, "OUTPUTS" to 1f, "AMOUNT" to 1.4f, "STATUS" to 1.4f, "TIME" to 1.4f)
+                        .forEach { (label, w) ->
+                            Text(
+                                label,
+                                modifier = Modifier.weight(w),
+                                style = ZTheme.text.fieldLabel,
+                                color = scheme.onSurfaceVariant
+                            )
+                        }
+                }
+                HorizontalDivider(color = scheme.outlineVariant)
+                txs.take(12).forEach { tx ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .padding(horizontal = ZTheme.spacing.panel, vertical = ZTheme.spacing.row),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Truncate(
+                            tx.txHash, head = 12, tail = 6,
+                            modifier = Modifier.weight(3f),
+                            color = scheme.onSurface
+                        )
+                        Text(
+                            tx.outputs.toString(),
+                            modifier = Modifier.weight(1f),
+                            style = ZTheme.text.mono,
+                            color = scheme.onSurfaceVariant
+                        )
+                        Text(
+                            if (tx.amountHidden) "private" else "visible",
+                            modifier = Modifier.weight(1.4f),
+                            style = ZTheme.text.mono,
+                            color = scheme.onSurfaceVariant
+                        )
+                        Box(Modifier.weight(1.4f)) {
+                            Pill(
+                                tx.status.ifBlank { "unknown" },
+                                when (tx.status.lowercase()) {
+                                    "confirmed", "finalized" -> ZTone.On
+                                    "pending" -> ZTone.Warn
+                                    "failed" -> ZTone.Err
+                                    else -> ZTone.Default
+                                }
+                            )
+                        }
+                        Text(
+                            if (tx.timestamp > 0L) formatLogClock(tx.timestamp * 1000L) else "—",
+                            modifier = Modifier.weight(1.4f),
+                            style = ZTheme.text.mono,
+                            color = scheme.onSurfaceVariant
+                        )
+                    }
+                    HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.6f))
+                }
+            }
+        }
     }
 }
 
