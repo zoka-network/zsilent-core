@@ -120,6 +120,9 @@ import com.zsilent.core.ui.components.HintText
 import com.zsilent.core.ui.components.KeyValueRow
 import com.zsilent.core.ui.components.MonoText
 import com.zsilent.core.ui.components.Panel
+import com.zsilent.core.ui.components.SegmentedSelector
+import com.zsilent.core.ui.components.ZLabel
+import com.zsilent.core.ui.components.Stat
 import com.zsilent.core.ui.components.PanelHeader
 import com.zsilent.core.ui.components.PasswordField
 import com.zsilent.core.ui.components.QrCode
@@ -2404,10 +2407,23 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             StatusCard("Height", ui.chainHeight.toString(), "network ${ui.networkHeight}", Modifier.weight(1f))
         }
 
-        MiningHashrateChart(
-            hashrate = effectiveHashrate,
-            running = ui.mining.running || ui.localMiningEnabled,
-        )
+        // Dos columnas como el prototipo: hashrate en vivo a la izquierda con
+        // sus estadisticas y sus controles, recompensas a la derecha.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+            MiningLivePanel(
+                ui = ui,
+                hashrate = effectiveHashrate,
+                running = ui.mining.running || ui.localMiningEnabled,
+                threads = parsedThreads ?: 1,
+                canStart = canStart,
+                canStop = canStopMining,
+                onThreads = { threads = it.toString() },
+                onStart = { parsedThreads?.let { t -> miningRequestActive = true; appState.startMining(t) } },
+                onStop = { appState.stopMining() },
+                modifier = Modifier.weight(2f),
+            )
+            MiningRewardsPanel(ui = ui, rewardAddress = rewardAddress, modifier = Modifier.weight(1f))
+        }
 
         MiningPreflightPanel(
             sessionUnlocked = ui.sessionUnlocked,
@@ -2474,12 +2490,28 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
 
 /**
- * Histograma de hashrate en vivo. El prototipo muestra 30 barras que se
- * actualizan cada 700 ms; con el minero parado quedan al 25% de opacidad en vez
- * de desaparecer, para que se vea que el panel sigue vivo y no colgado.
+ * Hashrate en vivo con sus estadisticas y sus controles, como el prototipo.
+ *
+ * Las barras van en el azul de la paleta de metricas: es el unico color de la
+ * pantalla, y con el minero parado bajan al 25% de opacidad en vez de
+ * desaparecer, para que se lea "apagado" y no "colgado".
+ *
+ * Los controles viven aca y no en un panel aparte: arrancar el minero y elegir
+ * hilos son decisiones que se toman mirando el grafico.
  */
 @Composable
-private fun MiningHashrateChart(hashrate: Long, running: Boolean) {
+private fun MiningLivePanel(
+    ui: ZSilentUiState,
+    hashrate: Long,
+    running: Boolean,
+    threads: Int,
+    canStart: Boolean,
+    canStop: Boolean,
+    onThreads: (Int) -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val current = rememberUpdatedState(hashrate)
     val live = rememberUpdatedState(running)
     val samples = remember { mutableStateListOf<Long>().apply { repeat(30) { add(0L) } } }
@@ -2491,40 +2523,113 @@ private fun MiningHashrateChart(hashrate: Long, running: Boolean) {
         }
     }
     val max = maxOf(1L, samples.maxOrNull() ?: 1L)
-    val accent = MaterialTheme.colorScheme.primary
-    Panel(title = "Live hashrate", meta = if (running) "running" else "idle") {
+    val bar = ZTheme.metrics.at(0)
+    val maxThreads = ui.mining.availableCpuThreads.coerceAtLeast(1)
+
+    Panel(modifier = modifier) {
+        PanelHeader(
+            title = "Live hashrate",
+            subtitle = "Last ~20 seconds · peak " + formatHashrate(max),
+            right = { Pill(if (running) "running" else "idle", if (running) ZTone.On else ZTone.Off) }
+        )
         Row(
-            modifier = Modifier.fillMaxWidth().height(128.dp),
+            modifier = Modifier.fillMaxWidth().height(132.dp),
             horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             samples.forEach { value ->
-                val fraction = (value.toFloat() / max.toFloat()).coerceIn(0.02f, 1f)
+                val fraction = (value.toFloat() / max.toFloat()).coerceIn(0.04f, 1f)
                 Box(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight(fraction)
                         .alpha(if (running) 1f else 0.25f)
-                        .background(accent.copy(alpha = 0.7f), RoundedCornerShape(2.dp))
+                        .background(bar, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
                 )
             }
         }
-        Text(
-            "Last ~20 seconds · peak ${formatHashrate(max)}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+            Stat("Threads", "" + threads + " / " + maxThreads, modifier = Modifier.weight(1f))
+            Stat("Height", ui.chainHeight.toString(), modifier = Modifier.weight(1f))
+            Stat("Difficulty", ui.stats.difficulty.toString(), modifier = Modifier.weight(1f))
+            Stat("Peers", ui.localConnectedPeers.toString(), modifier = Modifier.weight(1f))
+        }
+        ThinDivider()
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (running) {
+                ZButton(onClick = onStop, variant = ZButtonVariant.Danger, enabled = canStop) {
+                    Icon(Icons.Outlined.PowerSettingsNew, null, modifier = Modifier.size(14.dp))
+                    ZButtonText("Stop miner")
+                }
+            } else {
+                ZButton(onClick = onStart, variant = ZButtonVariant.Accent, enabled = canStart) {
+                    Icon(Icons.Outlined.PowerSettingsNew, null, modifier = Modifier.size(14.dp))
+                    ZButtonText("Start miner")
+                }
+            }
+            ZLabel("Threads")
+            // Solo se ofrecen los valores que la maquina tiene. El prototipo
+            // muestra 1/2/4 fijos; ofrecer mas hilos de los que hay solo hace
+            // que el minero rinda peor.
+            val options = listOf(1, 2, 4, 6, 8).filter { it <= maxThreads }
+            SegmentedSelector(
+                options = options.map { it.toString() },
+                selected = threads.toString(),
+                onSelect = { onThreads(it.toIntOrNull() ?: 1) },
+                enabled = !running,
+                modifier = Modifier.widthIn(max = 220.dp),
+            )
+        }
     }
 }
 
-/**
- * Condiciones que tienen que cumplirse antes de minar.
- *
- * Antes esto vivía como mensajes de error sueltos repartidos por la pantalla:
- * había que leerlos todos para entender por qué el interruptor no respondía. El
- * prototipo lo resuelve con una lista de condiciones, que además dice cuáles SÍ
- * se cumplen — es la diferencia entre "algo falla" y "falta esto".
- */
+/** Recompensas y madurez del coinbase, como el panel derecho del prototipo. */
+@Composable
+private fun MiningRewardsPanel(ui: ZSilentUiState, rewardAddress: String, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Panel(modifier = modifier) {
+        PanelHeader(title = "Rewards", subtitle = "Coinbase maturity")
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ZLabel("Reward address")
+            Truncate(
+                rewardAddress.ifBlank { "not selected" },
+                head = 12, tail = 6,
+                color = scheme.onSurface
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+            Stat(
+                "Rewards", ui.mining.totalRewards.toString(),
+                hint = "maturing", tone = ZTone.Warn, modifier = Modifier.weight(1f)
+            )
+            Stat(
+                "Blocks mined", ui.mining.blocksMined.toString(),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(scheme.surfaceContainerHigh.copy(alpha = 0.5f), MaterialTheme.shapes.small)
+                .border(BorderStroke(1.dp, scheme.outlineVariant), MaterialTheme.shapes.small)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            ZLabel("Coinbase maturity")
+            Text(
+                "" + ui.mining.coinbaseMaturityBlocks + " blocks",
+                style = ZTheme.text.mono,
+                color = scheme.onSurface
+            )
+            HintText("Mined rewards stay locked until they reach this depth.")
+        }
+    }
+}
+
 @Composable
 private fun MiningPreflightPanel(
     sessionUnlocked: Boolean,
