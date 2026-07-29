@@ -1936,52 +1936,100 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         title = "Zoka core runtime",
         subtitle = "Operate your local node — the source of truth for balances, mining and privacy."
     ) {
+        // Estado explicito del nodo. El prototipo solo distingue ONLINE/OFFLINE;
+        // aca hay un cuarto caso que la app ya conocia y no mostraba: el nodo
+        // esta Online pero su RPC todavia no responde o la cadena no alcanzo la
+        // punta. Eso no es "encendido" ni es "apagado" — es warming, y es
+        // justamente cuando uno se pregunta por que no puede minar.
+        val nodeReady = nodeFullyOn && ui.localRpcOnline && ui.networkSynced
+        val nodeError = ui.nodeStatus == ServiceStatus.Error
+        val stateLabel = when {
+            nodeError -> "ERROR"
+            nodeReady -> "READY"
+            nodeFullyOn || nodeWarming -> "WARMING"
+            else -> "OFFLINE"
+        }
+        val stateTone = when {
+            nodeError -> ZTone.Err
+            nodeReady -> ZTone.On
+            nodeFullyOn || nodeWarming -> ZTone.Warn
+            else -> ZTone.Off
+        }
+
         Panel(title = "Node controls", meta = ui.nodeStatus.name) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                SessionReadyCard(
-                    title = "Wallet session",
-                    ready = ui.sessionUnlocked,
-                    detail = if (ui.sessionUnlocked) "Unlocked; node can use the in-memory session." else "Unlock the wallet first.",
-                    modifier = Modifier.weight(1f)
-                )
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Node", style = MaterialTheme.typography.labelMedium)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Canvas(modifier = Modifier.size(12.dp)) {
-                            drawCircle(color = nodeDotColor)
-                        }
-                        Switch(
-                            checked = nodeOn,
-                            enabled = nodeSwitchEnabled,
-                            colors = com.zsilent.core.ui.components.zSwitchColors(),
-                            onCheckedChange = { wantOn ->
-                                if (wantOn && canStartNode) {
-                                    appState.startNode(autoMine = false)
-                                } else if (!wantOn && canStopNode) {
-                                    appState.stopNode()
-                                }
-                            }
-                        )
-                    }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        nodeStateLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = nodeDotColor
+                        stateLabel,
+                        style = ZTheme.text.monoDisplay,
+                        color = when {
+                            nodeError -> ZTheme.semantics.danger
+                            nodeReady -> ZTheme.semantics.success
+                            nodeFullyOn || nodeWarming -> ZTheme.semantics.warning
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill("rpc ${if (ui.localRpcOnline) "online" else "waiting"}",
+                             if (ui.localRpcOnline) ZTone.On else ZTone.Warn)
+                        Pill("chain ${if (ui.networkSynced) "synced" else "syncing"}",
+                             if (ui.networkSynced) ZTone.On else ZTone.Warn)
+                        Pill("binaries ${if (ui.zokaReady) "ready" else "missing"}",
+                             if (ui.zokaReady) ZTone.On else ZTone.Err)
+                        Pill("session ${if (ui.sessionUnlocked) "unlocked" else "locked"}",
+                             if (ui.sessionUnlocked) ZTone.On else ZTone.Warn)
+                    }
+                }
+
+                // Botones en lugar del interruptor, pero con la MISMA logica de
+                // habilitacion: canStartNode / canStopNode. Un boton que acepta
+                // el clic y no hace nada es peor que un interruptor gris.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (nodeOn) {
+                        ZButton(
+                            onClick = { if (canStopNode) appState.stopNode() },
+                            variant = ZButtonVariant.Danger,
+                            enabled = canStopNode,
+                        ) {
+                            Icon(Icons.Outlined.PowerSettingsNew, null, modifier = Modifier.size(14.dp))
+                            ZButtonText("Stop node")
+                        }
+                    } else {
+                        ZButton(
+                            onClick = { if (canStartNode) appState.startNode(autoMine = false) },
+                            variant = ZButtonVariant.Accent,
+                            enabled = canStartNode,
+                        ) {
+                            Icon(Icons.Outlined.PowerSettingsNew, null, modifier = Modifier.size(14.dp))
+                            ZButtonText("Start node")
+                        }
+                    }
+                    // El prototipo pone aca "Reload config", que no existe en
+                    // ZSilent. Se usa la accion real equivalente: forzar sync.
+                    ZButton(
+                        onClick = appState::syncNow,
+                        variant = ZButtonVariant.Outline,
+                        enabled = ui.localRpcOnline && !ui.syncBusy,
+                    ) {
+                        Icon(Icons.Outlined.Sync, null, modifier = Modifier.size(14.dp))
+                        ZButtonText("Sync now")
+                    }
                 }
             }
+
             val nodeHint = when {
                 nodeWarming && !nodeFullyOn -> "Node is starting. Wait for RPC and sync warmup (can take up to a minute)."
-                nodeFullyOn -> "Node is online. Switch off to stop the full node process."
+                nodeReady -> "Node is online and aligned with the network."
+                nodeFullyOn -> "Node process is up; waiting for RPC and chain sync before it is fully usable."
                 miningOwnsLocalState -> "Mining owns the chain state. Stop mining first to free the node."
                 !ui.sessionUnlocked -> "Unlock the wallet session first. ZSilent will not ask for the password again on this panel."
-                else -> "Switching ON starts the full node in node-only mode (no mining)."
+                else -> "Starting the node runs it in node-only mode (no mining)."
             }
-            Text(
-                nodeHint,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            HintText(nodeHint)
             if (miningOwnsLocalState) {
                 ErrorText("Mining is already using the chain state. Stop that miner first, or run node + mining from ZSilent as one integrated session.")
             }
@@ -2046,35 +2094,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             }
         }
 
-        Panel(title = "Peers", meta = "${ui.peers.size} connected · live mesh") {
-            Text(
-                "Who this node is actually talking to over the P2P mesh, and how. Serverless: there is no central directory — this is your own node's view.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                StatusCard("Tor", ui.peerTorCount.toString(), "onion", Modifier.weight(1f))
-                StatusCard("Direct", ui.peerDirectCount.toString(), "clearnet", Modifier.weight(1f))
-                StatusCard("Total", ui.localConnectedPeers.toString(), "p2p mesh", Modifier.weight(1f))
-            }
-            if (ui.peers.isEmpty()) {
-                Text(
-                    if (ui.localRpcOnline) "No connected peers yet — dialing the seed and mesh over Tor/iroh."
-                    else "Start the node to see connected peers.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                ui.peers.take(24).forEach { peer ->
-                    val label = when (peer.transport) {
-                        "tor" -> "Tor onion"
-                        "direct" -> "Direct"
-                        "unknown" -> "Peer"
-                        else -> peer.transport.replaceFirstChar { it.uppercase() }
-                    }
-                    CopyableKeyValueRow(label, peer.peerId)
-                }
-            }
-        }
+        NodePeerTable(ui)
 
         Panel(title = "Seed · bootstrap", meta = "help fresh nodes join") {
             Text(
@@ -2091,6 +2111,87 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 CopyableKeyValueRow("Onion address", ui.torOnionMultiaddr)
             } else {
                 KeyValueRow("Onion address", if (ui.onionSeedEnabled) "waiting for Tor…" else "enable the onion seed in Settings")
+            }
+        }
+    }
+}
+
+
+/**
+ * Tabla de peers, siguiendo el prototipo.
+ *
+ * **Faltan dos columnas del prototipo a proposito.** Alli la tabla muestra
+ * LATENCY y HEIGHT por peer, pero `PeerInfo` solo tiene `peerId`, `transport` y
+ * `address`. El prototipo puede mostrarlas porque son datos inventados;
+ * conseguirlas de verdad significa exponerlas desde el RPC del nodo, que es
+ * trabajo del lado Rust y no de la interfaz.
+ *
+ * Se conserva el desglose Tor/directo/total, que el prototipo no tiene y que
+ * dice de un vistazo si estas saliendo por onion o en claro.
+ */
+@Composable
+private fun NodePeerTable(ui: ZSilentUiState) {
+    val scheme = MaterialTheme.colorScheme
+    Panel(contentPadding = PaddingValues(0.dp)) {
+        Column(Modifier.padding(ZTheme.spacing.panel), verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+            PanelHeader(
+                title = "Peer table",
+                subtitle = "Your own node's view — serverless, no central directory",
+                right = { Pill("${ui.localConnectedPeers} connected", if (ui.localConnectedPeers > 0) ZTone.On else ZTone.Off) }
+            )
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+                StatusCard("Tor", ui.peerTorCount.toString(), "onion", Modifier.weight(1f))
+                StatusCard("Direct", ui.peerDirectCount.toString(), "clearnet", Modifier.weight(1f))
+                StatusCard("Total", ui.localConnectedPeers.toString(), "p2p mesh", Modifier.weight(1f))
+            }
+        }
+        if (ui.peers.isEmpty()) {
+            Box(Modifier.padding(ZTheme.spacing.panel)) {
+                EmptyState(
+                    if (ui.localRpcOnline) "No connected peers yet" else "Node offline",
+                    sub = if (ui.localRpcOnline) "Dialing the seed and the mesh over Tor/iroh."
+                          else "Start the node to see connected peers."
+                )
+            }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = ZTheme.spacing.panel, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                listOf("ENDPOINT" to 3f, "TRANSPORT" to 1.2f, "ADDRESS" to 2f).forEach { (label, w) ->
+                    Text(label, modifier = Modifier.weight(w), style = ZTheme.text.fieldLabel, color = scheme.onSurfaceVariant)
+                }
+                Box(Modifier.width(40.dp))
+            }
+            HorizontalDivider(color = scheme.outlineVariant)
+            ui.peers.take(24).forEach { peer ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = ZTheme.spacing.panel, vertical = ZTheme.spacing.row),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Truncate(peer.peerId, head = 14, tail = 6, modifier = Modifier.weight(3f), color = scheme.onSurface)
+                    Box(Modifier.weight(1.2f)) {
+                        Pill(
+                            peer.transport,
+                            when (peer.transport.lowercase()) {
+                                "tor" -> ZTone.Info
+                                "direct" -> ZTone.Default
+                                else -> ZTone.Off
+                            }
+                        )
+                    }
+                    Text(
+                        peer.address ?: "—",
+                        modifier = Modifier.weight(2f),
+                        style = ZTheme.text.mono,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Box(Modifier.width(40.dp)) { CopyIconButton(peer.peerId) }
+                }
+                HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.6f))
             }
         }
     }
