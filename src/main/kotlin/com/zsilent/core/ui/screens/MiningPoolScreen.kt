@@ -203,18 +203,16 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         // ingles. La distincion entre dato real y simulado sigue viva en las
         // pills de cada metrica.
 
-        HowTeamMiningWorks()
-
         if (status != null && team == null) {
             // Dos paneles lado a lado, como el prototipo: crear a la izquierda,
             // unirse con codigo a la derecha. Antes era un solo panel con el
             // campo de codigo arriba de los dos botones, lo que sugeria que
             // hacia falta un codigo tambien para crear.
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
             ) {
-                Panel(modifier = Modifier.weight(1f)) {
+                Panel(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     PanelHeader(
                         title = "Create a team",
                         subtitle = "Generate a shareable code peers can join"
@@ -237,7 +235,7 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     }
                 }
 
-                Panel(modifier = Modifier.weight(1f)) {
+                Panel(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     PanelHeader(
                         title = "Join with code",
                         subtitle = "Enter a code from your peer",
@@ -331,55 +329,69 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 }
             )
         }
+
+        // Al pie, en la misma posicion que el pre-flight de Mining: es material
+        // de referencia, no un control. Arriba competia por atencion con crear
+        // y unirse, que es lo que la pantalla viene a resolver.
+        if (status != null) {
+            HowTeamMiningWorks()
+        }
     }
 }
 
 /**
- * Tira "como funciona el team mining", en el formato compacto del prototipo.
+ * "Como funciona el team mining", como tira de tres tarjetas al pie de la
+ * pantalla.
  *
  * Antes esto era una compuerta con checkbox que bloqueaba crear y unirse. Se
  * saco el bloqueo, pero **no** el contenido: el punto del hijacking describe un
  * ataque que el protocolo detecta y no puede prevenir, y esconderlo antes de que
  * alguien ponga su hashrate en un equipo ajeno seria dejarlo entrar a ciegas.
+ *
+ * La geometria es la misma que la tira de estado de Mining: `IntrinsicSize.Min`
+ * para que las tres tarjetas midan lo mismo de alto aunque el texto sea desigual,
+ * y `weight(1f)` para repartir el ancho en partes iguales.
  */
 @Composable
 private fun HowTeamMiningWorks() {
-    Panel(title = "How team mining works", meta = "read before joining") {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
-        ) {
-            TeamRiskLine(
-                "01  Rewards are statistical",
-                "Whole block rewards rotate by contributed work. A short run can be very " +
-                    "uneven; it only converges toward your share over many blocks.",
-                Modifier.weight(1f)
-            )
-            TeamRiskLine(
-                "02  Hijacking is detectable, not preventable",
-                "A member who finds a valid block can rewrite its coinbase to pay themselves. " +
-                    "The team detects it and expels them, but the network still accepts an " +
-                    "otherwise-valid block.",
-                Modifier.weight(1f)
-            )
-            TeamRiskLine(
-                "03  Mine with people you know",
-                "No team wallet, fee, escrow or recovery desk. The coordinator tracks work and " +
-                    "templates; it never holds your reward keys.",
-                Modifier.weight(1f)
-            )
-        }
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+    ) {
+        TeamRiskLine(
+            "01 · Rewards are statistical",
+            "Whole block rewards rotate by contributed work. A short run can be very " +
+                "uneven; it only converges toward your share over many blocks.",
+            Modifier.weight(1f)
+        )
+        TeamRiskLine(
+            "02 · Hijacking is detectable, not preventable",
+            "A member who finds a valid block can rewrite its coinbase to pay themselves. " +
+                "The team detects it and expels them, but the network still accepts an " +
+                "otherwise-valid block.",
+            Modifier.weight(1f)
+        )
+        TeamRiskLine(
+            "03 · Mine with people you know",
+            "No team wallet, fee, escrow or recovery desk. The coordinator tracks work and " +
+                "templates; it never holds your reward keys.",
+            Modifier.weight(1f)
+        )
     }
 }
 
+/**
+ * Una tarjeta de la tira anterior.
+ *
+ * El `modifier` tiene que llegar al `Panel`: si se queda sin aplicar, los
+ * `weight(1f)` del Row se pierden y las tarjetas se reparten el ancho por
+ * contenido — la tercera queda de un caracter de ancho y el texto se apila en
+ * vertical.
+ */
 @Composable
 private fun TeamRiskLine(title: String, body: String, modifier: Modifier = Modifier) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold
-        )
+    Panel(modifier = modifier.fillMaxHeight()) {
+        ZLabel(title)
         Text(
             body,
             style = MaterialTheme.typography.bodySmall,
