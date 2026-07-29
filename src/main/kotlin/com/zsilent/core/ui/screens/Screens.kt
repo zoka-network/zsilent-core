@@ -2265,8 +2265,6 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     ) {
         // El panel "Mining controls" se fundio en el de hashrate en vivo.
 
-        NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
-
         if (miningProgressActive && !miningFaulted) {
             RuntimeProgressPanel(
                 title = "Mining warmup",
@@ -2339,6 +2337,11 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             threadsOk = (parsedThreads ?: 0) >= 1,
             binariesOk = ui.zokaReady,
         )
+
+        // Network sync va aca abajo y a todo el ancho: es contexto de red,
+        // no un control de mineria, asi que no compite con el grafico ni
+        // con el pre-flight por la atencion de arriba.
+        NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Panel(title = "Reward target", meta = "address only", modifier = Modifier.weight(1f)) {
