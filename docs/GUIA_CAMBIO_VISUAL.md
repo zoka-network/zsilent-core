@@ -922,29 +922,43 @@ mostrar actividad real o no mostrarse.
 
 ## Etapa 9 — Mining Pool ✅
 
-Se portó la **leyenda de procedencia de los datos**: cuatro pills que distinguen
-`local` (métrica real del dispositivo), `estimation` (derivada), `simulation`
-(valor de demo) y `future` (espera protocolo). Esta pantalla mezcla los cuatro
-tipos, y sin decir cuál es cuál una estimación con el mismo aspecto que una
-lectura real invita a decidir sobre un número que nadie midió.
-
-
 Prototipo: `sections/Pool.tsx` (143).
-ZSilent: `ui/screens/MiningPoolScreen.kt` (549) — ya tiene `RiskPanel`,
-`TeamIdentityPanel`, `MiningControlPanel`, `MembersPanel`, `TeamExitPanel`,
-`LoadingPanel`, `NodeOfflinePanel`, `UnsupportedNodePanel`, `ActionProgress`.
+ZSilent: `ui/screens/MiningPoolScreen.kt`.
 
-Dos estados. Sin equipo: dos paneles lado a lado, "Create a team" y "Join with
-code", más un panel ancho de tres pasos numerados explicando cómo funciona. Con
-equipo: cuatro paneles (código con copiar, hashrate personal, hashrate de equipo
-en `accent`, estimación de participación), luego "Power split" con tres tarjetas
-`LOW`/`NORMAL`/`MAX` y la cola de turnos, y a la derecha "Next payout".
+Esta etapa tocó código, no sólo pintura. Lo que quedó:
 
-Vale la pena copiar la **leyenda de datos** del final: cuatro pills que distinguen
-`local` (métrica real del dispositivo), `estimation` (derivada), `simulation`
-(valor de demo) y `future` (pendiente de protocolo). ZSilent ya distingue estos
-casos en la lógica; exponerlos así es honesto con el usuario y encaja con lo que
-el roadmap viene marcando sobre no presentar simulaciones como reales.
+**Fuera.** La tarjeta "de dónde salen estos números" (además de sobrar, estaba en
+español con el resto de la interfaz en inglés) y la de "understand the payout
+model". La distinción entre dato real y estimación sigue viva en el `hint` de
+cada métrica, que es donde se lee sin robar una tarjeta entera.
+
+**La compuerta de riesgo dejó de ser compuerta.** El checkbox bloqueaba crear y
+unirse. Se quitó el bloqueo pero no el contenido: el punto del hijacking describe
+un ataque que el protocolo detecta y no puede prevenir, y esconderlo antes de que
+alguien ponga su hashrate en un equipo ajeno sería dejarlo entrar a ciegas. Ahora
+son tres tarjetas al pie, en la posición que ocupa el pre-flight en Mining.
+
+**Sin equipo:** dos paneles lado a lado, "Create a team" y "Join with code", de
+igual altura. Antes era un solo panel con el campo de código encima de los dos
+botones, lo que sugería que hacía falta un código también para crear.
+
+**Con equipo:** tira de cuatro tarjetas (código con copiar, hashrate propio,
+hashrate del equipo, participación estimada), `TeamHashrateChart` en verde —
+misma barra que Mining, otra serie — identidad, control, miembros y salida.
+
+**Salida.** `TeamExitPanel` distingue miembro de coordinador. El coordinador ya no
+queda atrapado: "Hand over and leave" promueve al backup, y "Disband team" existe
+como camino aparte con confirmación, porque afecta a todo el equipo y el código no
+se recupera.
+
+**Reparto (Rust).** `active_turn_totals` calcula los denominadores de la rotación
+sobre los miembros **activos**. Antes mezclaba denominadores históricos con
+candidatos activos: al irse un miembro, un 75/25 se repartía 70,5/29,5. El test
+`turn_rotation_stays_proportional_after_a_member_leaves` falla sin el arreglo
+(daba 71 %).
+
+**Pendiente,** porque cambia un control y no sólo su aspecto: el "Power split"
+`LOW`/`NORMAL`/`MAX` del prototipo y la columna "next payout" de la cola de turnos.
 
 ---
 
