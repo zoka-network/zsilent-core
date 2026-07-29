@@ -165,7 +165,17 @@ data class ZMetricPalette(
         Color(0xFF8A5CF0),  // violeta
         Color(0xFFE0559A),  // rosa
         Color(0xFFB87A2E),  // bronce
-    )
+    ),
+    /**
+     * Color de serie única para gráficos en vivo (el hashrate de Mining).
+     *
+     * No sale de `series`: eso es identidad categórica y acá hay una sola serie.
+     * Es un azul acero apagado — 30 barras es mucha superficie de color en una
+     * interfaz que por lo demás es acromática, y saturado competía con todo.
+     * Contraste verificado: 4.68:1 sobre el fondo oscuro y 4.37:1 sobre el
+     * claro, holgado en ambos.
+     */
+    val live: Color = Color(0xFF4A7BA7),
 ) {
     /** Tono por posición. Nunca cicla: si se piden más, repite el último. */
     fun at(index: Int): Color = series[index.coerceIn(0, series.lastIndex)]

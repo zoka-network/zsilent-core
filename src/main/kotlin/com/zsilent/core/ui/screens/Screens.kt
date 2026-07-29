@@ -2056,8 +2056,6 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
         }
 
-        NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
-
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard("Status", ui.nodeStatus.name, if (ui.localRpcOnline) "node RPC online" else "node RPC waiting", Modifier.weight(1f))
             StatusCard("Height", ui.chainHeight.toString(), "node chain tip", Modifier.weight(1f))
@@ -2075,47 +2073,66 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Panel(title = "Zoka node", meta = if (ui.localRpcOnline) "online" else "offline", modifier = Modifier.weight(1f)) {
-                KeyValueRow("RPC", if (ui.localRpcOnline) "online" else "offline")
-                KeyValueRow("RPC address", ZokaNetworkConfig.displayUrl(ui.localRpcUrl))
-                CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
-                KeyValueRow("Zoka binaries", if (ui.zokaReady) "ready" else "missing")
+        // Dos columnas, como el prototipo: a la izquierda lo que necesita
+        // ancho -- sincronizacion y tabla de peers --, y a la derecha una
+        // columna angosta con todo lo que describe COMO se alcanza este nodo:
+        // su RPC, su estado de red, sus endpoints y su bootstrap.
+        //
+        // No se elimino ningun panel; solo se reacomodaron.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+        ) {
+            Column(
+                Modifier.weight(1.6f),
+                verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+            ) {
+                NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
+                NodePeerTable(ui)
             }
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+            ) {
+                Panel(title = "Zoka node", meta = if (ui.localRpcOnline) "online" else "offline", modifier = Modifier.weight(1f)) {
+                    KeyValueRow("RPC", if (ui.localRpcOnline) "online" else "offline")
+                    KeyValueRow("RPC address", ZokaNetworkConfig.displayUrl(ui.localRpcUrl))
+                    CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
+                    KeyValueRow("Zoka binaries", if (ui.zokaReady) "ready" else "missing")
+                }
 
-            Panel(title = "Network state", meta = ZokaNetworkConfig.Network, modifier = Modifier.weight(1f)) {
-                KeyValueRow("P2P mesh", if (ui.localConnectedPeers > 0) "connected" else "isolated")
-                KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
-                KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
-                KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
-                KeyValueRow("Difficulty", ui.stats.difficulty.toString())
-                KeyValueRow("Emission", "%.4f ZKA".format(ui.stats.emissionZka))
-                KeyValueRow("Miner state blocks", ui.mining.blocksMined.toString())
-                KeyValueRow("Miner state rewards", "${ui.mining.totalRewards} ZKA")
-                KeyValueRow("Supply emitted", "${ui.mining.totalSupplyEmitted} ZKA")
-                KeyValueRow("Pending queue DB", ui.pendingPrivateTransfers.db.ifBlank { ".zoka/${ZokaNetworkConfig.Network}/blockchain.db" })
+                Panel(title = "Network state", meta = ZokaNetworkConfig.Network, modifier = Modifier.weight(1f)) {
+                    KeyValueRow("P2P mesh", if (ui.localConnectedPeers > 0) "connected" else "isolated")
+                    KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
+                    KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
+                    KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
+                    KeyValueRow("Difficulty", ui.stats.difficulty.toString())
+                    KeyValueRow("Emission", "%.4f ZKA".format(ui.stats.emissionZka))
+                    KeyValueRow("Miner state blocks", ui.mining.blocksMined.toString())
+                    KeyValueRow("Miner state rewards", "${ui.mining.totalRewards} ZKA")
+                    KeyValueRow("Supply emitted", "${ui.mining.totalSupplyEmitted} ZKA")
+                    KeyValueRow("Pending queue DB", ui.pendingPrivateTransfers.db.ifBlank { ".zoka/${ZokaNetworkConfig.Network}/blockchain.db" })
+                }
+            Panel(title = "Seed · bootstrap", meta = "help fresh nodes join") {
+                Text(
+                    "Share these so a new node can bootstrap directly from you — no open port, no central server. iroh pulls a full snapshot in ~90s; the onion is your reachable p2p address.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (ui.irohEndpointId.isNotBlank()) {
+                    CopyableKeyValueRow("iroh EndpointId", ui.irohEndpointId)
+                } else {
+                    KeyValueRow("iroh EndpointId", if (ui.localRpcOnline) "resolving…" else "start the node to view")
+                }
+                if (ui.torOnionMultiaddr.isNotBlank()) {
+                    CopyableKeyValueRow("Onion address", ui.torOnionMultiaddr)
+                } else {
+                    KeyValueRow("Onion address", if (ui.onionSeedEnabled) "waiting for Tor…" else "enable the onion seed in Settings")
+                }
+            }
             }
         }
 
-        NodePeerTable(ui)
-
-        Panel(title = "Seed · bootstrap", meta = "help fresh nodes join") {
-            Text(
-                "Share these so a new node can bootstrap directly from you — no open port, no central server. iroh pulls a full snapshot in ~90s; the onion is your reachable p2p address.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (ui.irohEndpointId.isNotBlank()) {
-                CopyableKeyValueRow("iroh EndpointId", ui.irohEndpointId)
-            } else {
-                KeyValueRow("iroh EndpointId", if (ui.localRpcOnline) "resolving…" else "start the node to view")
-            }
-            if (ui.torOnionMultiaddr.isNotBlank()) {
-                CopyableKeyValueRow("Onion address", ui.torOnionMultiaddr)
-            } else {
-                KeyValueRow("Onion address", if (ui.onionSeedEnabled) "waiting for Tor…" else "enable the onion seed in Settings")
-            }
-        }
     }
 }
 
@@ -2246,131 +2263,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         title = "Solo mining",
         subtitle = "Contribute hashrate directly to the network. All rewards land in your local wallet."
     ) {
-        Panel(title = "Mining controls", meta = ui.miningStatus.name) {
-            val miningFullyOn = ui.localMiningEnabled ||
-                ui.mining.running ||
-                (ui.miningStatus == ServiceStatus.Online && ui.nodeStatus == ServiceStatus.Online)
-            val miningMeasuring = miningFullyOn && effectiveHashrate <= 0L && !miningFaulted
-            val miningWarming = !miningFullyOn && (
-                miningRequestActive ||
-                    ui.miningStatus == ServiceStatus.Starting ||
-                    ui.nodeStatus == ServiceStatus.Starting ||
-                    ui.nodeStatus == ServiceStatus.Stopping
-                )
-            val miningOn = miningFullyOn || miningWarming
-            val nodeOnline = ui.nodeStatus == ServiceStatus.Online
-            val miningPrereqs = nodeOnline && ui.miningSyncReady
-            val miningSwitchEnabled = if (miningOn) canStopMining else (canStart && miningPrereqs)
-            val dotColorOn = ZTheme.semantics.success
-            val dotColorWarming = ZTheme.semantics.warning
-            val dotColorOff = MaterialTheme.colorScheme.onSurfaceVariant
-            val miningDotColor = when {
-                miningFaulted -> dotColorOff
-                miningFullyOn -> dotColorOn
-                miningWarming -> dotColorWarming
-                else -> dotColorOff
-            }
-            val miningStateLabel = when {
-                miningFaulted -> "ERROR"
-                miningFullyOn && miningMeasuring -> "ON · MEASURING"
-                miningFullyOn -> "ON"
-                miningWarming -> "WARMING"
-                else -> "OFF"
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                SessionReadyCard(
-                    title = "Reward session",
-                    ready = ui.sessionUnlocked,
-                    detail = if (ui.sessionUnlocked) "Unlocked; rewards use the selected wallet session." else "Unlock the wallet first.",
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = threads,
-                    onValueChange = { value -> threads = value.filter { it.isDigit() }.take(2) },
-                    label = { Text("Threads") },
-                    singleLine = true,
-                    enabled = !miningOn,
-                    isError = threads.isNotBlank() && parsedThreads == null,
-                    colors = zFieldColors(),
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.widthIn(min = 110.dp, max = 140.dp)
-                )
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Mining", style = MaterialTheme.typography.labelMedium)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Canvas(modifier = Modifier.size(12.dp)) {
-                            drawCircle(color = miningDotColor)
-                        }
-                        Switch(
-                            checked = miningOn,
-                            enabled = miningSwitchEnabled,
-                            colors = com.zsilent.core.ui.components.zSwitchColors(),
-                            onCheckedChange = { wantOn ->
-                                if (wantOn && canStart && miningPrereqs) {
-                                    miningRequestActive = true
-                                    miningProgressStartedAt = System.currentTimeMillis()
-                                    appState.startMining(parsedThreads ?: 1)
-                                } else if (!wantOn && canStopMining) {
-                                    appState.stopMining()
-                                }
-                            }
-                        )
-                    }
-                    Text(
-                        miningStateLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = miningDotColor
-                    )
-                }
-            }
-            val hintText = when {
-                !ui.miningDiagnostic.isNullOrBlank() -> ui.miningDiagnostic.orEmpty()
-                miningWarming && !miningFullyOn -> "Warming up. Mining will start alongside the node - this can take 30-60 seconds before hashrate is reported."
-                miningFullyOn && miningMeasuring -> "Mining is running. Measuring hashrate; the first sample lands after the first PoW solve. Switch off to return to node-only mode."
-                miningFullyOn -> "Mining is running with the node (integrated). Switch off to return to node-only mode."
-                !nodeOnline -> "Start the Node first in the Node section. Mining unlocks when the node is online."
-                !ui.miningSyncReady -> "Wait for node sync (${ui.syncRemainingBlocks} block(s) remaining). Mining unlocks when the node is near the network head."
-                !rewardAddress.startsWith("zka1") -> "Pick a wallet with a zka1 address before mining."
-                !ui.sessionUnlocked -> "Unlock the wallet session first. ZSilent will reuse it for mining rewards."
-                parsedThreads == null -> "Set a valid number of mining threads."
-                nodeChangingState -> "Wait for the node to finish starting or stopping."
-                else -> "Switching ON will start mining alongside the running node."
-            }
-            Text(
-                hintText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (externalMining) {
-                ErrorText("Mining is active outside ZSilent. The app can monitor it, but stop it from the console that started it.")
-            }
-            ui.miningBlockReason?.takeIf { it.isNotBlank() }?.let { blockReason ->
-                ErrorText(blockReason)
-            }
-            ui.miningDiagnostic?.takeIf { it.isNotBlank() && it != ui.miningBlockReason }?.let { diagnostic ->
-                ErrorText(diagnostic)
-            }
-            // `ui.logs` rotates as new entries arrive, so "the first mining-sourced
-            // entry" can momentarily be absent between polls even while mining is
-            // healthy — deriving this fresh every recomposition made the row flicker
-            // in and out, which reflows this whole panel and visibly shoves every
-            // card below it up and down. Stick to the last real message instead of
-            // reverting to blank on a transient miss; it only ever updates when a
-            // genuinely new event arrives, so the row's presence — and this panel's
-            // height — stays stable.
-            var lastMiningLogSticky by remember { mutableStateOf<String?>(null) }
-            ui.logs.firstOrNull { it.source == "mining" }?.message
-                ?.takeIf { it.isNotBlank() }
-                ?.let { lastMiningLogSticky = it }
-            lastMiningLogSticky?.let { message ->
-                Text(
-                    "Last miner event: $message",
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        // El panel "Mining controls" se fundio en el de hashrate en vivo.
 
         NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
 
@@ -2420,6 +2313,19 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 onThreads = { threads = it.toString() },
                 onStart = { parsedThreads?.let { t -> miningRequestActive = true; appState.startMining(t) } },
                 onStop = { appState.stopMining() },
+                hint = when {
+                    externalMining -> "Mining is running outside ZSilent."
+                    ui.mining.running && effectiveHashrate <= 0L -> "Mining is running. Measuring hashrate; the first sample lands after the first PoW solve."
+                    ui.mining.running -> "Mining is running alongside the node."
+                    !ui.sessionUnlocked -> "Unlock the wallet session first."
+                    ui.nodeStatus != ServiceStatus.Online -> "Start the node before mining."
+                    !ui.miningSyncReady -> "Chain is still syncing. Mining unlocks once the node reaches the network head."
+                    !rewardAddress.startsWith("zka1") -> "Select a wallet with a full zka1 address before mining."
+                    else -> "Starting the miner runs it alongside the node."
+                },
+                blockReason = ui.miningBlockReason,
+                diagnostic = ui.miningDiagnostic,
+                externalMining = externalMining,
                 modifier = Modifier.weight(2f),
             )
             MiningRewardsPanel(ui = ui, rewardAddress = rewardAddress, modifier = Modifier.weight(1f))
@@ -2510,6 +2416,10 @@ private fun MiningLivePanel(
     onThreads: (Int) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    hint: String,
+    blockReason: String?,
+    diagnostic: String?,
+    externalMining: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val current = rememberUpdatedState(hashrate)
@@ -2523,7 +2433,7 @@ private fun MiningLivePanel(
         }
     }
     val max = maxOf(1L, samples.maxOrNull() ?: 1L)
-    val bar = ZTheme.metrics.at(0)
+    val bar = ZTheme.metrics.live
     val maxThreads = ui.mining.availableCpuThreads.coerceAtLeast(1)
 
     Panel(modifier = modifier) {
@@ -2572,10 +2482,17 @@ private fun MiningLivePanel(
                 }
             }
             ZLabel("Threads")
-            // Solo se ofrecen los valores que la maquina tiene. El prototipo
-            // muestra 1/2/4 fijos; ofrecer mas hilos de los que hay solo hace
-            // que el minero rinda peor.
-            val options = listOf(1, 2, 4, 6, 8).filter { it <= maxThreads }
+            // Las opciones se DERIVAN del hardware, no son una lista fija.
+            //
+            // El prototipo muestra 1/2/4 y una lista fija filtrada capaba en 8:
+            // en una maquina de 16 nucleos nunca habrias podido usar mas de la
+            // mitad. availableCpuThreads viene de available_parallelism() del
+            // nodo, o sea el conteo real, y de ahi salen los escalones: minimo,
+            // dos, mitad, tres cuartos y todo. Siempre incluye el maximo.
+            val options = listOf(1, 2, maxThreads / 2, (maxThreads * 3) / 4, maxThreads)
+                .map { it.coerceIn(1, maxThreads) }
+                .distinct()
+                .sorted()
             SegmentedSelector(
                 options = options.map { it.toString() },
                 selected = threads.toString(),
@@ -2584,6 +2501,23 @@ private fun MiningLivePanel(
                 modifier = Modifier.widthIn(max = 220.dp),
             )
         }
+
+        // La sesion de recompensas y los diagnosticos vivian en un panel aparte
+        // mas arriba. Estos textos explican por que el boton esta deshabilitado,
+        // asi que su lugar es al lado del boton y no en otra tarjeta.
+        SessionReadyCard(
+            title = "Reward session",
+            ready = ui.sessionUnlocked,
+            detail = if (ui.sessionUnlocked) "Unlocked; rewards use the selected wallet session."
+                     else "Unlock the wallet first.",
+            modifier = Modifier.fillMaxWidth()
+        )
+        HintText(hint)
+        if (externalMining) {
+            ErrorText("Mining is active outside ZSilent. The app can monitor it, but stop it from the console that started it.")
+        }
+        blockReason?.takeIf { it.isNotBlank() }?.let { ErrorText(it) }
+        diagnostic?.takeIf { it.isNotBlank() && it != blockReason }?.let { ErrorText(it) }
     }
 }
 
@@ -2601,15 +2535,27 @@ private fun MiningRewardsPanel(ui: ZSilentUiState, rewardAddress: String, modifi
                 color = scheme.onSurface
             )
         }
+        // El modelo SI trae el desglose que muestra el prototipo:
+        // lockedRewards es lo que esta madurando y totalRewards el acumulado.
+        // Antes esto mostraba totalRewards etiquetado como "maturing", que es
+        // el total y no lo bloqueado.
+        val unlockedAtoms = (ui.mining.totalRewardsAtoms - ui.mining.lockedRewardsAtoms).coerceAtLeast(0L)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
             Stat(
-                "Rewards", ui.mining.totalRewards.toString(),
-                hint = "maturing", tone = ZTone.Warn, modifier = Modifier.weight(1f)
-            )
-            Stat(
-                "Blocks mined", ui.mining.blocksMined.toString(),
+                "Locked", ui.mining.lockedRewards,
+                hint = if (ui.mining.lockedRewardCount > 0) "${ui.mining.lockedRewardCount} maturing" else "maturing",
+                tone = ZTone.Warn,
                 modifier = Modifier.weight(1f)
             )
+            Stat(
+                "Unlocked", formatZkaCompact(unlockedAtoms),
+                hint = "spendable",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+            Stat("Blocks mined", ui.mining.blocksMined.toString(), modifier = Modifier.weight(1f))
+            Stat("Total", ui.mining.totalRewards, hint = "cumulative", modifier = Modifier.weight(1f))
         }
         Column(
             Modifier
@@ -2619,11 +2565,19 @@ private fun MiningRewardsPanel(ui: ZSilentUiState, rewardAddress: String, modifi
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            ZLabel("Coinbase maturity")
+            ZLabel("Next unlock")
+            val h = ui.mining.nextRewardUnlockHeight
             Text(
-                "" + ui.mining.coinbaseMaturityBlocks + " blocks",
+                if (h != null) "block $h" else "—",
                 style = ZTheme.text.mono,
                 color = scheme.onSurface
+            )
+            HintText(
+                if (ui.mining.nextRewardUnlockInBlocks != null) {
+                    "${ui.mining.nextRewardUnlockInBlocks} blocks away · coinbase matures after ${ui.mining.coinbaseMaturityBlocks} confirmations."
+                } else {
+                    "No maturing rewards. Coinbase matures after ${ui.mining.coinbaseMaturityBlocks} confirmations."
+                }
             )
             HintText("Mined rewards stay locked until they reach this depth.")
         }
