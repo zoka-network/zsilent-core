@@ -36,6 +36,16 @@ import com.zsilent.core.ui.components.KeyValueRow
 import com.zsilent.core.ui.components.LegendDot
 import com.zsilent.core.ui.components.MeterBar
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.background
+import com.zsilent.core.ui.components.PanelHeader
+import com.zsilent.core.ui.theme.ZTheme
+import androidx.compose.foundation.layout.Box
 import com.zsilent.core.ui.components.Pill
 import com.zsilent.core.ui.components.ZTone
 import com.zsilent.core.ui.components.MetricAccent
@@ -173,7 +183,10 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
         }
 
-        DataLegendPanel()
+        // La tarjeta "De donde salen estos numeros" se quito: ademas de sobrar
+        // en esta pantalla, estaba en espanol y el resto de la interfaz esta en
+        // ingles. La distincion entre dato real y simulado sigue viva en las
+        // pills de cada metrica.
 
         RiskPanel(
             checked = risksUnderstood,
@@ -244,6 +257,12 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
         if (status != null && team != null) {
             TeamIdentityPanel(status, team)
+
+            TeamHashrateChart(
+                hashrate = status.combinedHashrateHps,
+                running = status.hashing,
+                members = team.members.values.count { it.active && !it.expelled },
+            )
             MiningControlPanel(
                 status = status,
                 team = team,
@@ -273,40 +292,6 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     }
                 }
             )
-        }
-    }
-}
-
-/**
- * Leyenda de procedencia de los números, portada del prototipo.
- *
- * Esta pantalla mezcla métricas reales del dispositivo con estimaciones y con
- * valores que todavía no produce el protocolo. Sin decir cuál es cuál, una
- * estimación con el mismo aspecto que una lectura real invita a tomar
- * decisiones sobre un número que nadie midió.
- */
-@Composable
-private fun DataLegendPanel() {
-    val rows = listOf(
-        Triple("local", ZTone.On, "Métrica real de tu dispositivo"),
-        Triple("estimation", ZTone.Info, "Derivada de lo local más los peers"),
-        Triple("simulation", ZTone.Warn, "Valor de demostración en este build"),
-        Triple("future", ZTone.Off, "Espera protocolo real"),
-    )
-    Panel(title = "De dónde salen estos números", meta = "leyenda") {
-        rows.forEach { (label, tone, detail) ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Pill(label, tone)
-                Text(
-                    detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }
@@ -356,6 +341,55 @@ private fun TeamRiskLine(title: String, body: String) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+
+/**
+ * Hashrate combinado del equipo en vivo. Mismo grafico que Mining pero en verde,
+ * para que se distinga de un vistazo cual de las dos pantallas estas mirando.
+ *
+ * El subtitulo dice cuantos miembros activos hay porque el reparto depende de
+ * eso: la misma barra con dos miembros o con diez significa cosas distintas
+ * para lo que te toca.
+ */
+@Composable
+private fun TeamHashrateChart(hashrate: Long, running: Boolean, members: Int) {
+    val current = rememberUpdatedState(hashrate)
+    val live = rememberUpdatedState(running)
+    val samples = remember { mutableStateListOf<Long>().apply { repeat(30) { add(0L) } } }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(700)
+            samples.removeAt(0)
+            samples.add(if (live.value) current.value else 0L)
+        }
+    }
+    val max = maxOf(1L, samples.maxOrNull() ?: 1L)
+    val bar = ZTheme.metrics.liveTeam
+
+    Panel {
+        PanelHeader(
+            title = "Live team hashrate",
+            subtitle = "Last ~20 seconds · " + members + " active member(s)",
+            right = { Pill(if (running) "hashing" else "idle", if (running) ZTone.On else ZTone.Off) }
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().height(120.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            samples.forEach { value ->
+                val fraction = (value.toFloat() / max.toFloat()).coerceIn(0.04f, 1f)
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight(fraction)
+                        .alpha(if (running) 1f else 0.25f)
+                        .background(bar, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                )
+            }
+        }
     }
 }
 
