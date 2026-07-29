@@ -101,6 +101,7 @@ import androidx.compose.material.icons.outlined.Palette
 import com.zsilent.core.models.LogLevel
 import com.zsilent.core.models.RuntimeLog
 import com.zsilent.core.ui.components.Truncate
+import androidx.compose.foundation.layout.IntrinsicSize
 import com.zsilent.core.ui.theme.ZTheme
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -169,7 +170,10 @@ fun DashboardScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         subtitle = "Wallet, node and mining at a glance. Nothing leaves this device."
     ) {
         // ── Top status row ─────────────────────────────────────────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             com.zsilent.core.ui.onboarding.NoirStatusPill(
                 label = "Node",
                 value = ui.nodeStatus.name,
@@ -418,27 +422,32 @@ private fun DashboardMetricStripNoir(
                 letterSpacing = 1.8.sp
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Altura pareja: sin esto las tarjetas con `detail` crecian mas que las
+        // otras y la fila quedaba despareja.
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             com.zsilent.core.ui.onboarding.NoirMetricCard(
                 label = "Height",
                 value = heightValue.toString(),
                 samples = heightHistory,
-                accent = com.zsilent.core.ui.onboarding.PastelSalmon,
+                accent = ZTheme.metrics.at(0),
                 modifier = Modifier.weight(1f)
             )
             com.zsilent.core.ui.onboarding.NoirMetricCard(
                 label = "Hashrate",
                 value = formatHashrate(effectiveHashrate),
                 samples = hashrateHistory,
-                accent = com.zsilent.core.ui.onboarding.PastelViolet,
+                accent = ZTheme.metrics.at(1),
                 modifier = Modifier.weight(1f)
             )
             com.zsilent.core.ui.onboarding.NoirMetricCard(
                 label = "Balance",
                 value = activeWalletTotal(ui, activeWallet),
                 samples = balanceHistory,
-                accent = com.zsilent.core.ui.onboarding.PastelOrange,
-                valueColor = com.zsilent.core.ui.onboarding.PastelOrange,
+                accent = ZTheme.metrics.at(2),
+                valueColor = ZTheme.metrics.at(2),
                 hidden = ui.walletLocked || ui.balancesHidden,
                 modifier = Modifier.weight(1f)
             )
@@ -446,7 +455,7 @@ private fun DashboardMetricStripNoir(
                 label = "Next unlock",
                 value = if (nextUnlockBlocks == null) "—" else "${nextUnlockBlocks} blk",
                 samples = unlockHistory,
-                accent = com.zsilent.core.ui.onboarding.PastelPink,
+                accent = ZTheme.metrics.at(3),
                 detail = if (nextUnlockHeight == null) "no maturing rewards" else "at height ${nextUnlockHeight}",
                 modifier = Modifier.weight(1f)
             )
@@ -454,7 +463,7 @@ private fun DashboardMetricStripNoir(
                 label = "Last block",
                 value = lastBlockText,
                 samples = lastBlockHistory,
-                accent = com.zsilent.core.ui.onboarding.PastelOrange,
+                accent = ZTheme.metrics.at(4),
                 detail = if (lastBlockUnix > 0L) "network heartbeat" else "no data",
                 modifier = Modifier.weight(1f)
             )
@@ -761,17 +770,22 @@ private fun WalletTabs(selected: WalletPage, onSelect: (WalletPage) -> Unit) {
         Row(Modifier.fillMaxWidth()) {
             tabs.forEach { (page, label) ->
                 val active = selected == page
+                // width(IntrinsicSize.Max) es imprescindible: sin eso el
+                // fillMaxWidth del subrayado expande la columna a todo el ancho
+                // disponible, la primera pestana se come la fila y las otras dos
+                // quedan fuera de pantalla. Fue exactamente el bug que dejo Send
+                // y Receive inalcanzables.
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
+                        .width(IntrinsicSize.Max)
                         .clickable { onSelect(page) }
-                        .padding(horizontal = 16.dp)
                 ) {
                     Text(
                         label.uppercase(),
                         style = ZTheme.text.eyebrow,
                         color = if (active) scheme.onSurface else scheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                     )
                     Box(
                         Modifier
@@ -850,19 +864,9 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             ) {
                 when (page) {
                     WalletPage.Home -> {
-                        // ── Top action bar (rescan + add wallet) ──────────────
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            NoirIconButton(
-                                icon = com.zsilent.core.ui.onboarding.BootstrapIcons.ArrowClockwise,
-                                contentDescription = "Rescan wallets",
-                                enabled = !ui.walletBusy,
-                                onClick = { appState.refreshWallets() }
-                            )
-                        }
+                        // El refresh vivia tambien aca arriba, duplicando el
+                        // que ya esta dentro de la tarjeta de balance. Se dejo
+                        // uno solo, el de la tarjeta.
 
                         // ── Hero balance card ─────────────────────────────────
                         WalletHeroCard(
@@ -1077,7 +1081,7 @@ private fun WalletHeroCard(
     onToggleHide: () -> Unit,
     onRefresh: () -> Unit = {}
 ) {
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+    val shape = MaterialTheme.shapes.medium
     val address = activeWallet?.address ?: ui.activeWalletAddress.ifBlank { "" }
     val totalAtoms = ui.walletBalance?.totalBalanceAtoms ?: activeWallet?.totalBalanceAtoms ?: 0L
     val hidden = ui.balancesHidden || ui.walletLocked
@@ -1087,12 +1091,13 @@ private fun WalletHeroCard(
         modifier = Modifier.fillMaxWidth(),
         shape = shape,
         color = Color.Transparent,
-        shadowElevation = 3.dp,
+        shadowElevation = 0.dp,
         tonalElevation = 0.dp
     ) {
     androidx.compose.foundation.layout.Column(
         modifier = Modifier
             .background(com.zsilent.core.ui.onboarding.NoirCardGradient, shape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
@@ -1201,12 +1206,17 @@ private fun BlackIconButton(icon: androidx.compose.ui.graphics.vector.ImageVecto
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .size(34.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest, shape)
+            // Fondo y tinte del tema. Antes el tinte era Color.White fijo sobre
+            // surfaceContainerLowest, que en tema claro es #FFFFFF: los tres
+            // botones de la tarjeta de balance quedaban blanco sobre blanco,
+            // invisibles.
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, shape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, contentDescription = contentDescription,
-            tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(16.dp))
+            tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -1923,7 +1933,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
         NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard("Status", ui.nodeStatus.name, if (ui.localRpcOnline) "node RPC online" else "node RPC waiting", Modifier.weight(1f))
             StatusCard("Height", ui.chainHeight.toString(), "node chain tip", Modifier.weight(1f))
             StatusCard("Queue", ui.pendingPrivateTransfers.count.toString(), "private txs waiting", Modifier.weight(1f))
@@ -1968,7 +1978,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                 StatusCard("Tor", ui.peerTorCount.toString(), "onion", Modifier.weight(1f))
                 StatusCard("Direct", ui.peerDirectCount.toString(), "clearnet", Modifier.weight(1f))
                 StatusCard("Total", ui.localConnectedPeers.toString(), "p2p mesh", Modifier.weight(1f))
@@ -2207,7 +2217,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard(
                 "Status",
                 ui.miningStatus.name,

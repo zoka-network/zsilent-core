@@ -140,6 +140,39 @@ private val LightSemantics = ZSemanticColors(
     elevated     = Color(0xFFFFFFFF),
 )
 
+/**
+ * Paleta categórica para las métricas del Dashboard.
+ *
+ * Son cinco series de identidad (altura, hashrate, balance, próximo desbloqueo,
+ * último bloque), así que cada una necesita su propio tono: con colores
+ * repetidos no se pueden distinguir de un vistazo, que era el problema.
+ *
+ * **No son los semánticos.** Verde, ámbar y rojo están reservados para estado y
+ * reusarlos como serie haría que un gráfico parezca una advertencia.
+ *
+ * El orden es fijo y no se cicla. Los valores salieron de validar con el script
+ * de la guía de visualización, y pasan las cinco comprobaciones en **los dos
+ * temas**: banda de luminosidad, piso de croma, separación para daltonismo
+ * (peor par adyacente ΔE 12.2 deutan), piso de visión normal (ΔE 18.2) y
+ * contraste contra la superficie. Si se tocan, hay que revalidar — el orden
+ * importa porque la comprobación mira pares adyacentes.
+ */
+@Immutable
+data class ZMetricPalette(
+    val series: List<Color> = listOf(
+        Color(0xFF2E86E6),  // azul
+        Color(0xFF00A48C),  // verde azulado
+        Color(0xFF8A5CF0),  // violeta
+        Color(0xFFE0559A),  // rosa
+        Color(0xFFB87A2E),  // bronce
+    )
+) {
+    /** Tono por posición. Nunca cicla: si se piden más, repite el último. */
+    fun at(index: Int): Color = series[index.coerceIn(0, series.lastIndex)]
+}
+
+val LocalZMetricPalette = staticCompositionLocalOf { ZMetricPalette() }
+
 val LocalZSemantics = staticCompositionLocalOf<ZSemanticColors> {
     error("ZSemanticColors pedido fuera de ZSilentTheme")
 }
@@ -315,6 +348,7 @@ fun ZSilentTheme(
 ) {
     CompositionLocalProvider(
         LocalZSemantics provides if (darkTheme) DarkSemantics else LightSemantics,
+        LocalZMetricPalette provides ZMetricPalette(),
         LocalZTextStyles provides ZTextDefaults,
         LocalZSpacing provides if (density == ZDensity.Compact) CompactSpacing else CozySpacing,
         LocalZAnimations provides animations,
@@ -332,6 +366,8 @@ fun ZSilentTheme(
 object ZTheme {
     val semantics: ZSemanticColors
         @Composable get() = LocalZSemantics.current
+    val metrics: ZMetricPalette
+        @Composable get() = LocalZMetricPalette.current
     val text: ZTextStyles
         @Composable get() = LocalZTextStyles.current
     val spacing: ZSpacing

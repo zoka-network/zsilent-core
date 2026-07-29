@@ -96,6 +96,7 @@ import com.zsilent.core.models.SeedWordCount
 import com.zsilent.core.models.WalletSetupMode
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
+import com.zsilent.core.ui.components.SectionTitle
 import com.zsilent.core.ui.components.Pill
 import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZButtonSize
@@ -1497,27 +1498,33 @@ fun DashboardReadyStepNoir(ui: ZSilentUiState) {
  * Page shell for the main app sections (Dashboard, Wallet, etc.) — noir
  * background with brand eyebrow, big title and subtitle.
  */
+/**
+ * Contenedor de sección.
+ *
+ * Los tres textos **sí se muestran**. Antes decían "kept for API compat, not
+ * shown" y se descartaban, igual que en `ScreenScaffold`: el resultado era que
+ * ninguna pantalla de la app tenía encabezado, aunque todas pasaban el texto.
+ *
+ * Tampoco pinta fondo propio: el shell de `ZSilentApp` ya dibuja el fondo con su
+ * grano y su retícula, y pintar encima los tapaba y además producía un gris
+ * distinto al del resto de la app en tema claro.
+ */
 @Composable
 fun NoirScreenShell(
-    eyebrow: String,    // kept for API compat, not shown
-    title: String,      // kept for API compat, not shown
-    subtitle: String,   // kept for API compat, not shown
+    eyebrow: String,
+    title: String,
+    subtitle: String,
     content: @Composable () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(NoirInk)  // gray bg
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = ZTheme.spacing.screen, vertical = ZTheme.spacing.panel),
+        verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            content()
-        }
+        SectionTitle(eyebrow = eyebrow, title = title, sub = subtitle.takeIf { it.isNotBlank() })
+        content()
     }
 }
 
@@ -1530,7 +1537,7 @@ fun NoirStatusPill(
     tone: NoirStatusTone = NoirStatusTone.Neutral,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = MaterialTheme.shapes.medium
     // El segundo color del par anterior era un fondo pastel clarísimo que nunca
     // se usaba — el fondo sale de NoirCardGradient. Se elimina.
     val dotColor = when (tone) {
@@ -1539,16 +1546,22 @@ fun NoirStatusPill(
         NoirStatusTone.Bad     -> ZTheme.semantics.danger
         NoirStatusTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    // Sin sombra y CON borde, igual que StatusCard de Components.kt. Antes
+    // usaba shadowElevation y ningun borde, y por eso el Dashboard se veia
+    // distinto de Node: alli las tarjetas tienen borde y aca flotaban. En tema
+    // claro la sombra ademas producia una caja blanca sobre gris que no
+    // pertenece a la paleta.
     androidx.compose.material3.Surface(
-        modifier = modifier,
+        modifier = modifier.fillMaxHeight(),
         shape = shape,
         color = Color.Transparent,
-        shadowElevation = 2.dp,
+        shadowElevation = 0.dp,
         tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
                 .background(NoirCardGradient, shape)
+                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -1581,14 +1594,15 @@ fun NoirMetricCard(
 ) {
     val shape = RoundedCornerShape(16.dp)
     androidx.compose.material3.Surface(
-        modifier = modifier,
+        modifier = modifier.fillMaxHeight(),
         shape = shape,
         color = Color.Transparent,
-        shadowElevation = 2.dp,
+        shadowElevation = 0.dp,
         tonalElevation = 0.dp
     ) {
         Column(modifier = Modifier
             .background(NoirCardGradient, shape)
+                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
             .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label.uppercase(), color = NoirTextSubtle, fontSize = 9.sp, letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
@@ -1673,18 +1687,19 @@ fun NoirSection(
     meta: String? = null,
     content: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = MaterialTheme.shapes.medium
     androidx.compose.material3.Surface(
         modifier = modifier.fillMaxWidth(),
         shape = shape,
         color = Color.Transparent,
-        shadowElevation = 2.dp,
+        shadowElevation = 0.dp,
         tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
                 .background(NoirCardGradient, shape)
-                .padding(20.dp),
+                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
+                .padding(ZTheme.spacing.panel),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Row(
