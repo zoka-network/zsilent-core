@@ -73,6 +73,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.zsilent.core.ui.theme.MonoFamily
@@ -917,34 +921,93 @@ fun CopyableKeyValueRow(label: String, value: String) {
 
 @Composable
 fun QrCode(value: String, modifier: Modifier = Modifier) {
+    // Nivel de correccion Q (25%): al estilizar los modulos se pierde algo de
+    // margen de lectura, y Q lo compensa de sobra. Con el nivel por defecto (L)
+    // un QR con puntos redondeados puede volverse dificil de escanear con
+    // camaras malas o poca luz.
     val matrix = remember(value) {
-        runCatching { QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, 33, 33) }.getOrNull()
+        runCatching {
+            QRCodeWriter().encode(
+                value,
+                BarcodeFormat.QR_CODE,
+                0, 0,
+                mapOf(
+                    EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.Q,
+                    EncodeHintType.MARGIN to 1,
+                )
+            )
+        }.getOrNull()
     }
-    val foreground = MaterialTheme.colorScheme.onSurface
+    // El QR va SIEMPRE oscuro sobre claro, en los dos temas.
+    //
+    // Antes usaba onSurface sobre surfaceContainerHigh, o sea que en tema
+    // oscuro quedaba invertido: modulos claros sobre fondo oscuro. Muchos
+    // lectores de telefono no leen QR invertidos, y esto es una direccion de
+    // cobro — que no se pueda escanear no es un problema estetico.
+    //
+    // El marco sigue el tema; solo la zona del codigo queda fija.
+    val quiet = Color(0xFFFFFFFF)
+    val foreground = Color(0xFF101010)
+    val shape = MaterialTheme.shapes.medium
+
     Box(
         modifier = modifier
             .size(224.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.medium)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), MaterialTheme.shapes.medium)
-            .padding(16.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, shape)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
+            .padding(12.dp)
+            .background(quiet, MaterialTheme.shapes.small)
+            .padding(12.dp)
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val qr = matrix ?: return@Canvas
             val cell = minOf(size.width / qr.width, size.height / qr.height)
-            val offset = Offset(
-                x = (size.width - cell * qr.width) / 2f,
-                y = (size.height - cell * qr.height) / 2f
-            )
+            val originX = (size.width - cell * qr.width) / 2f
+            val originY = (size.height - cell * qr.height) / 2f
+
+            // Los tres patrones de deteccion (esquinas) se dibujan aparte como
+            // marcos redondeados. Si se dibujaran con puntos sueltos como el
+            // resto, los lectores tardan mas en encontrarlos o directamente
+            // fallan: son la referencia geometrica que usa el decodificador.
+            fun isFinder(x: Int, y: Int): Boolean {
+                val n = qr.width
+                return (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7)
+            }
+
+            // Modulos de datos como puntos redondeados.
+            val dot = cell * 0.86f
+            val inset = (cell - dot) / 2f
             for (x in 0 until qr.width) {
                 for (y in 0 until qr.height) {
-                    if (qr[x, y]) {
-                        drawRect(
-                            color = foreground,
-                            topLeft = Offset(offset.x + x * cell, offset.y + y * cell),
-                            size = Size(cell, cell)
-                        )
-                    }
+                    if (!qr[x, y] || isFinder(x, y)) continue
+                    drawRoundRect(
+                        color = foreground,
+                        topLeft = Offset(originX + x * cell + inset, originY + y * cell + inset),
+                        size = Size(dot, dot),
+                        cornerRadius = CornerRadius(dot / 2f, dot / 2f),
+                    )
                 }
+            }
+
+            // Esquinas: anillo exterior 7x7 redondeado + nucleo 3x3 redondeado.
+            val n = qr.width
+            listOf(0 to 0, n - 7 to 0, 0 to n - 7).forEach { (fx, fy) ->
+                val left = originX + fx * cell
+                val top = originY + fy * cell
+                val outer = cell * 7f
+                drawRoundRect(
+                    color = foreground,
+                    topLeft = Offset(left, top),
+                    size = Size(outer, outer),
+                    cornerRadius = CornerRadius(cell * 2f, cell * 2f),
+                    style = Stroke(width = cell),
+                )
+                drawRoundRect(
+                    color = foreground,
+                    topLeft = Offset(left + cell * 2f, top + cell * 2f),
+                    size = Size(cell * 3f, cell * 3f),
+                    cornerRadius = CornerRadius(cell * 1f, cell * 1f),
+                )
             }
         }
     }
