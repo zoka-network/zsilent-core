@@ -59,6 +59,11 @@ import androidx.compose.material3.Icon
 import com.zsilent.core.ui.components.ZInput
 import com.zsilent.core.ui.components.ZLabel
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import com.zsilent.core.ui.theme.zPulseAlpha
+import com.zsilent.core.ui.theme.zScanOffset
 import com.zsilent.core.ui.components.Stat
 import com.zsilent.core.ui.components.Truncate
 import com.zsilent.core.ui.components.CopyIconButton
@@ -145,12 +150,48 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     val localMember = team?.members?.get(status.localAddress)
     val availableCores = ui.mining.availableCpuThreads.coerceAtLeast(1)
     val contributedCores = powerLevel.coresFrom(availableCores)
+    val soloMining = ui.mining.running || ui.localMiningEnabled
+
+    val poolState = when {
+        feed is TeamMiningFeed.NodeOffline ||
+            feed is TeamMiningFeed.Failed ||
+            feed is TeamMiningFeed.Unsupported -> PoolState.Error
+        status == null -> PoolState.Offline
+        status.joinStatus == "join_requested" && team == null -> PoolState.Connecting
+        team == null -> PoolState.Offline
+        status.hashing -> PoolState.Mining
+        else -> PoolState.Ready
+    }
 
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "Mining pool",
         title = "Team mining · experimental",
         subtitle = "Combine hashrate without handing anyone your rewards."
     ) {
+        PoolStateBanner(
+            state = poolState,
+            status = status,
+            team = team,
+            soloMining = soloMining,
+            actionBusy = actionBusy,
+            contributedCores = contributedCores,
+            onStart = {
+                runAction("Team Mining started with $contributedCores core(s).") {
+                    // Excluyentes a proposito. En el nodo la tarea de equipo solo
+                    // arranca si no hay una de minado solo, y se cancela en cuanto
+                    // aparece una (main.rs, el bucle de mineria). Dejarlos convivir
+                    // no reparte el CPU: le gana el solo y el equipo no rinde.
+                    if (soloMining) appState.stopMining()
+                    appState.localRpc.startTeamMining(contributedCores)
+                }
+            },
+            onStop = {
+                runAction("Team Mining stopped; the node remains online.") {
+                    appState.localRpc.stopTeamMining()
+                }
+            },
+        )
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard(
                 "Your hashrate",
@@ -287,13 +328,16 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         if (status != null && team != null) {
             TeamSummaryCards(status, team)
 
-            TeamIdentityPanel(status, team)
-
+            // El grafico va arriba de la identidad del equipo: es lo que se mira
+            // para saber si esto esta rindiendo, y el codigo de invitacion se
+            // consulta una vez y no se vuelve a mirar.
             TeamHashrateChart(
                 hashrate = status.combinedHashrateHps,
                 running = status.hashing,
                 members = team.members.values.count { it.active && !it.expelled },
             )
+
+            TeamIdentityPanel(status, team)
             MiningControlPanel(
                 status = status,
                 team = team,
@@ -304,6 +348,8 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 onPowerLevel = { powerLevel = it },
                 onStart = {
                     runAction("Team Mining started with $contributedCores core(s).") {
+                        // Mismo trato que en el cartel de arriba: excluyentes.
+                        if (soloMining) appState.stopMining()
                         appState.localRpc.startTeamMining(contributedCores)
                     }
                 },
@@ -335,6 +381,157 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         // y unirse, que es lo que la pantalla viene a resolver.
         if (status != null) {
             HowTeamMiningWorks()
+        }
+    }
+}
+
+/** En qué estado real está el pool, para el cartel de arriba. */
+private enum class PoolState { Offline, Connecting, Ready, Mining, Error }
+
+/**
+ * Cartel de estado del pool, con el mismo formato que el de la sección Node:
+ * una palabra grande en mono, coloreada, con pills debajo y el control al lado.
+ *
+ * Antes la sección no decía en ningún lado si estaba minando o no: el botón
+ * arrancaba y no pasaba nada visible. `Mining` sale de que el nodo esté
+ * entregando shares (`hashing`), no de que el usuario haya pulsado el botón —
+ * son cosas distintas, y la que importa es la segunda.
+ */
+@Composable
+private fun PoolStateBanner(
+    state: PoolState,
+    status: TeamMiningStatus?,
+    team: MiningTeam?,
+    soloMining: Boolean,
+    actionBusy: String?,
+    contributedCores: Int,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+) {
+    val label = when (state) {
+        PoolState.Offline -> "OFFLINE"
+        PoolState.Connecting -> "CONNECTING"
+        PoolState.Ready -> "READY"
+        PoolState.Mining -> "MINING"
+        PoolState.Error -> "ERROR"
+    }
+    val tint = when (state) {
+        PoolState.Mining, PoolState.Ready -> ZTheme.semantics.success
+        PoolState.Connecting -> ZTheme.semantics.warning
+        PoolState.Error -> ZTheme.semantics.danger
+        PoolState.Offline -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Panel(title = "Mining pool", meta = label.lowercase()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    label,
+                    style = ZTheme.text.monoDisplay,
+                    // El pulso sólo mientras se está conectando: un cartel que
+                    // late cuando ya está estable es ruido.
+                    color = tint.copy(
+                        alpha = if (state == PoolState.Connecting) zPulseAlpha() else 1f
+                    )
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill(
+                        if (team != null) "team joined" else "no team",
+                        if (team != null) ZTone.On else ZTone.Off
+                    )
+                    Pill(
+                        if (status?.hashing == true) "submitting shares" else "worker idle",
+                        if (status?.hashing == true) ZTone.On else ZTone.Off
+                    )
+                    Pill(
+                        if (soloMining) "solo mining on" else "solo mining off",
+                        if (soloMining) ZTone.Warn else ZTone.Off
+                    )
+                }
+            }
+
+            if (team != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (status?.enabled == true) {
+                        ZButton(
+                            onClick = onStop,
+                            variant = ZButtonVariant.Danger,
+                            enabled = actionBusy == null,
+                        ) { ZButtonText("Stop team mining") }
+                    } else {
+                        ZButton(
+                            onClick = onStart,
+                            variant = ZButtonVariant.Accent,
+                            enabled = actionBusy == null,
+                        ) { ZButtonText("Start team mining") }
+                    }
+                    ActionProgress(actionBusy)
+                }
+            }
+        }
+
+        if (state == PoolState.Connecting) {
+            ConnectingBar()
+        }
+
+        HintText(
+            when (state) {
+                PoolState.Error -> "The local node is not answering. Team mining needs it running."
+                PoolState.Offline -> "Create a team, or join one with a code from a peer."
+                PoolState.Connecting ->
+                    "The signed join request is travelling through the P2P mesh. Both nodes have " +
+                        "to stay online until the coordinator accepts it."
+                PoolState.Ready ->
+                    if (soloMining) {
+                        "Joined, worker stopped. Starting it will stop solo mining first: on this " +
+                            "node the solo miner takes the CPU and the team worker gets cancelled."
+                    } else {
+                        "Joined and idle. Start the worker to contribute $contributedCores core(s)."
+                    }
+                PoolState.Mining ->
+                    "Submitting shares to the team. Rewards rotate by contributed work; the " +
+                        "coinbase always pays a member directly."
+            }
+        )
+    }
+}
+
+/**
+ * Barrido de "conectando", el mismo `zs-scan` que usa el exchange.
+ *
+ * Existe porque unirse a un equipo no es una llamada que termina: es un pedido
+ * firmado que viaja por gossip y que el coordinador acepta cuando lo ve. El
+ * spinner del botón se apaga en milisegundos y dejaba al usuario mirando una
+ * pantalla quieta sin saber si había pasado algo.
+ */
+@Composable
+private fun ConnectingBar() {
+    val offset = zScanOffset()
+    val track = MaterialTheme.colorScheme.outlineVariant
+    val beam = ZTheme.semantics.warning
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .background(track, RoundedCornerShape(3.dp))
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(6.dp)) {
+            val beamWidth = maxWidth * 0.28f
+            val travel = maxWidth - beamWidth
+            Box(
+                Modifier
+                    .offset(x = travel * ((offset + 1f) / 2f))
+                    .width(beamWidth)
+                    .height(6.dp)
+                    .background(beam, RoundedCornerShape(3.dp))
+            )
         }
     }
 }
@@ -581,17 +778,17 @@ private fun MiningControlPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (status.enabled) {
-                OutlinedButton(onClick = onStop, enabled = actionBusy == null) {
-                    Text("Stop Team Mining")
-                }
-            } else {
-                Button(
-                    onClick = onStart,
+                ZButton(
+                    onClick = onStop,
+                    variant = ZButtonVariant.Danger,
                     enabled = actionBusy == null,
-                    colors = zButtonColors()
-                ) {
-                    Text("Start Team Mining")
-                }
+                ) { ZButtonText("Stop team mining") }
+            } else {
+                ZButton(
+                    onClick = onStart,
+                    variant = ZButtonVariant.Accent,
+                    enabled = actionBusy == null,
+                ) { ZButtonText("Start team mining") }
             }
             ActionProgress(actionBusy)
         }
@@ -599,8 +796,13 @@ private fun MiningControlPanel(
         KeyValueRow("Assigned share target", "${local?.shareDifficultyBits ?: 0} bits")
         KeyValueRow("Accepted work", (local?.totalWork ?: 0).toString())
         HintText(
-            "Share difficulty adjusts automatically for a steady submission rate. Team " +
-                "Mining takes precedence over solo mining on this same fullnode."
+            // Decia que el equipo tiene precedencia sobre el minado solo. Es al
+            // reves: en el nodo la tarea de equipo se cancela en cuanto hay una
+            // de minado solo, y solo arranca cuando no la hay. Por eso ZSilent
+            // apaga el solo al arrancar el equipo, en vez de dejar que convivan.
+            "Share difficulty adjusts automatically for a steady submission rate. Solo mining " +
+                "and team mining cannot run at once on this node, so starting the team worker " +
+                "stops the solo miner."
         )
     }
 }
