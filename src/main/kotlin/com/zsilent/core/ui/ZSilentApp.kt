@@ -14,6 +14,9 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -141,6 +144,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
             activeWalletAddress = uiState.activeWalletAddress,
             nodeRunning = uiState.nodeStatus == ServiceStatus.Online,
             miningRunning = uiState.miningStatus == ServiceStatus.Online,
+            poolRunning = uiState.teamMiningHashing,
             modifier = Modifier.width(sidebarWidth)
         )
         Box(Modifier.width(1.dp).fillMaxHeight().background(scheme.outlineVariant))
@@ -148,10 +152,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
         Column(Modifier.weight(1f).fillMaxHeight()) {
             TopBar(
                 section = uiState.selectedSection,
-                nodeStatus = uiState.nodeStatus,
-                miningStatus = uiState.miningStatus,
-                torEnabled = uiState.torEnabled,
-                darkTheme = uiState.darkTheme,
+                ui = uiState,
                 onToggleTheme = { appState.setDarkTheme(!uiState.darkTheme) },
             )
             Box(
@@ -195,14 +196,20 @@ fun ZSilentApp(appState: ZSilentAppState) {
 /**
  * Barra superior del prototipo: breadcrumb `/ sección` en mono, pills de estado
  * y el interruptor de tema.
+ *
+ * `mining` era un solo indicador y mentía: el minado solo y el de equipo son
+ * excluyentes, así que con el pool trabajando el único indicador se veía
+ * apagado. Ahora hay uno para cada uno, y sólo uno puede estar en verde.
+ *
+ * Las pills viven en una fila con scroll horizontal: son seis y la ventana se
+ * puede achicar, y prefiero que se desplacen antes de que la última quede
+ * cortada por la mitad.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TopBar(
     section: AppSection,
-    nodeStatus: ServiceStatus,
-    miningStatus: ServiceStatus,
-    torEnabled: Boolean,
-    darkTheme: Boolean,
+    ui: ZSilentUiState,
     onToggleTheme: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -210,9 +217,11 @@ private fun TopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
+                // Alto minimo, no fijo: con seis pills y una ventana angosta
+                // hacen falta dos lineas, y una barra de alto fijo las recorta.
+                .heightIn(min = 56.dp)
                 .background(scheme.background.copy(alpha = 0.92f))
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -221,17 +230,64 @@ private fun TopBar(
                 style = ZTheme.text.mono,
                 color = scheme.onSurfaceVariant,
             )
-            Spacer(Modifier.weight(1f))
-            Pill("node · ${nodeStatus.pillLabel()}", nodeStatus.tone())
-            Pill("tor · ${if (torEnabled) "on" else "off"}", if (torEnabled) ZTone.On else ZTone.Off)
-            Pill("mining · ${miningStatus.pillLabel()}", miningStatus.tone())
-            ThemeToggleButton(darkTheme = darkTheme, onClick = onToggleTheme)
+            // Las pills bajan de linea en vez de desplazarse: con scroll
+            // horizontal la ultima quedaba cortada contra el interruptor de
+            // tema, y nadie descubre que ahi se puede arrastrar.
+            FlowRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                // Etiquetas cortas a proposito. Son seis: con "node · online"
+                // y "pool · hashing" completos no entran ni en 1360 px, y el
+                // color ya dice el estado. La palabra queda para lo que el
+                // color no distingue.
+                Pill("node ${ui.nodeStatus.shortLabel()}", ui.nodeStatus.tone())
+                Pill(
+                    "tor ${if (ui.torEnabled) "on" else "off"}",
+                    if (ui.torEnabled) ZTone.On else ZTone.Off
+                )
+                Pill("solo ${ui.miningStatus.shortLabel()}", ui.miningStatus.tone())
+                // El pool distingue "encendido" de "entregando shares": el worker
+                // se pausa al publicar una solución, y un verde fijo taparía esa
+                // diferencia justo cuando interesa verla.
+                Pill(
+                    "pool " + when {
+                        ui.teamMiningHashing -> "live"
+                        ui.teamMiningActive -> "idle"
+                        else -> "off"
+                    },
+                    when {
+                        ui.teamMiningHashing -> ZTone.On
+                        ui.teamMiningActive -> ZTone.Warn
+                        else -> ZTone.Off
+                    }
+                )
+                Pill(
+                    "expl ${if (ui.explorerEnabled) "on" else "off"}",
+                    if (ui.explorerEnabled) ZTone.On else ZTone.Off
+                )
+                Pill(
+                    "swap ${if (ui.p2pExchangeEnabled) "on" else "off"}",
+                    if (ui.p2pExchangeEnabled) ZTone.On else ZTone.Off
+                )
+            }
+            ThemeToggleButton(darkTheme = ui.darkTheme, onClick = onToggleTheme)
         }
         HorizontalDivider(color = scheme.outlineVariant)
     }
 }
 
 private fun ServiceStatus.pillLabel(): String = name.lowercase()
+
+/** Version corta para la barra superior, donde compiten seis pills por el ancho. */
+private fun ServiceStatus.shortLabel(): String = when (this) {
+    ServiceStatus.Online -> "on"
+    ServiceStatus.Offline -> "off"
+    ServiceStatus.Starting -> "warm"
+    ServiceStatus.Stopping -> "stop"
+    ServiceStatus.Error -> "err"
+}
 
 private fun ServiceStatus.tone(): ZTone = when (this) {
     ServiceStatus.Online -> ZTone.On
@@ -293,6 +349,7 @@ private fun CollapsibleSidebar(
     activeWalletAddress: String,
     nodeRunning: Boolean,
     miningRunning: Boolean,
+    poolRunning: Boolean,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -368,9 +425,16 @@ private fun CollapsibleSidebar(
                         selected = selected == section,
                         expanded = expanded,
                         onClick = { onSelect(section) },
+                        // El punto se enciende cuando la seccion esta haciendo
+                        // algo, no cuando esta habilitada. Para el pool eso es
+                        // entregar shares: "tengo equipo" no es "esta minando".
                         live = when (section) {
                             AppSection.Node -> nodeRunning
                             AppSection.Mining -> miningRunning
+                            AppSection.MiningPool -> poolRunning
+                            // Explorer y P2P Exchange no llevan punto: estar
+                            // habilitadas no es estar haciendo algo, y un verde
+                            // permanente no informa nada.
                             else -> false
                         },
                     )

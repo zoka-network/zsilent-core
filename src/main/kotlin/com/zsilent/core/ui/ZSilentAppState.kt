@@ -2420,6 +2420,13 @@ class ZSilentAppState(
                         else -> it.nodeStatus
                     },
                     miningStatus = when {
+                        // Con el equipo activo el minado solo esta apagado por
+                        // decision del usuario. Un Error suyo de antes ya no
+                        // describe nada, y como ninguna rama de abajo se cumple
+                        // cuando localRpcMining es false, se quedaba pegado para
+                        // siempre. Paso el 2026-07-30: la VM mostraba ERROR sin
+                        // motivo tras arrancar el equipo.
+                        teamEnabled -> ServiceStatus.Offline
                         localRpcMining && !miningDiagnostic.isNullOrBlank() -> ServiceStatus.Error
                         localRpcMining -> ServiceStatus.Online
                         // Same one-way stickiness fix: only downgrade a
@@ -2433,6 +2440,9 @@ class ZSilentAppState(
                     },
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
+                    // Mismo motivo: `miningFaulted` pinta ERROR mientras haya
+                    // diagnostico, aunque el estado ya sea Offline.
+                    miningDiagnostic = if (teamEnabled) null else it.miningDiagnostic,
                     teamMiningActive = teamEnabled,
                     teamMiningHashing = teamHashing,
                     localConnectedPeers = localStats?.connectedPeers ?: it.localConnectedPeers,
@@ -2511,6 +2521,13 @@ class ZSilentAppState(
                         else -> it.nodeStatus
                     },
                     miningStatus = when {
+                        // Con el equipo activo el minado solo esta apagado por
+                        // decision del usuario. Un Error suyo de antes ya no
+                        // describe nada, y como ninguna rama de abajo se cumple
+                        // cuando localRpcMining es false, se quedaba pegado para
+                        // siempre. Paso el 2026-07-30: la VM mostraba ERROR sin
+                        // motivo tras arrancar el equipo.
+                        teamEnabled -> ServiceStatus.Offline
                         localRpcMining && !miningDiagnostic.isNullOrBlank() -> ServiceStatus.Error
                         localRpcMining -> ServiceStatus.Online
                         localRpcOnline && localStats != null && !it.miningControlledByApp &&
@@ -2519,6 +2536,9 @@ class ZSilentAppState(
                     },
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
+                    // Mismo motivo: `miningFaulted` pinta ERROR mientras haya
+                    // diagnostico, aunque el estado ya sea Offline.
+                    miningDiagnostic = if (teamEnabled) null else it.miningDiagnostic,
                     teamMiningActive = teamEnabled,
                     teamMiningHashing = teamHashing,
                     localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
