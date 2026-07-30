@@ -166,6 +166,16 @@ data class ZSilentUiState(
     val miningBlockReason: String? = null,
     val miningDiagnostic: String? = null,
     val localMiningEnabled: Boolean = false,
+    /**
+     * El worker de equipo está encendido en este nodo.
+     *
+     * Solo y equipo son excluyentes: el nodo no los corre a la vez (la tarea de
+     * equipo se cancela en cuanto hay una de minado solo), así que la interfaz
+     * los presenta como excluyentes en vez de dejar que el usuario los pelee.
+     */
+    val teamMiningActive: Boolean = false,
+    /** El worker de equipo está entregando shares ahora mismo. */
+    val teamMiningHashing: Boolean = false,
     val syncBusy: Boolean = false,
     val localRpcOnline: Boolean = false,
     // Peers of THIS node (from the local node's /stats), distinct from
@@ -2316,15 +2326,34 @@ class ZSilentAppState(
         }
         val localHeight = maxOf(localDbHeight, localRpcHeight ?: 0L, snapshot.mining.chainHeight)
         val localRpcOnline = localRpcHeight != null
+        // El nodo marca local_mining tambien cuando el worker de EQUIPO esta
+        // trabajando, y publica el hashrate del equipo como propio (main.rs:
+        // `runtime_mining_enabled || mining_active || team_hashing`). Desde el
+        // nodo eso es correcto -- esta minando --, pero ZSilent necesita saber
+        // cual de las dos, porque son excluyentes y cada una tiene su seccion.
+        //
+        // Sin esta consulta la seccion Mining se veia encendida, con el hashrate
+        // del equipo, mientras el minado solo estaba realmente apagado.
+        val teamStatus = if (localRpcOnline) {
+            runCatching { localRpc.teamMiningStatus() }.getOrNull()
+        } else {
+            null
+        }
+        val teamEnabled = teamStatus?.enabled ?: snapshot.teamMiningActive
+        val teamHashing = teamStatus?.hashing ?: false
+
         // Sticky mining indicator: a failed/timed-out local stats poll (the node
         // is briefly busy hashing) must NOT be read as "not mining", or the UI
         // flickers between ON and WARMING every time a poll misses. Only a
         // successful poll that actually reports no mining turns it off.
-        val localRpcMining = if (localStats != null) {
+        val nodeReportsMining = if (localStats != null) {
             localStats.localMining || localStats.reportedHashrateHps > 0
         } else {
             snapshot.localMiningEnabled
         }
+        // Si el equipo esta activo, lo que reporta el nodo es el equipo: solo y
+        // equipo no pueden convivir, asi que atribuirlo al solo seria mentir.
+        val localRpcMining = nodeReportsMining && !teamEnabled
         val miningDiagnostic = snapshot.miningDiagnostic
 
         // Live mesh view (serverless): who this node is connected to + transport.
@@ -2404,6 +2433,8 @@ class ZSilentAppState(
                     },
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
+                    teamMiningActive = teamEnabled,
+                    teamMiningHashing = teamHashing,
                     localConnectedPeers = localStats?.connectedPeers ?: it.localConnectedPeers,
                     peers = localPeers?.peers ?: it.peers,
                     peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,
@@ -2488,6 +2519,8 @@ class ZSilentAppState(
                     },
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
+                    teamMiningActive = teamEnabled,
+                    teamMiningHashing = teamHashing,
                     localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
                     peers = localPeers?.peers ?: it.peers,
                     peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,

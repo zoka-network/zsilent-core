@@ -177,11 +177,6 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             contributedCores = contributedCores,
             onStart = {
                 runAction("Team Mining started with $contributedCores core(s).") {
-                    // Excluyentes a proposito. En el nodo la tarea de equipo solo
-                    // arranca si no hay una de minado solo, y se cancela en cuanto
-                    // aparece una (main.rs, el bucle de mineria). Dejarlos convivir
-                    // no reparte el CPU: le gana el solo y el equipo no rinde.
-                    if (soloMining) appState.stopMining()
                     appState.localRpc.startTeamMining(contributedCores)
                 }
             },
@@ -345,11 +340,10 @@ fun MiningPoolScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 availableCores = availableCores,
                 contributedCores = contributedCores,
                 actionBusy = actionBusy,
+                soloMining = soloMining,
                 onPowerLevel = { powerLevel = it },
                 onStart = {
                     runAction("Team Mining started with $contributedCores core(s).") {
-                        // Mismo trato que en el cartel de arriba: excluyentes.
-                        if (soloMining) appState.stopMining()
                         appState.localRpc.startTeamMining(contributedCores)
                     }
                 },
@@ -469,7 +463,9 @@ private fun PoolStateBanner(
                         ZButton(
                             onClick = onStart,
                             variant = ZButtonVariant.Accent,
-                            enabled = actionBusy == null,
+                            // Excluyentes en los dos sentidos: aca tampoco se
+                            // apaga el minado solo por cuenta propia.
+                            enabled = actionBusy == null && !soloMining,
                         ) { ZButtonText("Start team mining") }
                     }
                     ActionProgress(actionBusy)
@@ -490,8 +486,8 @@ private fun PoolStateBanner(
                         "to stay online until the coordinator accepts it."
                 PoolState.Ready ->
                     if (soloMining) {
-                        "Joined, worker stopped. Starting it will stop solo mining first: on this " +
-                            "node the solo miner takes the CPU and the team worker gets cancelled."
+                        "Solo mining is active in the Mining section. Solo and team mining cannot " +
+                            "run at once on this node — stop it there to start the team worker."
                     } else {
                         "Joined and idle. Start the worker to contribute $contributedCores core(s)."
                     }
@@ -739,6 +735,7 @@ private fun MiningControlPanel(
     availableCores: Int,
     contributedCores: Int,
     actionBusy: String?,
+    soloMining: Boolean,
     onPowerLevel: (PowerLevel) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit
@@ -787,10 +784,13 @@ private fun MiningControlPanel(
                 ZButton(
                     onClick = onStart,
                     variant = ZButtonVariant.Accent,
-                    enabled = actionBusy == null,
+                    enabled = actionBusy == null && !soloMining,
                 ) { ZButtonText("Start team mining") }
             }
             ActionProgress(actionBusy)
+        }
+        if (soloMining && !status.enabled) {
+            ErrorText("Solo mining is active. Stop it in the Mining section to start the team worker.")
         }
         val local = team.members[status.localAddress]
         KeyValueRow("Assigned share target", "${local?.shareDifficultyBits ?: 0} bits")
