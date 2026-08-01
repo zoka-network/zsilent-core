@@ -251,7 +251,19 @@ data class OfferSummary(
     @SerialName("claim_expires_at")
     val claimExpiresAt: Long? = null,
     @SerialName("claimed_by")
-    val claimedBy: String? = null
+    val claimedBy: String? = null,
+    /**
+     * Cuánto quedó realmente inmovilizado en la wallet del vendedor.
+     *
+     * Es mayor o igual a [zkaAtoms]: una nota privada no se parte, así que
+     * respaldar una venta de 20 ZKA puede exigir bloquear una de 27,99 entera.
+     * La diferencia vuelve como vuelto al cerrarse la operación.
+     *
+     * Se muestra junto al importe vendido porque, sin eso, el usuario ve bajar
+     * su saldo más de lo que vendió y cree que perdió algo.
+     */
+    @SerialName("reserved_atoms")
+    val reservedAtoms: Long = 0
 )
 
 @Serializable

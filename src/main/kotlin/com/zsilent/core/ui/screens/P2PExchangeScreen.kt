@@ -33,6 +33,15 @@ import com.zsilent.core.ui.components.CopyableKeyValueRow
 import com.zsilent.core.ui.components.EmptyState
 import com.zsilent.core.ui.components.ErrorText
 import com.zsilent.core.ui.components.HintText
+import com.zsilent.core.ui.theme.ZTheme
+import com.zsilent.core.ui.components.ZLabel
+import com.zsilent.core.ui.components.ZInput
+import com.zsilent.core.ui.components.ZButtonVariant
+import com.zsilent.core.ui.components.ZButtonText
+import com.zsilent.core.ui.components.ZButton
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import com.zsilent.core.ui.components.KeyValueRow
 import com.zsilent.core.ui.components.Panel
 import com.zsilent.core.ui.components.ScreenScaffold
@@ -91,47 +100,67 @@ private fun ExchangeRiskGate(onAccept: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium
             )
 
-            RiskLine(
-                "The ZKA lock is not an escrow",
-                "Your ZKA is marked reserved inside this wallet. That is bookkeeping, " +
-                    "not a blockchain escrow: a modified client could spend it anyway. " +
-                    "Trade with people you have reason to trust."
-            )
-            RiskLine(
-                "There is no arbiter",
-                "If a trade goes wrong there is no dispute process, no support desk and " +
-                    "no way to claw funds back."
-            )
-            RiskLine(
-                "Payment is verified on Tron",
-                "Your node checks the USDT transfer over Tor. If Tor is down, payments " +
-                    "cannot be verified. A claimed offer stays locked until a private " +
-                    "check succeeds; the node never falls back to a direct connection."
-            )
-            RiskLine(
-                "Offers expire after 45 minutes",
-                "If no qualifying payment arrived within the window, the offer closes and " +
-                    "your ZKA is released only after your node completes one final private " +
-                    "Tron check."
-            )
-            RiskLine(
-                "There is no amount cap",
-                "The backend flow has had a dedicated review, but this is still an " +
-                    "experimental mainnet feature with no testnet phase. Start with the " +
-                    "minimum and never risk an amount you would mind losing."
-            )
-
-            Button(onClick = onAccept, colors = zButtonColors()) {
-                Text("I understand — continue")
+            ZButton(onClick = onAccept, variant = ZButtonVariant.Accent) {
+                ZButtonText("I understand — continue")
             }
+        }
+
+        // Tarjetas de igual alto, como la tira de Mining Pool. Antes eran textos
+        // sueltos apilados dentro de un solo panel y se leian como un muro.
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+        ) {
+            RiskLine(
+                "01 · The lock is not an escrow",
+                "Your ZKA is marked reserved inside your own wallet. That is bookkeeping, " +
+                    "not a blockchain escrow: a modified client could spend it anyway.",
+                Modifier.weight(1f)
+            )
+            RiskLine(
+                "02 · There is no arbiter",
+                "No dispute process, no support desk, no way to claw funds back. Trade " +
+                    "with people you have reason to trust.",
+                Modifier.weight(1f)
+            )
+            RiskLine(
+                "03 · Payment is verified over Tor",
+                "Your node checks the USDT transfer privately. If Tor is down payments " +
+                    "cannot be verified, and the node never falls back to a direct connection.",
+                Modifier.weight(1f)
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+        ) {
+            RiskLine(
+                "04 · Claims expire in 45 minutes",
+                "If no qualifying payment arrives in the window the offer closes, and your " +
+                    "ZKA is freed only after one final private Tron check.",
+                Modifier.weight(1f)
+            )
+            RiskLine(
+                "05 · Selling locks whole notes",
+                "A private note cannot be split. Backing a 20 ZKA sale may immobilise a " +
+                    "27.99 note; the difference returns as change when the trade closes.",
+                Modifier.weight(1f)
+            )
+            RiskLine(
+                "06 · Experimental on mainnet",
+                "The backend flow has had a dedicated review, but there was no testnet " +
+                    "phase. Start at the minimum and never risk what you would mind losing.",
+                Modifier.weight(1f)
+            )
         }
     }
 }
 
+/** Una tarjeta de la tira de riesgos. El `modifier` tiene que llegar al `Panel`. */
 @Composable
-private fun RiskLine(title: String, body: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+private fun RiskLine(title: String, body: String, modifier: Modifier = Modifier) {
+    Panel(modifier = modifier.fillMaxHeight()) {
+        ZLabel(title)
         Text(
             body,
             style = MaterialTheme.typography.bodySmall,
@@ -216,33 +245,35 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
 
         Panel(title = "Publish an offer", meta = "you sell ZKA") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = zkaInput,
-                    onValueChange = { zkaInput = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("ZKA to sell") },
-                    singleLine = true,
-                    colors = zFieldColors(),
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = usdtInput,
-                    onValueChange = { usdtInput = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("USDT you want") },
-                    singleLine = true,
-                    colors = zFieldColors(),
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ZLabel("ZKA to sell")
+                    ZInput(
+                        value = zkaInput,
+                        onValueChange = { zkaInput = it.filter { c -> c.isDigit() || c == '.' } },
+                        placeholder = "10",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ZLabel("USDT you want")
+                    ZInput(
+                        value = usdtInput,
+                        onValueChange = { usdtInput = it.filter { c -> c.isDigit() || c == '.' } },
+                        placeholder = "1.00",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
-            OutlinedTextField(
+            ZLabel("Your USDT address (TRC-20, starts with T)")
+            ZInput(
                 value = tronAddress,
                 onValueChange = { tronAddress = it.trim() },
-                label = { Text("Your USDT address (TRC-20, starts with T)") },
-                singleLine = true,
-                colors = zFieldColors(),
-                shape = MaterialTheme.shapes.medium,
+                placeholder = "T…",
                 modifier = Modifier.fillMaxWidth()
+            )
+            HintText(
+                "This is the only address a payment is matched against. A buyer who pays " +
+                    "anywhere else cannot be credited, and nobody can fix it afterwards."
             )
             formError?.let { ErrorText(it) }
             Button(
@@ -271,8 +302,9 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                 Text("Publish offer")
             }
             HintText(
-                "Publishing locks the ZKA in this wallet until the offer completes, " +
-                    "expires, or you cancel it."
+                "Publishing locks ZKA in this wallet until the offer completes, expires, " +
+                    "or you cancel it. Notes cannot be split, so the amount immobilised is " +
+                    "usually larger than what you sell — the difference comes back as change."
             )
         }
 
@@ -429,6 +461,19 @@ private fun OfferRow(
             "for ${formatUsdt(offer.microUsdt)} USDT"
         )
         KeyValueRow("Status", offer.status)
+        // El excedente sobre lo vendido no es una comision ni una perdida: es
+        // vuelto que todavia no existe, porque la nota no se parte hasta que la
+        // operacion cierra. Se muestra solo al vendedor y solo cuando hay
+        // diferencia, para no ensuciar la fila de quien compra.
+        if (isSeller && offer.reservedAtoms > offer.zkaAtoms) {
+            val excess = offer.reservedAtoms - offer.zkaAtoms
+            KeyValueRow("Locked in your wallet", "${formatZka(offer.reservedAtoms)} ZKA")
+            HintText(
+                "${formatZka(excess)} ZKA more than you are selling. A private note cannot " +
+                    "be split, so the whole note backs the offer; the surplus returns as " +
+                    "change when the trade closes or you cancel."
+            )
+        }
         CopyableKeyValueRow("Seller", offer.sellerAddress)
         when {
             offer.status == "Open" && isSeller -> {
