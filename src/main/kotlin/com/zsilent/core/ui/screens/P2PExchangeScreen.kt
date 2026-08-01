@@ -33,6 +33,14 @@ import com.zsilent.core.ui.components.CopyableKeyValueRow
 import com.zsilent.core.ui.components.EmptyState
 import com.zsilent.core.ui.components.ErrorText
 import com.zsilent.core.ui.components.HintText
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
 import com.zsilent.core.ui.components.ZButtonSize
 import com.zsilent.core.ui.components.ZTone
 import com.zsilent.core.ui.components.Pill
@@ -183,6 +191,116 @@ private fun RiskLine(title: String, body: String, modifier: Modifier = Modifier)
     }
 }
 
+/**
+ * Semáforo de una operación.
+ *
+ * Verde sólo para lo que termino bien. Ámbar para lo que sigue en curso y
+ * todavia puede salir de cualquier manera. Rojo para lo que se corto.
+ *
+ * `Expired` va en rojo y no en gris a proposito: para el que estaba esperando
+ * cobrar, una ventana vencida es un final malo, no un estado neutro.
+ */
+private fun offerTone(status: String): ZTone = when (status) {
+    "Released" -> ZTone.On
+    "Open", "Claimed", "PaymentDetected" -> ZTone.Warn
+    "Cancelled", "Expired" -> ZTone.Err
+    else -> ZTone.Default
+}
+
+private fun offerIcon(status: String): ImageVector = when (status) {
+    "Released" -> Icons.Outlined.CheckCircle
+    "Open" -> Icons.Outlined.Schedule
+    "Claimed", "PaymentDetected" -> Icons.Outlined.HourglassEmpty
+    "Cancelled" -> Icons.Outlined.Cancel
+    "Expired" -> Icons.Outlined.ErrorOutline
+    else -> Icons.Outlined.Schedule
+}
+
+/** Etiqueta corta y en minuscula, como el resto de las pills de la app. */
+private fun offerStatusLabel(status: String): String = when (status) {
+    "PaymentDetected" -> "payment seen"
+    else -> status.lowercase()
+}
+
+/** Estado global de la seccion, para el cartel de arriba. */
+private enum class ExchangeState { Ready, Warming, Blocked, Offline }
+
+/**
+ * Cartel de estado, hermano de los de Node, Mining y Mining Pool.
+ *
+ * `READY` exige las tres condiciones a la vez: nodo en linea, Tor encendido y
+ * verificacion de pagos disponible. Faltando cualquiera no se puede completar
+ * un trato, y decir "listo" seria invitar a bloquear fondos que despues no se
+ * van a poder liberar.
+ */
+@Composable
+private fun ExchangeStateBanner(
+    state: ExchangeState,
+    nodeOnline: Boolean,
+    torOn: Boolean,
+    verificationReady: Boolean,
+    peers: Int,
+    verificationDetail: String,
+) {
+    val label = when (state) {
+        ExchangeState.Ready -> "READY"
+        ExchangeState.Warming -> "WARMING"
+        ExchangeState.Blocked -> "BLOCKED"
+        ExchangeState.Offline -> "OFFLINE"
+    }
+    val tint = when (state) {
+        ExchangeState.Ready -> ZTheme.semantics.success
+        ExchangeState.Warming -> ZTheme.semantics.warning
+        ExchangeState.Blocked -> ZTheme.semantics.danger
+        ExchangeState.Offline -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Panel(title = "Exchange", meta = label.lowercase()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(label, style = ZTheme.text.monoDisplay, color = tint)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill(
+                        "node ${if (nodeOnline) "online" else "offline"}",
+                        if (nodeOnline) ZTone.On else ZTone.Err
+                    )
+                    Pill("tor ${if (torOn) "on" else "off"}", if (torOn) ZTone.On else ZTone.Err)
+                    Pill(
+                        "payments ${if (verificationReady) "verifiable" else "blocked"}",
+                        if (verificationReady) ZTone.On else ZTone.Warn
+                    )
+                    Pill("$peers peer(s)", if (peers > 0) ZTone.On else ZTone.Warn)
+                }
+            }
+        }
+        HintText(
+            when (state) {
+                ExchangeState.Offline ->
+                    "Start the node from the Node section. Offers travel over its peer connections."
+                ExchangeState.Blocked ->
+                    "Tor is off. Payment verification runs over Tor and the node never falls back " +
+                        "to a direct connection, so a claimed offer could not be settled."
+                ExchangeState.Warming -> verificationDetail
+                ExchangeState.Ready ->
+                    if (peers == 0) {
+                        "Everything is set, but no peers are connected — your offers reach nobody " +
+                            "and you see nobody else's until the mesh has someone in it."
+                    } else {
+                        "Node, Tor and payment verification are all up. Offers you publish reach " +
+                            "$peers peer(s)."
+                    }
+            }
+        )
+    }
+}
+
+/** Una operacion terminada ya no cambia de estado. */
+private fun isFinished(offer: OfferSummary): Boolean =
+    offer.status == "Released" || offer.status == "Expired" || offer.status == "Cancelled"
+
 /** Criterio de orden del mercado. */
 private enum class OfferSort(val label: String) {
     Price("price"),
@@ -217,6 +335,36 @@ private fun SortControls(selected: OfferSort, onSelect: (OfferSort) -> Unit) {
                 )
             }
         }
+    }
+}
+
+/**
+ * Estado de una operación: icono + palabra, en el color del semáforo.
+ *
+ * El icono acompaña al color en vez de reemplazarlo. Quien no distingue rojo de
+ * verde —cerca de uno de cada doce hombres— necesita la forma, y el color solo
+ * no le dice nada.
+ */
+@Composable
+private fun StatusChip(status: String) {
+    val tone = offerTone(status)
+    val color = when (tone) {
+        ZTone.On -> ZTheme.semantics.success
+        ZTone.Warn -> ZTheme.semantics.warning
+        ZTone.Err -> ZTheme.semantics.danger
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            offerIcon(status),
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(13.dp)
+        )
+        Text(offerStatusLabel(status), style = ZTheme.text.eyebrow, color = color)
     }
 }
 
@@ -422,6 +570,22 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
         val escrowAtoms = mine
             .filter { it.status == "Open" || it.status == "Claimed" || it.status == "PaymentDetected" }
             .sumOf { if (it.reservedAtoms > 0) it.reservedAtoms else it.zkaAtoms }
+
+        val exchangeState = when {
+            !ui.localRpcOnline -> ExchangeState.Offline
+            !ui.torEnabled -> ExchangeState.Blocked
+            !verificationReady -> ExchangeState.Warming
+            else -> ExchangeState.Ready
+        }
+        ExchangeStateBanner(
+            state = exchangeState,
+            nodeOnline = ui.localRpcOnline,
+            torOn = ui.torEnabled,
+            verificationReady = verificationReady,
+            peers = ui.localConnectedPeers.toInt(),
+            verificationDetail = "The node reports: ${verificationLabel(verification)}. " +
+                "It will not query Tron directly, so selling stays blocked until this clears.",
+        )
 
         ExchangeFlowCards()
 
@@ -648,18 +812,23 @@ private fun OfferFeedPanel(
                 // "my offers": ofrecerte tu propia venta no tiene sentido.
                 ExchangePage.Market -> state.value.offers.filter { it.status == "Open" && !mine(it) }
                 ExchangePage.Sell -> state.value.offers.filter { mine(it) && it.status == "Open" }
-                ExchangePage.MyOffers -> state.value.offers.filter(mine)
-                ExchangePage.MyTrades -> state.value.offers.filter(taken)
+                // Lo terminado no invade las vistas de trabajo: cancelado,
+                // vencido y liberado viven en History. Una lista donde lo vivo
+                // se pierde entre lo muerto obliga a leerla entera cada vez.
+                ExchangePage.MyOffers -> state.value.offers.filter { mine(it) && !isFinished(it) }
+                ExchangePage.MyTrades -> state.value.offers.filter { taken(it) && !isFinished(it) }
                 ExchangePage.History -> state.value.offers.filter {
-                    it.status == "Released" || it.status == "Expired" || it.status == "Cancelled"
+                    isFinished(it) && (mine(it) || taken(it))
                 }
             }
             val (title, empty) = when (page) {
                 ExchangePage.Market -> "Offers on the mesh" to
                     "No offers reached this node yet. They arrive by gossip, so an isolated node sees none."
                 ExchangePage.Sell -> "Your open offers" to "You have no offers published."
-                ExchangePage.MyOffers -> "Your offers" to "You have never published an offer."
-                ExchangePage.MyTrades -> "Trades you took" to "You have not claimed any offer."
+                ExchangePage.MyOffers -> "Your live offers" to
+                    "Nothing of yours is live. Anything finished is under History."
+                ExchangePage.MyTrades -> "Trades in progress" to
+                    "No trade of yours is running. Anything finished is under History."
                 ExchangePage.History -> "Finished" to "Nothing has closed yet."
             }
             val ordered = when (sort) {
@@ -750,7 +919,7 @@ private fun OfferRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Pill("trc-20", ZTone.Default)
+                StatusChip(offer.status)
                 if (offer.status == "Open" && !isSeller) {
                     ZButton(
                         onClick = { onClaim(offer) },
@@ -760,7 +929,6 @@ private fun OfferRow(
                 }
             }
         }
-        KeyValueRow("Status", offer.status)
         // El excedente sobre lo vendido no es una comision ni una perdida: es
         // vuelto que todavia no existe, porque la nota no se parte hasta que la
         // operacion cierra. Se muestra solo al vendedor y solo cuando hay
