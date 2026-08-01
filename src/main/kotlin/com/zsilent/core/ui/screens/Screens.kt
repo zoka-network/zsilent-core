@@ -46,6 +46,11 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
@@ -3133,30 +3138,71 @@ private fun RuntimeProgressPanel(
 @Composable
 private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SettingsStateBanner(ui)
+        val torLive = ui.torEnabled && ui.torStatus == ServiceStatus.Online
+        val hasWallet = ui.activeWalletAddress.isNotBlank()
+        val experimentalOn = ui.p2pExchangeEnabled || ui.teamMiningEnabled
+
+        // Rejilla pareja de tres columnas. Antes dos tarjetas no llevaban
+        // weight y se dimensionaban por su texto, asi que la fila quedaba
+        // desalineada contra la de arriba.
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsMenuCard(
                 title = "Security",
                 detail = "Change PIN, recovery phrase and private keys",
                 icon = Icons.Outlined.Lock,
-                meta = "secure",
-                modifier = Modifier.weight(1f),
+                meta = if (ui.sessionUnlocked) "unlocked" else "locked",
+                health = if (ui.sessionUnlocked) SettingHealth.Ok else SettingHealth.Warn,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Security) }
             )
             SettingsMenuCard(
                 title = "Network",
-                detail = if (ui.localRpcOnline && ui.localConnectedPeers > 0) "p2p connected" else if (ui.localRpcOnline) "node online" else "offline",
+                detail = when {
+                    !ui.localRpcOnline -> "Node offline: no chain, no peers, no offers."
+                    ui.localConnectedPeers > 0 -> "Connected to ${ui.localConnectedPeers} peer(s) over p2p."
+                    else -> "Node online but alone: nothing reaches you and nothing leaves."
+                },
                 icon = Icons.Outlined.Sync,
-                meta = "p2p",
-                modifier = Modifier.weight(1f),
+                meta = when {
+                    !ui.localRpcOnline -> "offline"
+                    ui.localConnectedPeers > 0 -> "connected"
+                    else -> "no peers"
+                },
+                health = when {
+                    !ui.localRpcOnline -> SettingHealth.Bad
+                    ui.localConnectedPeers > 0 -> SettingHealth.Ok
+                    else -> SettingHealth.Warn
+                },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = { onOpen(SettingsPage.Network) }
+            )
+            // Faltaba: Tor es parte del protocolo y se decide aca, no solo en
+            // Privacy. Sin el, la verificacion de pagos del exchange no corre.
+            SettingsMenuCard(
+                title = "Privacy & Tor",
+                detail = if (torLive) "Traffic routed over Tor onion services."
+                else "Tor is off. Payment verification cannot run without it.",
+                icon = Icons.Outlined.Shield,
+                meta = if (torLive) "tor on" else if (ui.torEnabled) "starting" else "tor off",
+                health = when {
+                    torLive -> SettingHealth.Ok
+                    ui.torEnabled -> SettingHealth.Warn
+                    else -> SettingHealth.Bad
+                },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Network) }
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsMenuCard(
                 title = "Wallets",
-                detail = "Accounts on this device and which one is active.",
+                detail = if (hasWallet) "Active: ${ui.activeWalletName.ifBlank { "unnamed" }}"
+                else "No wallet selected on this device.",
                 icon = Icons.Outlined.AccountBalanceWallet,
-                meta = "accounts",
+                meta = if (hasWallet) "ready" else "none",
+                health = if (hasWallet) SettingHealth.Ok else SettingHealth.Bad,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Wallets) }
             )
             SettingsMenuCard(
@@ -3164,6 +3210,7 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
                 detail = "Theme, density and motion.",
                 icon = Icons.Outlined.Palette,
                 meta = "display",
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Appearance) }
             )
             SettingsMenuCard(
@@ -3171,30 +3218,62 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
                 detail = "ZSilent Core, Zoka and runtime details",
                 icon = Icons.Outlined.Info,
                 meta = "details",
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.About) }
+            )
+        }
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsMenuCard(
+                title = "Experimental",
+                detail = listOfNotNull(
+                    "P2P Exchange".takeIf { ui.p2pExchangeEnabled },
+                    "Team Mining".takeIf { ui.teamMiningEnabled }
+                ).takeIf { it.isNotEmpty() }
+                    ?.let { "On: ${it.joinToString(" + ")}. These can move funds." }
+                    ?: "Off. Nothing experimental can touch your balance.",
+                icon = Icons.Outlined.CurrencyExchange,
+                // Ambar cuando estan encendidas, no verde: funcionan, pero
+                // mueven dinero y conviene que se note que estan activas.
+                meta = if (experimentalOn) "active" else "off",
+                health = if (experimentalOn) SettingHealth.Warn else SettingHealth.Neutral,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = { onOpen(SettingsPage.Experimental) }
             )
             SettingsMenuCard(
                 title = "Danger zone",
                 detail = "Clear app setup and return to onboarding",
                 icon = Icons.Outlined.WarningAmber,
                 meta = "reset",
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Danger) }
             )
         }
-        SettingsMenuCard(
-            title = "Experimental",
-            detail = listOfNotNull(
-                "P2P Exchange".takeIf { ui.p2pExchangeEnabled },
-                "Team Mining".takeIf { ui.teamMiningEnabled }
-            ).takeIf { it.isNotEmpty() }?.joinToString(" + ") ?: "experimental features are off",
-            icon = Icons.Outlined.CurrencyExchange,
-            meta = "opt-in",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { onOpen(SettingsPage.Experimental) }
-        )
     }
+}
+
+/**
+ * Salud de una entrada del menú de ajustes.
+ *
+ * Verde lo que está en orden, ámbar lo que funciona pero pide atención, rojo lo
+ * que está roto o apagado y hace falta. `Neutral` es para lo que no tiene estado
+ * —apariencia, por ejemplo— y ahí no se pinta nada: un punto gris al lado de
+ * cada fila enseña a ignorar los puntos.
+ */
+private enum class SettingHealth { Ok, Warn, Bad, Neutral }
+
+@Composable
+private fun SettingHealth.color(): Color = when (this) {
+    SettingHealth.Ok -> ZTheme.semantics.success
+    SettingHealth.Warn -> ZTheme.semantics.warning
+    SettingHealth.Bad -> ZTheme.semantics.danger
+    SettingHealth.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun SettingHealth.icon(): ImageVector = when (this) {
+    SettingHealth.Ok -> Icons.Outlined.CheckCircle
+    SettingHealth.Warn -> Icons.Outlined.ErrorOutline
+    SettingHealth.Bad -> Icons.Outlined.Cancel
+    SettingHealth.Neutral -> Icons.Outlined.RadioButtonUnchecked
 }
 
 @Composable
@@ -3204,6 +3283,7 @@ private fun SettingsMenuCard(
     icon: ImageVector,
     meta: String,
     modifier: Modifier = Modifier,
+    health: SettingHealth = SettingHealth.Neutral,
     onClick: () -> Unit
 ) {
     Panel(modifier = modifier, title = title, meta = meta) {
@@ -3211,7 +3291,15 @@ private fun SettingsMenuCard(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
+            Icon(
+                icon,
+                contentDescription = null,
+                // El icono de la tarjeta toma el color de su estado: asi el
+                // vistazo general se hace sin leer una palabra.
+                tint = if (health == SettingHealth.Neutral) MaterialTheme.colorScheme.primary
+                else health.color(),
+                modifier = Modifier.size(34.dp)
+            )
             Text(
                 detail,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3221,21 +3309,106 @@ private fun SettingsMenuCard(
                 modifier = Modifier.weight(1f)
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Button(
-                onClick = onClick,
-                colors = zButtonColors(),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = SettingsButtonPadding
-            ) {
-                Text("Open")
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (health != SettingHealth.Neutral) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Icono ademas de color: quien no distingue rojo de verde
+                    // necesita la forma para leer el estado.
+                    Icon(
+                        health.icon(),
+                        contentDescription = null,
+                        tint = health.color(),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(meta, style = ZTheme.text.eyebrow, color = health.color())
+                }
+            } else {
+                Spacer(Modifier.width(1.dp))
+            }
+            ZButton(onClick = onClick, variant = ZButtonVariant.Outline, size = ZButtonSize.Small) {
+                ZButtonText("Open")
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowForward,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }
+    }
+}
+
+/**
+ * Cartel de estado de la app, hermano de los de Node, Mining, Pool y Exchange.
+ *
+ * Resume de un vistazo lo que hace falta para operar. `READY` exige todo a la
+ * vez, porque cada pieza que falta bloquea algo distinto: sin sesión no se firma,
+ * sin nodo no hay cadena, sin Tor no se verifica un pago.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SettingsStateBanner(ui: ZSilentUiState) {
+    val sessionOk = ui.sessionUnlocked
+    val nodeOk = ui.nodeStatus == ServiceStatus.Online
+    val torOk = ui.torEnabled && ui.torStatus == ServiceStatus.Online
+    val binariesOk = ui.zokaReady
+    val syncOk = ui.networkSynced
+
+    val ready = sessionOk && nodeOk && binariesOk && syncOk
+    val broken = !binariesOk || ui.nodeStatus == ServiceStatus.Error
+    val label = when {
+        broken -> "ATTENTION"
+        ready && torOk -> "READY"
+        ready -> "READY"
+        else -> "INCOMPLETE"
+    }
+    val tint = when {
+        broken -> ZTheme.semantics.danger
+        ready -> ZTheme.semantics.success
+        else -> ZTheme.semantics.warning
+    }
+
+    Panel(title = "This device", meta = label.lowercase()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(label, style = ZTheme.text.monoDisplay, color = tint)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Pill("session ${if (sessionOk) "unlocked" else "locked"}", if (sessionOk) ZTone.On else ZTone.Warn)
+                    Pill("node ${if (nodeOk) "online" else "offline"}", if (nodeOk) ZTone.On else ZTone.Err)
+                    Pill("tor ${if (torOk) "on" else "off"}", if (torOk) ZTone.On else ZTone.Warn)
+                    Pill("chain ${if (syncOk) "synced" else "syncing"}", if (syncOk) ZTone.On else ZTone.Warn)
+                    Pill("binaries ${if (binariesOk) "ready" else "missing"}", if (binariesOk) ZTone.On else ZTone.Err)
+                    Pill(
+                        "network ${com.zsilent.core.config.ZokaNetworkConfig.Network.ifBlank { "mainnet" }}",
+                        if (com.zsilent.core.config.ZokaNetworkConfig.Network.equals("testnet", true)) ZTone.Warn else ZTone.Default
+                    )
+                }
+            }
+        }
+        HintText(
+            when {
+                !binariesOk -> "The node binaries are missing from this install. Reinstall ZSilent; nothing can run without them."
+                ui.nodeStatus == ServiceStatus.Error -> "The node reported an error. Check Logs for the reason before trusting any balance shown here."
+                !sessionOk -> "The wallet session is locked. Unlock it to sign anything."
+                !nodeOk -> "The node is offline. Start it from the Node section."
+                !syncOk -> "The chain is still catching up. Balances and offers may be behind until it finishes."
+                !torOk -> "Tor is off. The app works, but payment verification in P2P Exchange needs it and will stay blocked."
+                else -> "Everything needed to operate is up."
+            }
+        )
     }
 }
 
