@@ -22,6 +22,10 @@ val binaryExt = if (hostOs.isWindows) ".exe" else ""
 val zokaExe = nodeRepoRoot.file("target/release/zoka$binaryExt")
 val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
 val networkManifest = nodeRepoRoot.file("docs/mainnet-network.v1.json")
+// Se empaqueta tambien el de testnet para poder probar sin arriesgar dinero
+// real. No cambia la red por defecto: ZokaNetworkConfig sigue resolviendo el de
+// mainnet salvo que se apunte ZSILENT_NETWORK_MANIFEST a este.
+val testnetManifest = nodeRepoRoot.file("docs/testnet-network.v1.json")
 val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
 val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")
 val torBundleDir = (findProperty("zsilent.torBundleDir") as String?)
@@ -114,6 +118,7 @@ val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
         }
     }
     from(networkManifest) { into("docs") }
+    from(testnetManifest) { into("docs") }
     from(trustedSetupDir) { into("trusted-setup") }
 }
 
