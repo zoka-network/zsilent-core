@@ -33,6 +33,14 @@ import com.zsilent.core.ui.components.CopyableKeyValueRow
 import com.zsilent.core.ui.components.EmptyState
 import com.zsilent.core.ui.components.ErrorText
 import com.zsilent.core.ui.components.HintText
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import com.zsilent.core.ui.theme.ZTheme
 import com.zsilent.core.ui.components.ZLabel
 import com.zsilent.core.ui.components.ZInput
@@ -169,6 +177,108 @@ private fun RiskLine(title: String, body: String, modifier: Modifier = Modifier)
     }
 }
 
+/** Pestañas de la sección, con el mismo primitivo que usa Wallet. */
+private enum class ExchangePage { Market, Sell, MyOffers, MyTrades, History }
+
+@Composable
+private fun ExchangeTabs(selected: ExchangePage, onSelect: (ExchangePage) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val tabs = listOf(
+        ExchangePage.Market to "market",
+        ExchangePage.Sell to "sell zka",
+        ExchangePage.MyOffers to "my offers",
+        ExchangePage.MyTrades to "my trades",
+        ExchangePage.History to "history",
+    )
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth()) {
+            tabs.forEach { (page, label) ->
+                val active = selected == page
+                // width(IntrinsicSize.Max) es imprescindible: sin eso el
+                // fillMaxWidth del subrayado expande la columna a todo el ancho
+                // y la primera pestana se come la fila.
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .width(IntrinsicSize.Max)
+                        .clickable { onSelect(page) }
+                ) {
+                    Text(
+                        label.uppercase(),
+                        style = ZTheme.text.eyebrow,
+                        color = if (active) scheme.onSurface else scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(
+                                if (active) scheme.primary else Color.Transparent,
+                                RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
+                            )
+                    )
+                }
+            }
+        }
+        HorizontalDivider(color = scheme.outlineVariant)
+    }
+}
+
+/**
+ * Los cuatro pasos del intercambio, como tarjetas numeradas.
+ *
+ * No es decoración: el flujo tiene cuatro momentos con consecuencias distintas
+ * —el bloqueo, la propagación, el pago, la verificación— y un usuario que no
+ * los distingue manda USDT antes de tiempo o cancela creyendo que perdió algo.
+ */
+@Composable
+private fun ExchangeFlowCards() {
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+    ) {
+        FlowStep(
+            "1 · Lock",
+            "Publishing an offer locks the ZKA in your wallet and takes it out of the " +
+                "spendable balance. Notes are indivisible, so the amount locked is usually " +
+                "larger than what you sell.",
+            Modifier.weight(1f)
+        )
+        FlowStep(
+            "2 · Gossip",
+            "The offer floods to every peer running the same protocol version. There is no " +
+                "central book: what you see is what your node was told.",
+            Modifier.weight(1f)
+        )
+        FlowStep(
+            "3 · Claim & pay",
+            "A taker declares the Tron address they will pay from, then sends USDT (TRC-20) " +
+                "to the address the seller declared. Paying from any other address cannot " +
+                "be matched.",
+            Modifier.weight(1f)
+        )
+        FlowStep(
+            "4 · Verify & release",
+            "The seller's node checks the transfer over Tor: sender, recipient and amount. " +
+                "The amount may be equal or higher, never lower. Only then is the ZKA released.",
+            Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun FlowStep(title: String, body: String, modifier: Modifier = Modifier) {
+    Panel(modifier = modifier.fillMaxHeight()) {
+        ZLabel(title)
+        Text(
+            body,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
 @Composable
 private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
     var state by remember { mutableStateOf<OfferFeed>(OfferFeed.Loading) }
@@ -203,21 +313,44 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
     }
 
+    var page by remember { mutableStateOf(ExchangePage.Market) }
+
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "P2P Exchange",
-        title = "Trade peer-to-peer",
-        subtitle = "Sell ZKA for USDT, directly with another peer."
+        title = "Peer-to-peer ZKA / USDT",
+        subtitle = "Sellers lock ZKA locally, offers propagate by gossip, and payments are " +
+            "verified on-chain before release."
     ) {
         val loaded = state as? OfferFeed.Loaded
         val offers = loaded?.value?.offers.orEmpty()
         val verification = loaded?.value?.verification ?: "unknown"
         val verificationReady = verification == "ready" || verification.startsWith("checking offer ")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-            StatusCard("Offers", offers.size.toString(), "visible to your node", Modifier.weight(1f))
+        val mine = offers.filter { it.sellerAddress == ui.activeWalletAddress }
+        // Lo inmovilizado por MIS ofertas vivas. Se suma reservedAtoms y no
+        // zkaAtoms a proposito: es lo que realmente falta del saldo gastable.
+        val escrowAtoms = mine
+            .filter { it.status == "Open" || it.status == "Claimed" || it.status == "PaymentDetected" }
+            .sumOf { if (it.reservedAtoms > 0) it.reservedAtoms else it.zkaAtoms }
+
+        ExchangeFlowCards()
+
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard(
-                "Open",
+                "Available",
+                formatZka(ui.walletBalance?.balanceAtoms ?: 0L),
+                "spendable ZKA",
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "In escrow",
+                formatZka(escrowAtoms),
+                "locked by your open offers",
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Live offers",
                 offers.count { it.status == "Open" }.toString(),
-                "claimable now",
+                "received via gossip",
                 Modifier.weight(1f)
             )
             StatusCard(
@@ -227,6 +360,8 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                 Modifier.weight(1f)
             )
         }
+
+        ExchangeTabs(selected = page, onSelect = { page = it })
 
         if (!verificationReady) {
             Panel(title = "Payment verification unavailable", meta = "publishing blocked") {
@@ -243,6 +378,7 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
             Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
         }
 
+        if (page == ExchangePage.Sell) {
         Panel(title = "Publish an offer", meta = "you sell ZKA") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -307,9 +443,14 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                     "usually larger than what you sell — the difference comes back as change."
             )
         }
+        }
 
+        // Cada pestana filtra la misma lista en vez de pedir datos distintos:
+        // el nodo entrega todo lo que conoce en una sola respuesta, y partirlo
+        // en varias consultas solo agregaria formas de que se desincronicen.
         OfferFeedPanel(
             state = state,
+            page = page,
             activeWalletAddress = ui.activeWalletAddress,
             onClaim = { offer ->
                 scope.launch {
@@ -364,6 +505,7 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
 @Composable
 private fun OfferFeedPanel(
     state: OfferFeed,
+    page: ExchangePage,
     activeWalletAddress: String,
     onClaim: (OfferSummary) -> Unit,
     onCancel: (OfferSummary) -> Unit,
@@ -403,14 +545,33 @@ private fun OfferFeedPanel(
             ErrorText(state.message)
         }
 
-        is OfferFeed.Loaded -> Panel(
-            title = "Offers",
-            meta = "${state.value.offers.size} relevant"
-        ) {
-            if (state.value.offers.isEmpty()) {
-                EmptyState("No live offers or trades are relevant to this wallet right now.")
+        is OfferFeed.Loaded -> {
+            val mine = { o: OfferSummary -> o.sellerAddress == activeWalletAddress }
+            val taken = { o: OfferSummary -> o.claimedBy == activeWalletAddress }
+            val visible = when (page) {
+                // El mercado muestra lo tomable de otros. Las propias se ven en
+                // "my offers": ofrecerte tu propia venta no tiene sentido.
+                ExchangePage.Market -> state.value.offers.filter { it.status == "Open" && !mine(it) }
+                ExchangePage.Sell -> state.value.offers.filter { mine(it) && it.status == "Open" }
+                ExchangePage.MyOffers -> state.value.offers.filter(mine)
+                ExchangePage.MyTrades -> state.value.offers.filter(taken)
+                ExchangePage.History -> state.value.offers.filter {
+                    it.status == "Released" || it.status == "Expired" || it.status == "Cancelled"
+                }
+            }
+            val (title, empty) = when (page) {
+                ExchangePage.Market -> "Offers on the mesh" to
+                    "No offers reached this node yet. They arrive by gossip, so an isolated node sees none."
+                ExchangePage.Sell -> "Your open offers" to "You have no offers published."
+                ExchangePage.MyOffers -> "Your offers" to "You have never published an offer."
+                ExchangePage.MyTrades -> "Trades you took" to "You have not claimed any offer."
+                ExchangePage.History -> "Finished" to "Nothing has closed yet."
+            }
+            Panel(title = title, meta = "${visible.size}") {
+            if (visible.isEmpty()) {
+                EmptyState(empty)
             } else {
-                state.value.offers.forEach { offer ->
+                visible.forEach { offer ->
                     OfferRow(
                         offer = offer,
                         activeWalletAddress = activeWalletAddress,
@@ -419,6 +580,7 @@ private fun OfferFeedPanel(
                         onReport = onReport
                     )
                 }
+            }
             }
         }
     }
