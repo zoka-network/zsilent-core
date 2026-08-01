@@ -33,6 +33,12 @@ import com.zsilent.core.ui.components.CopyableKeyValueRow
 import com.zsilent.core.ui.components.EmptyState
 import com.zsilent.core.ui.components.ErrorText
 import com.zsilent.core.ui.components.HintText
+import com.zsilent.core.ui.components.ZButtonSize
+import com.zsilent.core.ui.components.ZTone
+import com.zsilent.core.ui.components.Pill
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -177,6 +183,90 @@ private fun RiskLine(title: String, body: String, modifier: Modifier = Modifier)
     }
 }
 
+/** Criterio de orden del mercado. */
+private enum class OfferSort(val label: String) {
+    Price("price"),
+    Amount("amount"),
+    Newest("new"),
+}
+
+@Composable
+private fun SortControls(selected: OfferSort, onSelect: (OfferSort) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        OfferSort.entries.forEach { sort ->
+            val active = sort == selected
+            Box(
+                Modifier
+                    .clickable { onSelect(sort) }
+                    .background(
+                        if (active) MaterialTheme.colorScheme.surfaceContainerHighest
+                        else Color.Transparent,
+                        MaterialTheme.shapes.small
+                    )
+                    .border(
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        MaterialTheme.shapes.small
+                    )
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    sort.label.uppercase(),
+                    style = ZTheme.text.eyebrow,
+                    color = if (active) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** Recorta una direccion para que entre en una celda sin romper la fila. */
+private fun shortenAddress(address: String): String =
+    if (address.length <= 18) address else address.take(15) + "…"
+
+/** Celda de la tabla de ofertas. */
+@Composable
+private fun TableCell(text: String, modifier: Modifier = Modifier, strong: Boolean = false) {
+    Text(
+        text,
+        style = if (strong) ZTheme.text.mono else MaterialTheme.typography.bodySmall,
+        color = if (strong) MaterialTheme.colorScheme.onSurface
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+    )
+}
+
+/**
+ * Precio unitario: USDT por ZKA.
+ *
+ * Se calcula aquí y no viene del nodo, porque no es un dato del protocolo sino
+ * una comodidad para comparar ofertas de tamaños distintos.
+ */
+private fun unitPriceLabel(offer: OfferSummary): String {
+    if (offer.zkaAtoms <= 0L) return "—"
+    val zka = BigDecimal(offer.zkaAtoms).divide(BigDecimal(ATOMS_PER_ZKA))
+    val usdt = BigDecimal(offer.microUsdt).divide(BigDecimal(MICRO_USDT_PER_USDT))
+    return usdt.divide(zka, 3, RoundingMode.HALF_UP).toPlainString()
+}
+
+/** Cabecera de la tabla de ofertas. */
+@Composable
+private fun OfferTableHeader() {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ZLabel("Selling", Modifier.weight(1f))
+        ZLabel("Wants", Modifier.weight(1f))
+        ZLabel("Price", Modifier.weight(0.8f))
+        ZLabel("Seller", Modifier.weight(1.4f))
+        ZLabel("Source", Modifier.weight(0.9f))
+        ZLabel("Window", Modifier.weight(0.9f))
+        Spacer(Modifier.width(150.dp))
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+}
+
 /** Pestañas de la sección, con el mismo primitivo que usa Wallet. */
 private enum class ExchangePage { Market, Sell, MyOffers, MyTrades, History }
 
@@ -314,6 +404,7 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
     }
 
     var page by remember { mutableStateOf(ExchangePage.Market) }
+    var sort by remember { mutableStateOf(OfferSort.Price) }
 
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "P2P Exchange",
@@ -451,6 +542,8 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
         OfferFeedPanel(
             state = state,
             page = page,
+            sort = sort,
+            onSort = { sort = it },
             activeWalletAddress = ui.activeWalletAddress,
             onClaim = { offer ->
                 scope.launch {
@@ -506,6 +599,8 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
 private fun OfferFeedPanel(
     state: OfferFeed,
     page: ExchangePage,
+    sort: OfferSort,
+    onSort: (OfferSort) -> Unit,
     activeWalletAddress: String,
     onClaim: (OfferSummary) -> Unit,
     onCancel: (OfferSummary) -> Unit,
@@ -567,11 +662,25 @@ private fun OfferFeedPanel(
                 ExchangePage.MyTrades -> "Trades you took" to "You have not claimed any offer."
                 ExchangePage.History -> "Finished" to "Nothing has closed yet."
             }
+            val ordered = when (sort) {
+                OfferSort.Price -> visible.sortedBy { o ->
+                    if (o.zkaAtoms > 0) o.microUsdt.toDouble() / o.zkaAtoms.toDouble() else Double.MAX_VALUE
+                }
+                OfferSort.Amount -> visible.sortedByDescending { it.zkaAtoms }
+                OfferSort.Newest -> visible.sortedByDescending { it.createdAt }
+            }
             Panel(title = title, meta = "${visible.size}") {
-            if (visible.isEmpty()) {
+            if (ordered.isEmpty()) {
                 EmptyState(empty)
             } else {
-                visible.forEach { offer ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    SortControls(selected = sort, onSelect = onSort)
+                }
+                OfferTableHeader()
+                ordered.forEach { offer ->
                     OfferRow(
                         offer = offer,
                         activeWalletAddress = activeWalletAddress,
@@ -618,10 +727,39 @@ private fun OfferRow(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        KeyValueRow(
-            "${formatZka(offer.zkaAtoms)} ZKA",
-            "for ${formatUsdt(offer.microUsdt)} USDT"
-        )
+        // Fila de tabla, como el mockup: las columnas se leen de un vistazo y
+        // el detalle del trato se despliega debajo solo cuando hace falta.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TableCell("${formatZka(offer.zkaAtoms)} ZKA", Modifier.weight(1f), strong = true)
+            TableCell("${formatUsdt(offer.microUsdt)} USDT", Modifier.weight(1f), strong = true)
+            // Precio derivado, no un campo del nodo: USDT por ZKA. Es lo que
+            // deja comparar dos ofertas de tamanos distintos.
+            TableCell(unitPriceLabel(offer), Modifier.weight(0.8f))
+            TableCell(shortenAddress(offer.sellerAddress), Modifier.weight(1.4f))
+            TableCell(if (isSeller) "local" else "mesh", Modifier.weight(0.9f))
+            TableCell(
+                offer.claimExpiresAt?.let { countdownLabel(it, nowSeconds) } ?: "—",
+                Modifier.weight(0.9f)
+            )
+            Row(
+                Modifier.width(150.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Pill("trc-20", ZTone.Default)
+                if (offer.status == "Open" && !isSeller) {
+                    ZButton(
+                        onClick = { onClaim(offer) },
+                        variant = ZButtonVariant.Accent,
+                        size = ZButtonSize.Small,
+                    ) { ZButtonText("Take offer") }
+                }
+            }
+        }
         KeyValueRow("Status", offer.status)
         // El excedente sobre lo vendido no es una comision ni una perdida: es
         // vuelto que todavia no existe, porque la nota no se parte hasta que la
