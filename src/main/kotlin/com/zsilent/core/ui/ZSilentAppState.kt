@@ -865,7 +865,33 @@ class ZSilentAppState(
     fun setTronNetwork(network: String) {
         val normalized = if (network.trim().equals("nile", ignoreCase = true)) "nile" else "mainnet"
         if (normalized == _uiState.value.tronNetwork) return
-        update { it.copy(tronNetwork = normalized, lastActivityMillis = System.currentTimeMillis()) }
+        // La URL viaja con la red. Si la que hay guardada es el endpoint por
+        // defecto de la OTRA red, se mueve con ella; una propia se respeta.
+        //
+        // Sin esto quedaba la URL de mainnet con la red en Nile, el nodo pedía
+        // el contrato de Nile al servidor de mainnet, TronGrid devolvía 403 y
+        // ningún pago se veía nunca. La venta expiraba como si el comprador no
+        // hubiera pagado. Pasó el 2026-08-02.
+        val defaults = mapOf(
+            "mainnet" to "https://api.trongrid.io",
+            "nile" to "https://nile.trongrid.io"
+        )
+        val actual = _uiState.value.tronApiUrl.trim().trimEnd('/')
+        val eraDeOtraRed = defaults.any { (red, url) ->
+            red != normalized && url.trimEnd('/') == actual
+        }
+        val nuevaUrl = if (actual.isBlank() || eraDeOtraRed) {
+            defaults.getValue(normalized)
+        } else {
+            _uiState.value.tronApiUrl
+        }
+        update {
+            it.copy(
+                tronNetwork = normalized,
+                tronApiUrl = nuevaUrl,
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
         persistCurrentSetup()
 
         val wasRunning = nodeController.status.value == ServiceStatus.Online ||

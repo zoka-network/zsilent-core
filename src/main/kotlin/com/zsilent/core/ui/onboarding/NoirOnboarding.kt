@@ -1525,6 +1525,10 @@ fun NoirScreenShell(
     ) {
         SectionTitle(eyebrow = eyebrow, title = title, sub = subtitle.takeIf { it.isNotBlank() })
         content()
+        // Aire al final del scroll. Sin esto el ultimo elemento queda pegado al
+        // borde inferior y se lee como si la pantalla estuviera cortada -- que
+        // es exactamente lo que parecia con el boton de publicar oferta.
+        Spacer(Modifier.height(ZTheme.spacing.screen * 2))
     }
 }
 

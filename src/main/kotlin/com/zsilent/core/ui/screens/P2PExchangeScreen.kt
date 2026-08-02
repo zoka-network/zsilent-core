@@ -299,9 +299,33 @@ private fun ExchangeStateBanner(
     }
 }
 
-/** Una operacion terminada ya no cambia de estado. */
-private fun isFinished(offer: OfferSummary): Boolean =
-    offer.status == "Released" || offer.status == "Expired" || offer.status == "Cancelled"
+/**
+ * Cuánto se espera una confirmación que no llega antes de dar la operación por
+ * muerta a efectos de lo que se muestra.
+ *
+ * Generoso a propósito: un vendedor que estuvo apagado puede liberar tarde, y
+ * si llega esa novedad la operación vuelve a su estado real. Esto no decide
+ * nada del protocolo, solo deja de ocupar la vista de lo que está en curso.
+ */
+private const val STALE_CLAIM_GRACE_SECONDS = 60L * 60L
+
+/**
+ * Una operación terminada, o abandonada hace rato.
+ *
+ * Quien compra solo se entera del final por un aviso del vendedor. Si ese aviso
+ * se pierde —el vendedor se apagó, el gossip no llegó, el otro cliente es
+ * viejo— la operación se quedaba en "Claimed" para siempre, y la pantalla del
+ * comprador acumulaba ventas de días atrás como si siguieran vivas. Pasada la
+ * ventana de pago con holgura, el silencio ya es información: nadie va a
+ * liberar nada, y eso pertenece al historial.
+ */
+private fun isFinished(offer: OfferSummary, nowSeconds: Long = System.currentTimeMillis() / 1000): Boolean {
+    if (offer.status == "Released" || offer.status == "Expired" || offer.status == "Cancelled") {
+        return true
+    }
+    val deadline = offer.claimExpiresAt ?: return false
+    return offer.status == "Claimed" && nowSeconds > deadline + STALE_CLAIM_GRACE_SECONDS
+}
 
 /** Criterio de orden del mercado. */
 private enum class OfferSort(val label: String) {
@@ -682,7 +706,7 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                     "anywhere else cannot be credited, and nobody can fix it afterwards."
             )
             formError?.let { ErrorText(it) }
-            Button(
+            ZButton(
                 onClick = {
                     val request = buildOfferRequest(zkaInput, usdtInput, tronAddress)
                     when (request) {
@@ -703,10 +727,10 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                     }
                 },
                 enabled = ui.localRpcOnline && verificationReady,
-                colors = zButtonColors()
-            ) {
-                Text("Publish offer")
-            }
+                modifier = Modifier.fillMaxWidth(),
+                variant = ZButtonVariant.Accent,
+                size = ZButtonSize.Large,
+            ) { ZButtonText("Publish offer") }
             HintText(
                 "Publishing locks ZKA in this wallet until the offer completes, expires, " +
                     "or you cancel it. Notes cannot be split, so the amount immobilised is " +
@@ -1121,6 +1145,15 @@ private fun OfferRow(
         }
         if (offer.status == "Cancelled") {
             HintText("The seller cancelled this offer before it was claimed.")
+        }
+        // Reclamada, la ventana paso hace rato y nunca llego una confirmacion.
+        // Decirlo explicitamente evita que se lea como una operacion en curso.
+        if (offer.status == "Claimed" && isFinished(offer, nowSeconds)) {
+            HintText(
+                "The payment window closed long ago and the seller never confirmed an " +
+                    "outcome. Nothing is pending on your side. If they release late, this " +
+                    "entry updates on its own."
+            )
         }
     }
 }
