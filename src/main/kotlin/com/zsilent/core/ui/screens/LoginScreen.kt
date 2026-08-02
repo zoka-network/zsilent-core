@@ -129,10 +129,6 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         onLogin = appState::login,
         onRestore = { showRestoreConfirm = true },
         onReset = { showReset = true },
-        // Cerrar es la unica forma honesta de volver: el manifiesto de red se
-        // resuelve una sola vez al arrancar, asi que la preferencia recien
-        // escrita no puede aplicarse sin reiniciar el proceso.
-        onBackToMainnet = { appState.requestRestart() },
     )
 }
 
@@ -156,7 +152,6 @@ fun LoginContent(
     onLogin: (CharArray) -> Unit,
     onRestore: () -> Unit,
     onReset: () -> Unit,
-    onBackToMainnet: () -> Unit = {},
 ) {
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -315,56 +310,6 @@ fun LoginContent(
                     }
 
                     HorizontalDivider(color = scheme.outlineVariant)
-
-                    // Volver a mainnet tiene que poder hacerse DESDE ACA.
-                    //
-                    // El selector de red vive en Settings, y Settings esta
-                    // detras de este candado: quien pasaba a testnet quedaba
-                    // encerrado en una pantalla que decia "no hay wallet" con un
-                    // boton de BORRAR TODO al lado, teniendo su wallet de
-                    // mainnet intacta. La unica salida visible era la
-                    // destructiva. Esto es la salida que faltaba.
-                    if (com.zsilent.core.core.storage.NetworkPreference.isTestnet()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    scheme.tertiary.copy(alpha = 0.10f),
-                                    MaterialTheme.shapes.medium
-                                )
-                                .border(
-                                    1.dp,
-                                    scheme.tertiary.copy(alpha = 0.45f),
-                                    MaterialTheme.shapes.medium
-                                )
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                "TESTNET",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = scheme.tertiary
-                            )
-                            Text(
-                                "Testnet has its own chain and its own wallets. Nothing you have " +
-                                    "on mainnet is here, and nothing there was touched.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = scheme.onSurfaceVariant
-                            )
-                            ZButton(
-                                onClick = {
-                                    password = ""
-                                    com.zsilent.core.core.storage.NetworkPreference
-                                        .write("mainnet")
-                                    onBackToMainnet()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                variant = ZButtonVariant.Accent,
-                                size = ZButtonSize.Small,
-                            ) { ZButtonText("Back to mainnet") }
-                        }
-                    }
 
                     Row(
                         Modifier.fillMaxWidth(),

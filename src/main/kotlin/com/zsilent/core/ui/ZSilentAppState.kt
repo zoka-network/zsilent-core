@@ -853,10 +853,33 @@ class ZSilentAppState(
      * the node is the same mechanism Tor availability already requires before
      * selling, so this does not introduce a new pattern.
      */
+    /**
+     * Cambia la red de Tron y reinicia el nodo para que tome efecto.
+     *
+     * La red viaja al nodo como variable de entorno, así que sólo se lee al
+     * arrancarlo: antes había que pararlo y arrancarlo a mano, y olvidarse
+     * significaba seguir consultando la red vieja sin ninguna señal de ello.
+     * Si el nodo no estaba corriendo no se arranca — cambiar un ajuste no es
+     * pedir que el nodo se encienda.
+     */
     fun setTronNetwork(network: String) {
         val normalized = if (network.trim().equals("nile", ignoreCase = true)) "nile" else "mainnet"
+        if (normalized == _uiState.value.tronNetwork) return
         update { it.copy(tronNetwork = normalized, lastActivityMillis = System.currentTimeMillis()) }
         persistCurrentSetup()
+
+        val wasRunning = nodeController.status.value == ServiceStatus.Online ||
+            nodeController.status.value == ServiceStatus.Starting
+        val wasMining = _uiState.value.localMiningEnabled
+        if (!wasRunning) return
+        scope.launch {
+            runCatching { stopNode() }
+            // Dar tiempo a que el proceso suelte el puerto RPC y la base antes
+            // de levantar el siguiente; arrancar encima del anterior falla con
+            // un choque de RocksDB que se lee como un error sin relación.
+            kotlinx.coroutines.delay(3_000)
+            startNode(autoMine = wasMining)
+        }
     }
 
     fun setTronApiSettings(url: String, apiKey: String, fallbackUrls: String) {
@@ -1077,19 +1100,7 @@ class ZSilentAppState(
                             walletLocked = true,
                             walletBalance = null,
                             walletHistory = WalletHistory(wallet = walletName),
-                            // En testnet este mensaje era una trampa: decia que
-                            // no hay wallet, al lado de un boton de BORRAR TODO,
-                            // cuando la de mainnet estaba entera a un directorio
-                            // de distancia. Hay que nombrar la red y decir que
-                            // no se perdio nada.
-                            loginError = if (
-                                com.zsilent.core.core.storage.NetworkPreference.isTestnet()
-                            ) {
-                                "You are on TESTNET, where you have no wallet yet. Your mainnet " +
-                                    "wallets are untouched — use “Back to mainnet” below."
-                            } else {
-                                "No wallet was found for this setup."
-                            }
+                            loginError = "No wallet was found for this setup."
                         )
                     }
                     return@onSuccess
@@ -2148,19 +2159,6 @@ class ZSilentAppState(
         if (_uiState.value.managedTorEnabled) {
             torSupervisor.stop()
         }
-    }
-
-    /**
-     * Cierra ZSilent para que el cambio de red tome efecto al volver a abrirlo.
-     *
-     * El manifiesto se resuelve una sola vez al arrancar, así que no hay forma
-     * de cambiar de red en caliente. Antes de salir se para el nodo y Tor: si
-     * se matara el proceso a secas quedarían corriendo apuntando a la red vieja
-     * y el siguiente arranque chocaría contra sus archivos.
-     */
-    fun requestRestart() {
-        runCatching { stopNode() }
-        kotlin.system.exitProcess(0)
     }
 
     private fun watchNodeReadySeedAddress() {
