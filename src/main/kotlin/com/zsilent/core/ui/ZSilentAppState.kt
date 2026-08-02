@@ -1077,7 +1077,19 @@ class ZSilentAppState(
                             walletLocked = true,
                             walletBalance = null,
                             walletHistory = WalletHistory(wallet = walletName),
-                            loginError = "No wallet was found for this setup."
+                            // En testnet este mensaje era una trampa: decia que
+                            // no hay wallet, al lado de un boton de BORRAR TODO,
+                            // cuando la de mainnet estaba entera a un directorio
+                            // de distancia. Hay que nombrar la red y decir que
+                            // no se perdio nada.
+                            loginError = if (
+                                com.zsilent.core.core.storage.NetworkPreference.isTestnet()
+                            ) {
+                                "You are on TESTNET, where you have no wallet yet. Your mainnet " +
+                                    "wallets are untouched — use “Back to mainnet” below."
+                            } else {
+                                "No wallet was found for this setup."
+                            }
                         )
                     }
                     return@onSuccess
@@ -2136,6 +2148,19 @@ class ZSilentAppState(
         if (_uiState.value.managedTorEnabled) {
             torSupervisor.stop()
         }
+    }
+
+    /**
+     * Cierra ZSilent para que el cambio de red tome efecto al volver a abrirlo.
+     *
+     * El manifiesto se resuelve una sola vez al arrancar, así que no hay forma
+     * de cambiar de red en caliente. Antes de salir se para el nodo y Tor: si
+     * se matara el proceso a secas quedarían corriendo apuntando a la red vieja
+     * y el siguiente arranque chocaría contra sus archivos.
+     */
+    fun requestRestart() {
+        runCatching { stopNode() }
+        kotlin.system.exitProcess(0)
     }
 
     private fun watchNodeReadySeedAddress() {

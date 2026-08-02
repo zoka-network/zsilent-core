@@ -3712,6 +3712,16 @@ private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppSta
                         "the chain are separate per network, so nothing can move between " +
                         "them and nothing you already have is touched."
                 )
+                if (chosen == "testnet") {
+                    // Lo que hay que decir ANTES, no despues: al reiniciar
+                    // aparece la pantalla de desbloqueo sin ninguna wallet, y
+                    // sin este aviso eso se lee como "perdi todo".
+                    HintText(
+                        "You have no wallet on testnet yet, so after restarting the unlock " +
+                            "screen will show none. That is expected — your mainnet wallet " +
+                            "is untouched, and there is a “Back to mainnet” button there."
+                    )
+                }
             } else if (running == "testnet") {
                 HintText(
                     "Testnet coins are worthless on purpose — this is where to rehearse a " +

@@ -285,10 +285,23 @@ private fun WindowScope.WindowTitleBar(
             .padding(start = 14.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // La red sale de la configuración y no de una constante. Estuvo escrita
+        // a mano como "Zenith mainnet" y seguía diciendo mainnet corriendo en
+        // testnet, que es la peor forma posible de equivocarse: el título es lo
+        // primero que se mira para saber si lo que hay en pantalla es dinero.
+        val networkLabel = if (ZokaNetworkConfig.Network.equals("testnet", true)) {
+            "TESTNET"
+        } else {
+            "Zenith mainnet"
+        }
         Text(
-            "ZSilent Core · Zenith mainnet · v${ZokaNetworkConfig.AppVersion}",
+            "ZSilent Core · $networkLabel · v${ZokaNetworkConfig.AppVersion}",
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (ZokaNetworkConfig.Network.equals("testnet", true)) {
+                MaterialTheme.colorScheme.tertiary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f)
         )
