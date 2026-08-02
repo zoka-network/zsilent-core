@@ -23,8 +23,9 @@ val zokaExe = nodeRepoRoot.file("target/release/zoka$binaryExt")
 val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
 val networkManifest = nodeRepoRoot.file("docs/mainnet-network.v1.json")
 // Se empaqueta tambien el de testnet para poder probar sin arriesgar dinero
-// real. No cambia la red por defecto: ZokaNetworkConfig sigue resolviendo el de
-// mainnet salvo que se apunte ZSILENT_NETWORK_MANIFEST a este.
+// real. No cambia la red por defecto: mainnet sigue siendo lo que se resuelve
+// salvo que el usuario elija testnet en Settings (queda en network.pref) o se
+// apunte ZSILENT_NETWORK_MANIFEST a este archivo.
 val testnetManifest = nodeRepoRoot.file("docs/testnet-network.v1.json")
 val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
 val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")

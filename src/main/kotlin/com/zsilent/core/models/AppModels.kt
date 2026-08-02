@@ -272,6 +272,45 @@ data class OfferList(
     val verification: String = "unknown"
 )
 
+/**
+ * Salud de la reserva de una oferta propia, según el nodo.
+ *
+ * `reservationOk` en falso significa que el ZKA prometido ya no está bloqueado:
+ * la liberación va a fallar cuando el comprador pague. El nodo deja de anunciar
+ * esas ofertas, pero si ya estaba tomada hay que verlo y cancelar a mano.
+ */
+@Serializable
+data class OfferDiagnostic(
+    @SerialName("offer_id")
+    val offerId: String = "",
+    val status: String = "",
+    @SerialName("sold_atoms")
+    val soldAtoms: Long = 0,
+    @SerialName("locked_atoms")
+    val lockedAtoms: Long = 0,
+    @SerialName("excess_atoms")
+    val excessAtoms: Long = 0,
+    @SerialName("notes_expected")
+    val notesExpected: Int = 0,
+    @SerialName("notes_found")
+    val notesFound: Int = 0,
+    @SerialName("reservation_ok")
+    val reservationOk: Boolean = true,
+    val problems: List<String> = emptyList()
+)
+
+@Serializable
+data class ExchangeDiagnostics(
+    @SerialName("checked_at")
+    val checkedAt: Long = 0,
+    @SerialName("live_offers")
+    val liveOffers: Int = 0,
+    @SerialName("unhealthy_offers")
+    val unhealthyOffers: Int = 0,
+    val verification: String = "unknown",
+    val offers: List<OfferDiagnostic> = emptyList()
+)
+
 @Serializable
 data class ClaimOfferResponse(
     @SerialName("offer_id")

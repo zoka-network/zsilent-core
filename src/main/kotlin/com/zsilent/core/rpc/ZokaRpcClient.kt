@@ -12,6 +12,7 @@ import com.zsilent.core.models.ReportPaymentFailureRequest
 import com.zsilent.core.models.ViewScanKeyRequest
 import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.models.MempoolTransaction
+import com.zsilent.core.models.ExchangeDiagnostics
 import com.zsilent.core.models.OfferList
 import com.zsilent.core.models.OfferSummary
 import com.zsilent.core.models.NodeStats
@@ -244,6 +245,28 @@ class ZokaRpcClient(val baseUrl: String) {
     suspend fun exchangeOffers(): OfferList =
         getOrNull<OfferList>("/p2p-exchange/offers")
             ?: throw EndpointUnsupported("/p2p-exchange/offers")
+
+    /**
+     * Integridad de la reserva que respalda cada oferta viva de este nodo.
+     *
+     * Solo habla de las ofertas propias: la reserva vive en la cartera del
+     * vendedor y nadie más puede verla. Devuelve `null` en nodos anteriores al
+     * endpoint, para que una versión vieja no rompa la pantalla.
+     */
+    suspend fun exchangeDiagnostics(): ExchangeDiagnostics? =
+        getOrNull<ExchangeDiagnostics>("/p2p-exchange/diagnostics")
+
+    /**
+     * Pide una pasada de verificación ahora, sin esperar el ciclo de 10 s.
+     *
+     * Es comodidad, no corrección: el nodo revisa igual por su cuenta.
+     */
+    suspend fun exchangeCheckNow(): Boolean {
+        if (baseUrl.isBlank()) return false
+        return runCatching {
+            client.post("$baseUrl/p2p-exchange/check-now").status.isSuccess()
+        }.getOrDefault(false)
+    }
 
     suspend fun createOffer(request: CreateOfferRequest): OfferSummary {
         require(baseUrl.isNotBlank()) { "RPC URL is not configured" }

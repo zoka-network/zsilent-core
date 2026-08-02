@@ -3665,6 +3665,64 @@ private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppSta
         )
     }
 
+    // La red de Zoka va ANTES que la de Tron a proposito: es la decision de la
+    // que cuelga todo lo demas -- cadena, carteras, saldo, ofertas -- mientras
+    // que la de Tron solo decide contra que USDT se cobra.
+    run {
+        // Lo elegido y lo que esta corriendo son dos cosas distintas mientras no
+        // se reinicie. Se muestran las dos: si solo se mostrara la eleccion, el
+        // usuario creeria estar en testnet y operaria con dinero real.
+        var chosen by remember {
+            mutableStateOf(com.zsilent.core.core.storage.NetworkPreference.read())
+        }
+        val running = com.zsilent.core.config.ZokaNetworkConfig.Network
+            .ifBlank { "mainnet" }
+            .lowercase()
+        val pendingRestart = chosen != running
+
+        Panel(
+            title = "Zoka network",
+            meta = if (pendingRestart) "restart required" else running
+        ) {
+            SegmentedSelector(
+                options = listOf("Mainnet", "Testnet"),
+                selected = if (chosen == "testnet") "Testnet" else "Mainnet",
+                onSelect = {
+                    val value = if (it == "Testnet") "testnet" else "mainnet"
+                    com.zsilent.core.core.storage.NetworkPreference.write(value)
+                    chosen = value
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Pill(
+                    text = "RUNNING: ${running.uppercase()}",
+                    tone = if (running == "testnet") ZTone.Warn else ZTone.On
+                )
+                if (pendingRestart) {
+                    Pill(text = "SELECTED: ${chosen.uppercase()}", tone = ZTone.Warn)
+                }
+            }
+            if (pendingRestart) {
+                HintText(
+                    "Close ZSilent and open it again to switch. The node, the wallets and " +
+                        "the chain are separate per network, so nothing can move between " +
+                        "them and nothing you already have is touched."
+                )
+            } else if (running == "testnet") {
+                HintText(
+                    "Testnet coins are worthless on purpose — this is where to rehearse a " +
+                        "sale end to end without risking real ZKA or real USDT."
+                )
+            } else {
+                HintText("Real coins. Balances, offers and mining rewards here are real money.")
+            }
+        }
+    }
+
     Panel(
         title = "Tron network",
         meta = if (ui.tronNetwork == "nile") "Nile testnet" else "Mainnet"

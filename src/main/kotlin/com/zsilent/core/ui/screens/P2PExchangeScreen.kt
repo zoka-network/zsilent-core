@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zsilent.core.models.CreateOfferRequest
+import com.zsilent.core.models.OfferDiagnostic
 import com.zsilent.core.models.OfferList
 import com.zsilent.core.models.OfferSummary
 import com.zsilent.core.rpc.ZokaRpcClient
@@ -35,6 +36,7 @@ import com.zsilent.core.ui.components.ErrorText
 import com.zsilent.core.ui.components.HintText
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Schedule
@@ -528,6 +530,11 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
     var actionNotice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Salud de la reserva por oferta propia, indexada por id. Vacío cuando el
+    // nodo es anterior al endpoint: en ese caso no se afirma nada, ni bien ni
+    // mal, porque un aviso inventado es peor que ninguno.
+    var health by remember { mutableStateOf<Map<String, OfferDiagnostic>>(emptyMap()) }
+
     suspend fun reload() {
         state = withContext(Dispatchers.IO) {
             try {
@@ -537,6 +544,14 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
             } catch (t: Throwable) {
                 OfferFeed.Failed(t.message ?: "Could not reach the local node")
             }
+        }
+        health = withContext(Dispatchers.IO) {
+            runCatching {
+                appState.localRpc.exchangeDiagnostics()
+                    ?.offers
+                    ?.associateBy { it.offerId }
+                    .orEmpty()
+            }.getOrDefault(emptyMap())
         }
     }
 
@@ -709,6 +724,14 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
             sort = sort,
             onSort = { sort = it },
             activeWalletAddress = ui.activeWalletAddress,
+            health = health,
+            onCheckNow = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { appState.localRpc.exchangeCheckNow() }
+                    actionNotice = "Payment check requested."
+                    reload()
+                }
+            },
             onClaim = { offer ->
                 scope.launch {
                     val outcome = withContext(Dispatchers.IO) {
@@ -766,6 +789,8 @@ private fun OfferFeedPanel(
     sort: OfferSort,
     onSort: (OfferSort) -> Unit,
     activeWalletAddress: String,
+    health: Map<String, OfferDiagnostic>,
+    onCheckNow: () -> Unit,
     onClaim: (OfferSummary) -> Unit,
     onCancel: (OfferSummary) -> Unit,
     onReport: (OfferSummary, String) -> Unit
@@ -853,9 +878,11 @@ private fun OfferFeedPanel(
                     OfferRow(
                         offer = offer,
                         activeWalletAddress = activeWalletAddress,
+                        health = health[offer.id],
                         onClaim = onClaim,
                         onCancel = onCancel,
-                        onReport = onReport
+                        onReport = onReport,
+                        onCheckNow = onCheckNow
                     )
                 }
             }
@@ -868,9 +895,11 @@ private fun OfferFeedPanel(
 private fun OfferRow(
     offer: OfferSummary,
     activeWalletAddress: String,
+    health: OfferDiagnostic?,
     onClaim: (OfferSummary) -> Unit,
     onCancel: (OfferSummary) -> Unit,
-    onReport: (OfferSummary, String) -> Unit
+    onReport: (OfferSummary, String) -> Unit,
+    onCheckNow: () -> Unit
 ) {
     var nowSeconds by remember(offer.id) {
         mutableStateOf(System.currentTimeMillis() / 1_000)
@@ -878,12 +907,20 @@ private fun OfferRow(
     var reportOpen by remember(offer.id) { mutableStateOf(false) }
     var tronTxHash by remember(offer.id) { mutableStateOf("") }
     var disclosureAccepted by remember(offer.id) { mutableStateOf(false) }
-    LaunchedEffect(offer.id, offer.claimExpiresAt) {
-        while (isActive) {
+    // El reloj se detiene cuando ya no hay nada que esperar: una vez que el
+    // pago se detecto o el ZKA salio, seguir contando hacia atras sugiere un
+    // vencimiento que ya no aplica y asusta sin motivo.
+    val countdownRunning = offer.status == "Open" || offer.status == "Claimed"
+    LaunchedEffect(offer.id, offer.claimExpiresAt, countdownRunning) {
+        while (isActive && countdownRunning) {
             nowSeconds = System.currentTimeMillis() / 1_000
             delay(1_000)
         }
     }
+    // Solo se afirma que esta rota si el nodo lo dijo. Sin diagnostico -- nodo
+    // viejo, oferta ajena -- no se muestra nada: un aviso inventado es peor
+    // que ninguno.
+    val reservationBroken = health?.reservationOk == false
     val isSeller = offer.sellerAddress == activeWalletAddress
     val isBuyer = offer.claimedBy == activeWalletAddress
     val reportAfter = offer.claimExpiresAt?.plus(5 * 60)
@@ -911,7 +948,8 @@ private fun OfferRow(
             TableCell(shortenAddress(offer.sellerAddress), Modifier.weight(1.4f))
             TableCell(if (isSeller) "local" else "mesh", Modifier.weight(0.9f))
             TableCell(
-                offer.claimExpiresAt?.let { countdownLabel(it, nowSeconds) } ?: "—",
+                if (!countdownRunning) "—"
+                else offer.claimExpiresAt?.let { countdownLabel(it, nowSeconds) } ?: "—",
                 Modifier.weight(0.9f)
             )
             Row(
@@ -942,17 +980,34 @@ private fun OfferRow(
                     "change when the trade closes or you cancel."
             )
         }
+        // El aviso va ANTES que cualquier boton de accion: si la reserva se
+        // rompio, el ZKA prometido ya no esta bloqueado y la liberacion va a
+        // fallar despues de que el comprador haya pagado -- y ese USDT no
+        // vuelve. El nodo ya dejo de anunciar la oferta; esto es para que el
+        // vendedor entienda por que desaparecio del mercado y la cancele.
+        if (reservationBroken) {
+            BrokenReservationNotice(health, offer, onCancel)
+        }
         CopyableKeyValueRow("Seller", offer.sellerAddress)
         when {
             offer.status == "Open" && isSeller -> {
-                OutlinedButton(onClick = { onCancel(offer) }) {
-                    Text("Cancel open offer")
+                ZButton(
+                    onClick = { onCancel(offer) },
+                    variant = if (reservationBroken) ZButtonVariant.Danger
+                              else ZButtonVariant.Outline,
+                    size = ZButtonSize.Small
+                ) {
+                    ZButtonText(
+                        if (reservationBroken) "Cancel and unlock" else "Cancel open offer"
+                    )
                 }
             }
             offer.status == "Open" -> {
-                Button(onClick = { onClaim(offer) }, colors = zButtonColors()) {
-                    Text("Request this offer")
-                }
+                ZButton(
+                    onClick = { onClaim(offer) },
+                    variant = ZButtonVariant.Accent,
+                    size = ZButtonSize.Small
+                ) { ZButtonText("Request this offer") }
                 HintText("Wait for the seller's signed acceptance before sending USDT.")
             }
             isBuyer && offer.status == "Claimed" -> {
@@ -967,6 +1022,31 @@ private fun OfferRow(
                 offer.claimExpiresAt?.let {
                     KeyValueRow("Payment window", countdownLabel(it, nowSeconds))
                 }
+                // Deliberadamente sin boton de "ya pague": quien consulta Tron
+                // es el nodo del VENDEDOR, y este nodo no puede disparar esa
+                // consulta. Un boton aca no adelantaria nada y haria creer que
+                // el pago depende de apretarlo.
+                HintText(
+                    "Nothing else to do. The seller's node checks Tron every few seconds and " +
+                        "releases the ZKA on its own once your transfer lands."
+                )
+            }
+            isSeller && offer.status == "Claimed" -> {
+                KeyValueRow("Expecting", "${formatUsdt(offer.microUsdt)} USDT")
+                offer.claimExpiresAt?.let {
+                    KeyValueRow("Buyer's window", countdownLabel(it, nowSeconds))
+                }
+                // Aca si sirve: este nodo es el que consulta Tron. Ahorra la
+                // espera del ciclo de diez segundos, nada mas.
+                ZButton(
+                    onClick = onCheckNow,
+                    variant = ZButtonVariant.Outline,
+                    size = ZButtonSize.Small
+                ) { ZButtonText("Check for payment now") }
+                HintText(
+                    "Optional — your node already checks every few seconds and releases the " +
+                        "ZKA by itself when the exact amount arrives from the buyer's address."
+                )
             }
             isBuyer && offer.status == "PaymentDetected" -> {
                 Text(
@@ -983,9 +1063,11 @@ private fun OfferRow(
             }
         }
         if (canReport && !reportOpen) {
-            OutlinedButton(onClick = { reportOpen = true }) {
-                Text("Report payment without release")
-            }
+            ZButton(
+                onClick = { reportOpen = true },
+                variant = ZButtonVariant.Danger,
+                size = ZButtonSize.Small
+            ) { ZButtonText("Report payment without release") }
         }
         if (reportOpen) {
             Text(
@@ -1014,20 +1096,21 @@ private fun OfferRow(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+                ZButton(
                     onClick = {
                         onReport(offer, tronTxHash)
                         reportOpen = false
                     },
                     enabled = disclosureAccepted && tronTxHash.length == 64 &&
                         tronTxHash.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' },
-                    colors = zButtonColors()
-                ) {
-                    Text("Publish report")
-                }
-                OutlinedButton(onClick = { reportOpen = false }) {
-                    Text("Cancel")
-                }
+                    variant = ZButtonVariant.Danger,
+                    size = ZButtonSize.Small
+                ) { ZButtonText("Publish report") }
+                ZButton(
+                    onClick = { reportOpen = false },
+                    variant = ZButtonVariant.Outline,
+                    size = ZButtonSize.Small
+                ) { ZButtonText("Cancel") }
             }
         }
         if (offer.claimedBy != null && !isBuyer) {
@@ -1039,6 +1122,62 @@ private fun OfferRow(
         if (offer.status == "Cancelled") {
             HintText("The seller cancelled this offer before it was claimed.")
         }
+    }
+}
+
+/**
+ * Aviso de que el ZKA que respalda una oferta dejó de estar bloqueado.
+ *
+ * Se muestra con el motivo exacto que dio el nodo y no con un mensaje genérico:
+ * "falta la nota tal" y "la nota está reservada por otra oferta" se arreglan
+ * distinto, y quien lo lee necesita poder distinguirlos.
+ */
+@Composable
+private fun BrokenReservationNotice(
+    health: OfferDiagnostic?,
+    offer: OfferSummary,
+    onCancel: (OfferSummary) -> Unit
+) {
+    val danger = MaterialTheme.colorScheme.error
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(danger.copy(alpha = 0.10f), MaterialTheme.shapes.medium)
+            .border(1.dp, danger.copy(alpha = 0.45f), MaterialTheme.shapes.medium)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.Warning, contentDescription = null, tint = danger)
+            Text(
+                "RESERVATION BROKEN",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = danger
+            )
+        }
+        Text(
+            "The ZKA backing this offer is no longer locked. Your node has stopped " +
+                "advertising it, so nobody new can take it — but if a buyer already " +
+                "paid, the release will fail. Cancel it and create the offer again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        health?.problems?.forEach { problem ->
+            Text(
+                "• $problem",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        ZButton(
+            onClick = { onCancel(offer) },
+            variant = ZButtonVariant.Danger,
+            size = ZButtonSize.Small
+        ) { ZButtonText("Cancel this offer") }
     }
 }
 

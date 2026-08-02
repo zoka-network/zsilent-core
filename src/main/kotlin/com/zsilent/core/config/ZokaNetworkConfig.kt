@@ -167,14 +167,26 @@ object ZokaNetworkConfig {
         if (!configured.isNullOrBlank()) {
             return File(configured).let { if (it.isAbsolute) it else File(projectRoot, configured) }
         }
-        return listOfNotNull(
-            resourcesRoot?.let { File(it, "docs/mainnet-network.v1.json") },
-            resourcesRoot?.let { File(it, "config/mainnet-network.v1.json") },
-            resourcesRoot?.let { File(it, "mainnet-network.v1.json") },
-            File(projectRoot, "docs/mainnet-network.v1.json"),
-            File(projectRoot, "config/mainnet-network.v1.json"),
-            File(projectRoot, "mainnet-network.v1.json")
-        ).firstOrNull { it.exists() }
+        // La preferencia guardada decide qué manifiesto se busca. Si el usuario
+        // eligió testnet pero el manifiesto no está empaquetado, se cae a
+        // mainnet en vez de quedarse sin red: es preferible arrancar en la red
+        // equivocada y verlo en pantalla que no arrancar.
+        val prefix = if (com.zsilent.core.core.storage.NetworkPreference.isTestnet()) {
+            "testnet"
+        } else {
+            "mainnet"
+        }
+        val candidates = { name: String ->
+            listOfNotNull(
+                resourcesRoot?.let { File(it, "docs/$name-network.v1.json") },
+                resourcesRoot?.let { File(it, "config/$name-network.v1.json") },
+                resourcesRoot?.let { File(it, "$name-network.v1.json") },
+                File(projectRoot, "docs/$name-network.v1.json"),
+                File(projectRoot, "config/$name-network.v1.json"),
+                File(projectRoot, "$name-network.v1.json")
+            )
+        }
+        return (candidates(prefix) + candidates("mainnet")).firstOrNull { it.exists() }
     }
 
     private fun envOrProperty(envName: String, propertyName: String): String? {
