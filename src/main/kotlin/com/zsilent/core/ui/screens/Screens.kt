@@ -3684,16 +3684,77 @@ private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppSta
             title = "Zoka network",
             meta = if (pendingRestart) "restart required" else running
         ) {
+            // Pasar a testnet pide confirmacion; volver a mainnet no.
+            //
+            // Este selector quedo justo encima del de la red de Tron, con el
+            // mismo control y la misma pinta, y confundirlos es lo esperable.
+            // Pero no son comparables: el de Tron cambia contra que USDT se
+            // cobra, y este cambia la cadena entera -- otras carteras, otro
+            // saldo, otras ofertas. Un clic de mas no puede costar eso. La
+            // vuelta a mainnet queda directa porque es el camino de salida.
+            var confirmTestnet by remember { mutableStateOf(false) }
             SegmentedSelector(
                 options = listOf("Mainnet", "Testnet"),
                 selected = if (chosen == "testnet") "Testnet" else "Mainnet",
                 onSelect = {
-                    val value = if (it == "Testnet") "testnet" else "mainnet"
-                    com.zsilent.core.core.storage.NetworkPreference.write(value)
-                    chosen = value
+                    if (it == "Testnet") {
+                        if (chosen != "testnet") confirmTestnet = true
+                    } else {
+                        com.zsilent.core.core.storage.NetworkPreference.write("mainnet")
+                        chosen = "mainnet"
+                        confirmTestnet = false
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
             )
+            if (confirmTestnet) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
+                            MaterialTheme.shapes.medium
+                        )
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f),
+                            MaterialTheme.shapes.medium
+                        )
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Switch the whole app to testnet?",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    Text(
+                        "This is not the Tron setting below. It changes the Zoka chain: after " +
+                            "restarting you will have no wallet, no balance and no offers, " +
+                            "because testnet has its own. Nothing on mainnet is deleted, and " +
+                            "the unlock screen will offer a way back.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ZButton(
+                            onClick = {
+                                com.zsilent.core.core.storage.NetworkPreference.write("testnet")
+                                chosen = "testnet"
+                                confirmTestnet = false
+                            },
+                            variant = ZButtonVariant.Danger,
+                            size = ZButtonSize.Small
+                        ) { ZButtonText("Yes, switch to testnet") }
+                        ZButton(
+                            onClick = { confirmTestnet = false },
+                            variant = ZButtonVariant.Outline,
+                            size = ZButtonSize.Small
+                        ) { ZButtonText("Stay on mainnet") }
+                    }
+                }
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
