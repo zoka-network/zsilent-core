@@ -113,6 +113,26 @@ fun main() {
             onDispose { instanceLock.close() }
         }
 
+        // Atender a quien intente abrir la aplicación mientras esta copia está
+        // escondida en la bandeja. Sin esto, el segundo arranque moría contra
+        // el candado y la aplicación parecía no abrir nunca más.
+        //
+        // Se borra el aviso ANTES de mostrar la ventana: si mostrar fallara, es
+        // preferible perder un pedido a quedar mostrando la ventana en un bucle
+        // porque el archivo nunca se limpió.
+        LaunchedEffect(Unit) {
+            val request = AppInstanceLock.showRequestFile()
+            runCatching { request.delete() }
+            while (true) {
+                kotlinx.coroutines.delay(400)
+                if (runCatching { request.exists() }.getOrDefault(false)) {
+                    runCatching { request.delete() }
+                    windowVisible = true
+                    windowState.isMinimized = false
+                }
+            }
+        }
+
         Tray(
             icon = painterResource("zsilent-icon.png"),
             tooltip = "ZSilent Core",
@@ -155,7 +175,7 @@ fun main() {
     }
 }
 
-private class AppInstanceLock(
+internal class AppInstanceLock(
     private val channel: FileChannel,
     private val lock: FileLock
 ) : AutoCloseable {
@@ -176,14 +196,14 @@ private class AppInstanceLock(
                 val lock = channel.tryLock()
                 if (lock == null) {
                     channel.close()
-                    showAlreadyRunningMessage()
+                    requestExistingInstanceToShow()
                     null
                 } else {
                     AppInstanceLock(channel, lock)
                 }
             } catch (_: OverlappingFileLockException) {
                 channel.close()
-                showAlreadyRunningMessage()
+                requestExistingInstanceToShow()
                 null
             } catch (error: Throwable) {
                 channel.close()
@@ -200,13 +220,31 @@ private class AppInstanceLock(
             }
         }
 
-        private fun showAlreadyRunningMessage() {
-            JOptionPane.showMessageDialog(
-                null,
-                "ZSilent Core is already running. Open it from the tray icon.",
-                "ZSilent Core",
-                JOptionPane.INFORMATION_MESSAGE
-            )
+        /**
+         * Archivo que la segunda instancia deja para pedirle a la primera que
+         * se muestre.
+         *
+         * La X esconde la ventana en la bandeja en vez de cerrar el proceso, y
+         * el proceso escondido se queda con el candado. Quien cerraba con la X
+         * y volvía a abrir desde el icono chocaba contra un cartel de "ya está
+         * corriendo": para el usuario, la aplicación simplemente no abría. Un
+         * archivo alcanza para avisar y evita montar un canal entre procesos.
+         */
+        fun showRequestFile(): File = File(defaultDataRoot(), "zsilent-core.show")
+
+        private fun requestExistingInstanceToShow() {
+            runCatching { showRequestFile().writeText(System.currentTimeMillis().toString()) }
+                .onFailure {
+                    // Si ni siquiera se puede escribir el aviso, al menos decir
+                    // algo: quedarse mudo es lo que hacía parecer que la
+                    // aplicación estaba rota.
+                    JOptionPane.showMessageDialog(
+                        null,
+                        "ZSilent Core is already running. Open it from the tray icon.",
+                        "ZSilent Core",
+                        JOptionPane.INFORMATION_MESSAGE
+                    )
+                }
         }
     }
 }

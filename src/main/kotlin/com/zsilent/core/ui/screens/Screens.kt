@@ -3722,6 +3722,19 @@ private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppSta
                             "is untouched, and there is a “Back to mainnet” button there."
                     )
                 }
+            }
+            if (chosen == "testnet") {
+                // No prometer una red que todavia no existe. El manifiesto esta
+                // escrito, pero mientras nadie corra una semilla de testnet lo
+                // unico que se consigue al cambiar es una cadena vacia y sin
+                // pares. Decirlo aca cuesta una linea; descubrirlo del otro lado
+                // costo una tarde.
+                Pill(text = "NO SEEDS RUNNING YET", tone = ZTone.Warn)
+                HintText(
+                    "Zoka testnet is not live yet: the manifest exists but no seed node is " +
+                        "serving it, so you will connect to nobody. Leave this on Mainnet " +
+                        "unless you are the one bringing the testnet up."
+                )
             } else if (running == "testnet") {
                 HintText(
                     "Testnet coins are worthless on purpose — this is where to rehearse a " +
