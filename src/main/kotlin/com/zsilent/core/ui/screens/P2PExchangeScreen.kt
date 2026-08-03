@@ -79,6 +79,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /** Atoms per ZKA, matching `economics::ATOMS_PER_ZKA` on the node. */
 private const val ATOMS_PER_ZKA = 1_000_000L
@@ -222,6 +225,15 @@ private fun offerIcon(status: String): ImageVector = when (status) {
 private fun offerStatusLabel(status: String): String = when (status) {
     "PaymentDetected" -> "payment seen"
     else -> status.lowercase()
+}
+
+/** Color semantico compartido por el estado y el borde de cada operacion historica. */
+@Composable
+private fun offerStatusColor(status: String): Color = when (offerTone(status)) {
+    ZTone.On -> ZTheme.semantics.success
+    ZTone.Warn -> ZTheme.semantics.warning
+    ZTone.Err -> ZTheme.semantics.danger
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 /** Estado global de la seccion, para el cartel de arriba. */
@@ -373,13 +385,7 @@ private fun SortControls(selected: OfferSort, onSelect: (OfferSort) -> Unit) {
  */
 @Composable
 private fun StatusChip(status: String) {
-    val tone = offerTone(status)
-    val color = when (tone) {
-        ZTone.On -> ZTheme.semantics.success
-        ZTone.Warn -> ZTheme.semantics.warning
-        ZTone.Err -> ZTheme.semantics.danger
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val color = offerStatusColor(status)
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -421,6 +427,38 @@ private fun unitPriceLabel(offer: OfferSummary): String {
     val zka = BigDecimal(offer.zkaAtoms).divide(BigDecimal(ATOMS_PER_ZKA))
     val usdt = BigDecimal(offer.microUsdt).divide(BigDecimal(MICRO_USDT_PER_USDT))
     return usdt.divide(zka, 3, RoundingMode.HALF_UP).toPlainString()
+}
+
+private val historyTimestampFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd · HH:mm").withZone(ZoneId.systemDefault())
+
+/** La oferta solo guarda su alta; por eso la interfaz dice Created y no Closed. */
+private fun formatHistoryTimestamp(epochSeconds: Long): String {
+    if (epochSeconds <= 0L) return "date unavailable"
+    return runCatching { historyTimestampFormatter.format(Instant.ofEpochSecond(epochSeconds)) }
+        .getOrDefault("date unavailable")
+}
+
+private fun shortHistoryOfferId(id: String): String = when {
+    id.length <= 14 -> id
+    else -> "${id.take(8)}…${id.takeLast(4)}"
+}
+
+/** Explica el resultado sin inferir una confirmacion que el modelo no informa. */
+private fun historyOutcomeText(offer: OfferSummary, isSeller: Boolean): String = when (offer.status) {
+    "Released" -> if (isSeller) {
+        "Payment was detected and the ZKA release was published to the network."
+    } else {
+        "The seller published the ZKA release. Your wallet credits it after confirmation."
+    }
+    "Cancelled" -> if (isSeller) {
+        "You cancelled this offer before the exchange completed."
+    } else {
+        "The seller cancelled this offer before the exchange completed."
+    }
+    "Expired" -> "The payment window closed without a matching USDT payment."
+    "Claimed" -> "The payment window closed without a final update from the seller."
+    else -> "This operation is no longer active."
 }
 
 /** Cabecera de la tabla de ofertas. */
@@ -897,19 +935,235 @@ private fun OfferFeedPanel(
                 ) {
                     SortControls(selected = sort, onSelect = onSort)
                 }
-                OfferTableHeader()
-                ordered.forEach { offer ->
-                    OfferRow(
-                        offer = offer,
-                        activeWalletAddress = activeWalletAddress,
-                        health = health[offer.id],
-                        onClaim = onClaim,
-                        onCancel = onCancel,
-                        onReport = onReport,
-                        onCheckNow = onCheckNow
+                if (page == ExchangePage.History) {
+                    HistoryOverview(ordered, activeWalletAddress)
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ordered.forEach { offer ->
+                            HistoryOfferCard(
+                                offer = offer,
+                                activeWalletAddress = activeWalletAddress,
+                                health = health[offer.id],
+                                onClaim = onClaim,
+                                onCancel = onCancel,
+                                onReport = onReport,
+                                onCheckNow = onCheckNow
+                            )
+                        }
+                    }
+                } else {
+                    OfferTableHeader()
+                    ordered.forEach { offer ->
+                        OfferRow(
+                            offer = offer,
+                            activeWalletAddress = activeWalletAddress,
+                            health = health[offer.id],
+                            onClaim = onClaim,
+                            onCancel = onCancel,
+                            onReport = onReport,
+                            onCheckNow = onCheckNow
+                        )
+                    }
+                }
+            }
+            }
+        }
+    }
+}
+
+/**
+ * Resumen corto del historial. Da contexto antes de obligar a leer operaciones
+ * individuales y separa los cierres correctos de los que terminaron sin canje.
+ */
+@Composable
+private fun HistoryOverview(offers: List<OfferSummary>, activeWalletAddress: String) {
+    val released = offers.count { it.status == "Released" }
+    val closedWithoutRelease = offers.size - released
+    val sales = offers.count { it.sellerAddress == activeWalletAddress }
+    val purchases = offers.count { it.claimedBy == activeWalletAddress }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f),
+                MaterialTheme.shapes.medium
+            )
+            .border(
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                MaterialTheme.shapes.medium
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        HistoryMetric("Released", released.toString(), Modifier.weight(1f))
+        HistoryMetric("No release", closedWithoutRelease.toString(), Modifier.weight(1f))
+        HistoryMetric("Your sales", sales.toString(), Modifier.weight(1f))
+        HistoryMetric("Your buys", purchases.toString(), Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun HistoryMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            label.uppercase(),
+            style = ZTheme.text.eyebrow,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Una operacion cerrada, resumida como unidad visual independiente.
+ *
+ * El bloque sensible sigue siendo [OfferRow]: no se duplican acciones ni reglas.
+ * Solo queda plegado hasta que el usuario pide ver todos los datos.
+ */
+@Composable
+private fun HistoryOfferCard(
+    offer: OfferSummary,
+    activeWalletAddress: String,
+    health: OfferDiagnostic?,
+    onClaim: (OfferSummary) -> Unit,
+    onCancel: (OfferSummary) -> Unit,
+    onReport: (OfferSummary, String) -> Unit,
+    onCheckNow: () -> Unit
+) {
+    var detailsOpen by remember(offer.id) { mutableStateOf(false) }
+    val isSeller = offer.sellerAddress == activeWalletAddress
+    val isBuyer = offer.claimedBy == activeWalletAddress
+    val accent = offerStatusColor(offer.status)
+    val role = when {
+        isSeller -> "You sold"
+        isBuyer -> "You bought"
+        else -> "Your trade"
+    }
+    val counterparty = when {
+        isSeller && offer.claimedBy != null -> "Buyer ${shortenAddress(offer.claimedBy)}"
+        isSeller -> "No buyer"
+        else -> "Seller ${shortenAddress(offer.sellerAddress)}"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f), MaterialTheme.shapes.medium)
+            .border(BorderStroke(1.dp, accent.copy(alpha = 0.42f)), MaterialTheme.shapes.medium)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .background(accent, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+        )
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Pill(role, tone = ZTone.Default)
+                        Text(
+                            "Created ${formatHistoryTimestamp(offer.createdAt)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        "${formatZka(offer.zkaAtoms)} ZKA  →  ${formatUsdt(offer.microUsdt)} USDT",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "$counterparty  ·  ${unitPriceLabel(offer)} USDT per ZKA",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    StatusChip(offer.status)
+                    Text(
+                        "#${shortHistoryOfferId(offer.id)}",
+                        style = ZTheme.text.mono,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+
+            Text(
+                historyOutcomeText(offer, isSeller),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (detailsOpen) "Full operation data" else "Summary only",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                ZButton(
+                    onClick = { detailsOpen = !detailsOpen },
+                    variant = ZButtonVariant.Outline,
+                    size = ZButtonSize.Small
+                ) {
+                    ZButtonText(if (detailsOpen) "Hide details" else "Show details")
+                }
+            }
+
+            if (detailsOpen) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.35f),
+                            MaterialTheme.shapes.medium
+                        )
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    CopyableKeyValueRow("Offer ID", offer.id)
+                    KeyValueRow("Created", formatHistoryTimestamp(offer.createdAt))
+                    OfferRow(
+                        offer = offer,
+                        activeWalletAddress = activeWalletAddress,
+                        health = health,
+                        onClaim = onClaim,
+                        onCancel = onCancel,
+                        onReport = onReport,
+                        onCheckNow = onCheckNow,
+                        showTableRow = false
+                    )
+                }
             }
         }
     }
@@ -923,7 +1177,8 @@ private fun OfferRow(
     onClaim: (OfferSummary) -> Unit,
     onCancel: (OfferSummary) -> Unit,
     onReport: (OfferSummary, String) -> Unit,
-    onCheckNow: () -> Unit
+    onCheckNow: () -> Unit,
+    showTableRow: Boolean = true
 ) {
     var nowSeconds by remember(offer.id) {
         mutableStateOf(System.currentTimeMillis() / 1_000)
@@ -959,35 +1214,37 @@ private fun OfferRow(
     ) {
         // Fila de tabla, como el mockup: las columnas se leen de un vistazo y
         // el detalle del trato se despliega debajo solo cuando hace falta.
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TableCell("${formatZka(offer.zkaAtoms)} ZKA", Modifier.weight(1f), strong = true)
-            TableCell("${formatUsdt(offer.microUsdt)} USDT", Modifier.weight(1f), strong = true)
-            // Precio derivado, no un campo del nodo: USDT por ZKA. Es lo que
-            // deja comparar dos ofertas de tamanos distintos.
-            TableCell(unitPriceLabel(offer), Modifier.weight(0.8f))
-            TableCell(shortenAddress(offer.sellerAddress), Modifier.weight(1.4f))
-            TableCell(if (isSeller) "local" else "mesh", Modifier.weight(0.9f))
-            TableCell(
-                if (!countdownRunning) "—"
-                else offer.claimExpiresAt?.let { countdownLabel(it, nowSeconds) } ?: "—",
-                Modifier.weight(0.9f)
-            )
+        if (showTableRow) {
             Row(
-                Modifier.width(150.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                StatusChip(offer.status)
-                if (offer.status == "Open" && !isSeller) {
-                    ZButton(
-                        onClick = { onClaim(offer) },
-                        variant = ZButtonVariant.Accent,
-                        size = ZButtonSize.Small,
-                    ) { ZButtonText("Take offer") }
+                TableCell("${formatZka(offer.zkaAtoms)} ZKA", Modifier.weight(1f), strong = true)
+                TableCell("${formatUsdt(offer.microUsdt)} USDT", Modifier.weight(1f), strong = true)
+                // Precio derivado, no un campo del nodo: USDT por ZKA. Es lo que
+                // deja comparar dos ofertas de tamanos distintos.
+                TableCell(unitPriceLabel(offer), Modifier.weight(0.8f))
+                TableCell(shortenAddress(offer.sellerAddress), Modifier.weight(1.4f))
+                TableCell(if (isSeller) "local" else "mesh", Modifier.weight(0.9f))
+                TableCell(
+                    if (!countdownRunning) "—"
+                    else offer.claimExpiresAt?.let { countdownLabel(it, nowSeconds) } ?: "—",
+                    Modifier.weight(0.9f)
+                )
+                Row(
+                    Modifier.width(150.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StatusChip(offer.status)
+                    if (offer.status == "Open" && !isSeller) {
+                        ZButton(
+                            onClick = { onClaim(offer) },
+                            variant = ZButtonVariant.Accent,
+                            size = ZButtonSize.Small,
+                        ) { ZButtonText("Take offer") }
+                    }
                 }
             }
         }

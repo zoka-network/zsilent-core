@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "1.10.5"
+val releaseVersion = "1.10.10"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
@@ -176,6 +176,7 @@ compose.desktop {
 
             windows {
                 menu = true
+                menuGroup = "ZSilent Core"
                 shortcut = true
                 dirChooser = true
                 perUserInstall = true
@@ -232,6 +233,10 @@ tasks.matching { it.name == "packageMsi" }.configureEach {
         if (!patchScript.isFile) {
             throw GradleException("Missing MSI patch script: ${patchScript.absolutePath}")
         }
+        val validateScript = project.file("scripts/validate-windows-installer.ps1")
+        if (!validateScript.isFile) {
+            throw GradleException("Missing MSI validation script: ${validateScript.absolutePath}")
+        }
 
         exec {
             workingDir(projectDir)
@@ -241,6 +246,18 @@ tasks.matching { it.name == "packageMsi" }.configureEach {
                 "-ExecutionPolicy", "Bypass",
                 "-File", patchScript.absolutePath,
                 "-MsiPath", msiFile.absolutePath
+            )
+            isIgnoreExitValue = false
+        }
+        exec {
+            workingDir(projectDir)
+            commandLine(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-File", validateScript.absolutePath,
+                "-MsiPath", msiFile.absolutePath,
+                "-ExpectedVersion", releaseVersion
             )
             isIgnoreExitValue = false
         }

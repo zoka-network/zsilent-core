@@ -20,6 +20,7 @@ import com.zsilent.core.models.LocalChainHeightResponse
 import com.zsilent.core.models.LocalWallet
 import com.zsilent.core.models.MiningSnapshot
 import com.zsilent.core.models.NodeStats
+import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PeerInfo
 import com.zsilent.core.models.OnboardingStep
 import com.zsilent.core.models.PendingPrivateTransfers
@@ -195,6 +196,14 @@ data class ZSilentUiState(
     val localRpcUrl: String = ZokaNetworkConfig.LocalRpcUrl,
     val bootstrapPeer: String = ZokaNetworkConfig.BootstrapMultiaddr,
     val syncStatusMessage: String = "Waiting for network status.",
+    // Last real response from the local node's /sync/status endpoint. It is
+    // deliberately retained across transient poll failures so observability
+    // panels do not replace valid metrics with fabricated zeroes.
+    val nodeSyncStatus: NodeSyncStatus = NodeSyncStatus(),
+    val nodeSyncStatusObservedAtMillis: Long = 0L,
+    val nodeSyncStatusConsecutiveFailures: Int = 0,
+    val peerTelemetryObservedAtMillis: Long = 0L,
+    val peerTelemetryConsecutiveFailures: Int = 0,
     val stats: NodeStats = NodeStats(),
     val mining: MiningSnapshot = MiningSnapshot(),
     val pendingPrivateTransfers: PendingPrivateTransfers = PendingPrivateTransfers(),
@@ -2405,12 +2414,22 @@ class ZSilentAppState(
         val localRpcMining = nodeReportsMining && !teamEnabled
         val miningDiagnostic = snapshot.miningDiagnostic
 
+        // Read the local node's sync/mesh telemetry exactly once per poll. The
+        // same snapshot feeds both the bootstrap-online and serverless paths;
+        // a failed request leaves the last successful UI value untouched.
+        val localSync = if (localRpcOnline) {
+            runCatching { localRpc.syncStatus() }.getOrNull()
+        } else {
+            null
+        }
+
         // Live mesh view (serverless): who this node is connected to + transport.
         val localPeers = if (localRpcOnline) {
             runCatching { localRpc.peers() }.getOrNull()
         } else {
             null
         }
+        val telemetryPollAtMillis = System.currentTimeMillis()
         // This node's iroh snapshot-seed EndpointId is derived from a persistent
         // key, so it never changes — fetch it once (a short zoka subprocess),
         // in the background so it never blocks the poll.
@@ -2504,6 +2523,25 @@ class ZSilentAppState(
                     syncProgressPercent = syncProgressPercent(localHeight, networkHeight),
                     networkSynced = synced,
                     miningSyncReady = miningReady,
+                    nodeSyncStatus = localSync ?: it.nodeSyncStatus,
+                    nodeSyncStatusObservedAtMillis = if (localSync != null) {
+                        telemetryPollAtMillis
+                    } else {
+                        it.nodeSyncStatusObservedAtMillis
+                    },
+                    nodeSyncStatusConsecutiveFailures = when {
+                        !localRpcOnline || localSync != null -> 0
+                        else -> (it.nodeSyncStatusConsecutiveFailures + 1).coerceAtMost(999)
+                    },
+                    peerTelemetryObservedAtMillis = if (localPeers != null) {
+                        telemetryPollAtMillis
+                    } else {
+                        it.peerTelemetryObservedAtMillis
+                    },
+                    peerTelemetryConsecutiveFailures = when {
+                        !localRpcOnline || localPeers != null -> 0
+                        else -> (it.peerTelemetryConsecutiveFailures + 1).coerceAtMost(999)
+                    },
                     syncStatusMessage = if (synced) {
                         "OK synced with network bootstrap."
                     } else if (it.syncBusy) {
@@ -2529,11 +2567,6 @@ class ZSilentAppState(
             // healthy mesh and near-zero lag is safe to mine from even while
             // the centralized bootstrap endpoint is saturated; otherwise
             // (isolated node, real lag, node offline) mining stays locked.
-            val localSync = if (localRpcOnline) {
-                runCatching { localRpc.syncStatus() }.getOrNull()
-            } else {
-                null
-            }
             val meshPeers = localSync?.connectedPeers ?: 0L
             // Serverless (no bootstrap RPC): trust the node's own P2P sync view.
             // - ready_to_mine is the node's authoritative gate (caught up to the
@@ -2599,6 +2632,25 @@ class ZSilentAppState(
                     syncRemainingBlocks = localSync?.lag ?: it.syncRemainingBlocks,
                     networkSynced = meshSynced,
                     miningSyncReady = meshMiningReady,
+                    nodeSyncStatus = localSync ?: it.nodeSyncStatus,
+                    nodeSyncStatusObservedAtMillis = if (localSync != null) {
+                        telemetryPollAtMillis
+                    } else {
+                        it.nodeSyncStatusObservedAtMillis
+                    },
+                    nodeSyncStatusConsecutiveFailures = when {
+                        !localRpcOnline || localSync != null -> 0
+                        else -> (it.nodeSyncStatusConsecutiveFailures + 1).coerceAtMost(999)
+                    },
+                    peerTelemetryObservedAtMillis = if (localPeers != null) {
+                        telemetryPollAtMillis
+                    } else {
+                        it.peerTelemetryObservedAtMillis
+                    },
+                    peerTelemetryConsecutiveFailures = when {
+                        !localRpcOnline || localPeers != null -> 0
+                        else -> (it.peerTelemetryConsecutiveFailures + 1).coerceAtMost(999)
+                    },
                     // Serverless: feed the network stat displays (difficulty,
                     // emission, connected peers, hashrate) from the LOCAL node's
                     // /stats instead of the decommissioned bootstrap RPC, so the

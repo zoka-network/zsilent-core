@@ -184,7 +184,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
                             if (uiState.explorerEnabled) ExplorerScreen(uiState, appState)
                             else DashboardScreen(uiState, appState)
                         AppSection.Privacy   -> PrivacyScreen(uiState, appState)
-                        AppSection.Logs      -> LogsScreen(uiState)
+                        AppSection.Logs      -> LogsScreen(uiState, appState)
                         AppSection.Settings  -> SettingsScreen(uiState, appState)
                     }
                 }

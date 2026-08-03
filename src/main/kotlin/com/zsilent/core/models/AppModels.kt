@@ -61,6 +61,7 @@ data class ChainHeightResponse(
 @Serializable
 data class NodeSyncStatus(
     val status: String = "",
+    val mode: String = "",
     @SerialName("ready_to_mine")
     val readyToMine: Boolean = false,
     @SerialName("local_height")
@@ -71,7 +72,21 @@ data class NodeSyncStatus(
     @SerialName("connected_peers")
     val connectedPeers: Long = 0,
     @SerialName("min_peers")
-    val minPeers: Long = 0
+    val minPeers: Long = 0,
+    @SerialName("startup_phase")
+    val startupPhase: String = "",
+    @SerialName("last_sync_source")
+    val lastSyncSource: String? = null,
+    @SerialName("last_sync_event")
+    val lastSyncEvent: String? = null,
+    @SerialName("last_sync_error")
+    val lastSyncError: String? = null,
+    @SerialName("last_updated")
+    val lastUpdated: Long = 0,
+    @SerialName("gossip_rx_block_response")
+    val gossipRxBlockResponse: Long = 0,
+    @SerialName("gossip_publish_err")
+    val gossipPublishErr: Long = 0
 )
 
 @Serializable

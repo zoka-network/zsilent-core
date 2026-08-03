@@ -143,344 +143,6 @@ import kotlinx.coroutines.delay
 import java.net.URI
 import java.nio.file.Path
 
-@Composable
-fun DashboardScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
-    val activeWallet = activeLocalWallet(ui)
-    val effectiveHashrate = maxOf(ui.mining.hashrateHps, ui.stats.reportedHashrateHps)
-    val miningDetail = when {
-        !ui.miningDiagnostic.isNullOrBlank() -> "needs attention"
-        ui.localMiningEnabled && effectiveHashrate <= 0L -> "warming up"
-        ui.miningControlledByApp -> "ZSilent miner"
-        ui.mining.running -> "active"
-        else -> "idle"
-    }
-    val nodeTone = when {
-        ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Online -> com.zsilent.core.ui.onboarding.NoirStatusTone.Ok
-        ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Starting -> com.zsilent.core.ui.onboarding.NoirStatusTone.Warn
-        ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Error -> com.zsilent.core.ui.onboarding.NoirStatusTone.Bad
-        else -> com.zsilent.core.ui.onboarding.NoirStatusTone.Neutral
-    }
-    val syncTone = if (ui.networkSynced) com.zsilent.core.ui.onboarding.NoirStatusTone.Ok else com.zsilent.core.ui.onboarding.NoirStatusTone.Warn
-    val miningTone = when {
-        !ui.miningDiagnostic.isNullOrBlank() -> com.zsilent.core.ui.onboarding.NoirStatusTone.Bad
-        ui.mining.running && effectiveHashrate > 0L -> com.zsilent.core.ui.onboarding.NoirStatusTone.Ok
-        ui.mining.running || ui.localMiningEnabled -> com.zsilent.core.ui.onboarding.NoirStatusTone.Warn
-        else -> com.zsilent.core.ui.onboarding.NoirStatusTone.Neutral
-    }
-    val peerCount = ui.stats.connectedPeers
-    val peerTone = when {
-        peerCount >= 2 -> com.zsilent.core.ui.onboarding.NoirStatusTone.Ok
-        peerCount >= 1 -> com.zsilent.core.ui.onboarding.NoirStatusTone.Warn
-        else -> com.zsilent.core.ui.onboarding.NoirStatusTone.Bad
-    }
-
-    com.zsilent.core.ui.onboarding.NoirScreenShell(
-        eyebrow = "Dashboard",
-        title = "Private command center",
-        subtitle = "Wallet, node and mining at a glance. Nothing leaves this device."
-    ) {
-        // ── Top status row ─────────────────────────────────────────────
-        Row(
-            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            com.zsilent.core.ui.onboarding.NoirStatusPill(
-                label = "Node",
-                value = ui.nodeStatus.name,
-                detail = if (ui.localRpcOnline) "RPC reachable" else "RPC offline",
-                tone = nodeTone,
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirStatusPill(
-                label = "Sync",
-                value = if (ui.networkSynced) "OK" else "${ui.syncRemainingBlocks} behind",
-                detail = if (ui.networkSynced) "tip matched with network" else "importing blocks",
-                tone = syncTone,
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirStatusPill(
-                label = "Peers",
-                value = peerCount.toString(),
-                detail = if (peerCount == 0L) "isolated" else "connected via p2p",
-                tone = peerTone,
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirStatusPill(
-                label = "Nodes",
-                value = (ui.localConnectedPeers + 1).toString(),
-                detail = if (ui.localConnectedPeers >= 1L) "on the network" else "just this node",
-                tone = if (ui.localConnectedPeers >= 1L) com.zsilent.core.ui.onboarding.NoirStatusTone.Ok else com.zsilent.core.ui.onboarding.NoirStatusTone.Warn,
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirStatusPill(
-                label = "Mining",
-                value = if (ui.mining.running) formatHashrate(effectiveHashrate) else "off",
-                detail = miningDetail,
-                tone = miningTone,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        DashboardMetricStripNoir(ui, activeWallet, effectiveHashrate)
-
-        NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            com.zsilent.core.ui.onboarding.NoirSection(
-                title = "Active wallet",
-                meta = if (ui.walletLocked) "locked" else "unlocked",
-                modifier = Modifier.weight(1f)
-            ) {
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Account", activeWallet?.name ?: ui.activeWalletName.ifBlank { "not selected" })
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Address", color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val addr = activeWallet?.address ?: ui.activeWalletAddress.ifBlank { "not selected" }
-                        Text(
-                            shortHash(addr),
-                            color = com.zsilent.core.ui.onboarding.NoirText,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
-                        )
-                        CopyIconButton(addr, enabled = addr.isNotBlank() && addr != "not selected")
-                    }
-                }
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Available", activeWalletAvailable(ui, activeWallet), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Locked", activeWalletLocked(ui, activeWallet), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Total", activeWalletTotal(ui, activeWallet), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Transactions", (activeWallet?.txCount ?: ui.walletHistory.count).toString())
-            }
-
-            val netLive = ui.localRpcOnline && (ui.stats.connectedPeers > 0 || ui.networkSynced)
-            com.zsilent.core.ui.onboarding.NoirSection(
-                title = "Network",
-                meta = if (netLive) "connected (p2p)" else if (ui.localRpcOnline) "node online" else "offline",
-                modifier = Modifier.weight(1f)
-            ) {
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Reachability", if (netLive) "live via P2P mesh" else "isolated")
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Connected peers", ui.localConnectedPeers.toString(), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Node height", ui.chainHeight.toString(), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Network height", ui.networkHeight.toString(), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Difficulty", ui.stats.difficulty.toString(), mono = true)
-                com.zsilent.core.ui.onboarding.NoirKeyValue("Total emission", "%.4f ZKA".format(ui.stats.emissionZka), mono = true)
-                ui.miningDiagnostic?.takeIf { it.isNotBlank() }?.let { diagnostic ->
-                    Text(diagnostic, color = com.zsilent.core.ui.onboarding.NoirError, fontSize = 11.sp)
-                }
-            }
-        }
-
-        DashboardActions(ui, appState)
-
-        com.zsilent.core.ui.onboarding.NoirSection(
-            title = "Recent private activity",
-            meta = "last 5"
-        ) {
-            if (ui.walletLocked) {
-                Text("Unlock the wallet to load history.", color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
-            } else if (ui.walletHistory.transactions.isEmpty()) {
-                Text("No private transactions yet.", color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
-            } else {
-                ui.walletHistory.transactions.take(5).forEach { tx ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(shortHash(tx.txHash), color = com.zsilent.core.ui.onboarding.NoirText, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                            CopyIconButton(tx.txHash, enabled = tx.txHash.isNotBlank())
-                        }
-                        Text(tx.status, color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 11.sp, letterSpacing = 0.5.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Fila de acciones del Dashboard, portada del prototipo.
- *
- * ZSilent no tenía ninguna: para arrancar el nodo, el minero o Tor había que
- * navegar a Node, Mining o Privacy. El prototipo las pone acá porque son las
- * tres cosas que uno quiere hacer apenas abre la app.
- *
- * El minero queda deshabilitado si el nodo no está `Online` — minar sin nodo no
- * hace nada, y un botón que acepta el clic y no produce efecto se lee como un
- * bug. El motivo se muestra al lado en vez de dejar el botón mudo.
- */
-@Composable
-private fun DashboardActions(ui: ZSilentUiState, appState: ZSilentAppState) {
-    val nodeOnline = ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Online
-    val nodeBusy = ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Starting ||
-        ui.nodeStatus == com.zsilent.core.models.ServiceStatus.Stopping
-    val mining = ui.mining.running
-
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        ZButton(
-            onClick = { if (nodeOnline) appState.stopNode() else appState.startNode() },
-            variant = ZButtonVariant.Accent,
-            enabled = !nodeBusy,
-        ) {
-            Icon(Icons.Outlined.PowerSettingsNew, null, modifier = Modifier.size(14.dp))
-            ZButtonText(if (nodeOnline) "Stop node" else "Start node")
-        }
-        ZButton(
-            // Mismo default que usa ZSilentAppState cuando no hay una elección
-            // previa de hilos.
-            onClick = {
-                if (mining) appState.stopMining()
-                else appState.startMining(ui.mining.availableCpuThreads.coerceAtLeast(1))
-            },
-            variant = ZButtonVariant.Outline,
-            enabled = nodeOnline,
-        ) {
-            Icon(Icons.Outlined.Bolt, null, modifier = Modifier.size(14.dp))
-            ZButtonText(if (mining) "Stop miner" else "Start miner")
-        }
-        ZButton(
-            onClick = { appState.setTorEnabled(!ui.torEnabled) },
-            variant = ZButtonVariant.Outline,
-        ) {
-            Icon(Icons.Outlined.Security, null, modifier = Modifier.size(14.dp))
-            ZButtonText(if (ui.torEnabled) "Disable Tor" else "Enable Tor")
-        }
-        if (!nodeOnline && !nodeBusy) {
-            Pill("node offline — miner disabled", ZTone.Warn)
-        }
-    }
-}
-
-@Composable
-private fun DashboardMetricStripNoir(
-    ui: ZSilentUiState,
-    activeWallet: LocalWallet?,
-    effectiveHashrate: Long
-) {
-    val heightValue = ui.chainHeight.takeIf { it > 0 } ?: ui.stats.height
-    val emissionValue = ui.stats.emissionZka
-    val balanceSample = if (ui.walletLocked || ui.balancesHidden) {
-        0.0
-    } else {
-        (ui.walletBalance?.totalBalanceAtoms ?: activeWallet?.totalBalanceAtoms ?: 0L).toDouble()
-    }
-    val nextUnlockBlocks = ui.mining.nextRewardUnlockInBlocks
-    val nextUnlockHeight = ui.mining.nextRewardUnlockHeight
-    val lastBlockUnix = ui.stats.lastBlockTime
-
-    // Sparkline histories
-    var heightHistory by remember { mutableStateOf(seedMetricHistory(heightValue.toDouble())) }
-    var hashrateHistory by remember { mutableStateOf(seedMetricHistory(effectiveHashrate.toDouble())) }
-    var balanceHistory by remember(activeWallet?.address) { mutableStateOf(seedMetricHistory(balanceSample)) }
-    var emissionHistory by remember { mutableStateOf(seedMetricHistory(emissionValue)) }
-    var unlockHistory by remember { mutableStateOf(seedMetricHistory((nextUnlockBlocks ?: 0L).toDouble())) }
-    var lastBlockHistory by remember { mutableStateOf(seedMetricHistory(lastBlockUnix.toDouble())) }
-
-    LaunchedEffect(heightValue) {
-        heightHistory = appendMetricSample(heightHistory, heightValue.toDouble())
-    }
-    LaunchedEffect(effectiveHashrate) {
-        hashrateHistory = appendMetricSample(hashrateHistory, effectiveHashrate.toDouble())
-    }
-    LaunchedEffect(balanceSample, ui.walletLocked, ui.balancesHidden) {
-        balanceHistory = appendMetricSample(balanceHistory, balanceSample)
-    }
-    LaunchedEffect(emissionValue) {
-        emissionHistory = appendMetricSample(emissionHistory, emissionValue)
-    }
-    LaunchedEffect(nextUnlockBlocks) {
-        unlockHistory = appendMetricSample(unlockHistory, (nextUnlockBlocks ?: 0L).toDouble())
-    }
-    LaunchedEffect(lastBlockUnix) {
-        lastBlockHistory = appendMetricSample(lastBlockHistory, lastBlockUnix.toDouble())
-    }
-
-    // Live ticker for "last block N seconds ago"
-    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(lastBlockUnix) {
-        while (true) {
-            nowMillis = System.currentTimeMillis()
-            delay(1_000)
-        }
-    }
-    val lastBlockText = com.zsilent.core.ui.onboarding.formatTimeAgo(lastBlockUnix, nowMillis)
-
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "METRICS",
-                color = com.zsilent.core.ui.onboarding.NoirTextSubtle,
-                fontSize = 11.sp,
-                letterSpacing = 1.8.sp
-            )
-            Text(
-                if (ui.localRpcOnline && (ui.stats.connectedPeers > 0 || ui.networkSynced)) "LIVE NETWORK" else "LOCAL SNAPSHOT",
-                color = com.zsilent.core.ui.onboarding.NoirTextSubtle,
-                fontSize = 11.sp,
-                letterSpacing = 1.8.sp
-            )
-        }
-        // Altura pareja: sin esto las tarjetas con `detail` crecian mas que las
-        // otras y la fila quedaba despareja.
-        Row(
-            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            com.zsilent.core.ui.onboarding.NoirMetricCard(
-                label = "Height",
-                value = heightValue.toString(),
-                samples = heightHistory,
-                accent = ZTheme.metrics.at(0),
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirMetricCard(
-                label = "Hashrate",
-                value = formatHashrate(effectiveHashrate),
-                samples = hashrateHistory,
-                accent = ZTheme.metrics.at(1),
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirMetricCard(
-                label = "Balance",
-                value = activeWalletTotal(ui, activeWallet),
-                samples = balanceHistory,
-                accent = ZTheme.metrics.at(2),
-                valueColor = ZTheme.metrics.at(2),
-                hidden = ui.walletLocked || ui.balancesHidden,
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirMetricCard(
-                label = "Next unlock",
-                value = if (nextUnlockBlocks == null) "—" else "${nextUnlockBlocks} blk",
-                samples = unlockHistory,
-                accent = ZTheme.metrics.at(3),
-                detail = if (nextUnlockHeight == null) "no maturing rewards" else "at height ${nextUnlockHeight}",
-                modifier = Modifier.weight(1f)
-            )
-            com.zsilent.core.ui.onboarding.NoirMetricCard(
-                label = "Last block",
-                value = lastBlockText,
-                samples = lastBlockHistory,
-                accent = ZTheme.metrics.at(4),
-                detail = if (lastBlockUnix > 0L) "network heartbeat" else "no data",
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
 private data class SyncSample(
     val height: Long,
     val progress: Double,
@@ -2755,105 +2417,373 @@ private fun MiningPreflightPanel(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
+    val rpcEndpointLocal = remember(appState) { appState.localRpc.isLocalEndpoint() }
+    val torError = ui.torError?.takeIf { it.isNotBlank() }
+    val torProcessOnline = ui.torStatus == ServiceStatus.Online
+    val onionReady = torProcessOnline && ui.torOnionHost.isNotBlank()
+    val seedAddress = ui.torSeedAddress.ifBlank { ui.torOnionMultiaddr }
+    val seedReady = ui.onionSeedEnabled && seedAddress.isNotBlank()
+    val torFailed = ui.torStatus == ServiceStatus.Error || torError != null
+    val torChanging = ui.torStatus == ServiceStatus.Starting || ui.torStatus == ServiceStatus.Stopping
+    val peerSplitKnown = ui.peerTelemetryObservedAtMillis > 0L
+    val peerSplitLive = ui.localRpcOnline && peerSplitKnown && ui.peerTelemetryConsecutiveFailures == 0
+    val runtimeKeepsSessionOpen = ui.nodeStatus == ServiceStatus.Starting ||
+        ui.nodeStatus == ServiceStatus.Online ||
+        ui.nodeStatus == ServiceStatus.Stopping ||
+        ui.mining.running ||
+        ui.miningStatus == ServiceStatus.Starting ||
+        ui.miningStatus == ServiceStatus.Online ||
+        ui.miningStatus == ServiceStatus.Stopping
+
+    val stateLabel = when {
+        torFailed -> "ATTENTION"
+        !rpcEndpointLocal -> "REMOTE RPC"
+        onionReady -> "ONION READY"
+        torProcessOnline -> "TOR ONLINE"
+        torChanging -> "WARMING"
+        ui.torEnabled -> "STANDBY"
+        else -> "DIRECT MODE"
+    }
+    val stateTone = when {
+        torFailed -> ZTone.Err
+        !rpcEndpointLocal -> ZTone.Warn
+        onionReady || torProcessOnline -> ZTone.On
+        else -> ZTone.Warn
+    }
+    val stateColor = when (stateTone) {
+        ZTone.On -> ZTheme.semantics.success
+        ZTone.Warn -> ZTheme.semantics.warning
+        ZTone.Err -> ZTheme.semantics.danger
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val processTone = when (ui.torStatus) {
+        ServiceStatus.Online -> ZTone.On
+        ServiceStatus.Starting, ServiceStatus.Stopping -> ZTone.Warn
+        ServiceStatus.Error -> ZTone.Err
+        ServiceStatus.Offline -> ZTone.Off
+    }
+    val routeValue = when {
+        !rpcEndpointLocal -> "Remote route unknown"
+        !ui.torEnabled -> "Clearnet"
+        torProcessOnline && ui.torOnly -> "Tor only"
+        ui.torOnly && ui.torStatus == ServiceStatus.Starting -> "Tor-only starting"
+        ui.torOnly && ui.torStatus == ServiceStatus.Stopping -> "Tor-only stopping"
+        ui.torOnly -> "Tor-only unavailable"
+        onionReady -> "Onion + TCP"
+        torProcessOnline -> "Tor + TCP"
+        ui.nodeStatus == ServiceStatus.Online -> "Direct fallback"
+        else -> "Standby"
+    }
+    val notices = buildList {
+        if (torFailed) {
+            add(
+                ScreenNotice(
+                    title = "Tor reported a runtime problem",
+                    detail = torError ?: "The Tor process entered an error state. Review the Tor entries in Logs before relying on onion reachability.",
+                    tone = ZTone.Err
+                )
+            )
+        } else if (rpcEndpointLocal && ui.torEnabled && ui.nodeStatus == ServiceStatus.Online && !torProcessOnline && !torChanging) {
+            add(
+                ScreenNotice(
+                    title = "Node online without active Tor",
+                    detail = if (ui.torOnly) {
+                        "Tor is configured but its process is not online. Tor-only policy blocks direct peer dialing, so network reachability is degraded until Tor returns."
+                    } else {
+                        "Tor is configured but its process is not online. The node can use its direct TCP fallback until Tor becomes available."
+                    },
+                    tone = ZTone.Warn
+                )
+            )
+        } else if (!ui.torEnabled) {
+            add(
+                ScreenNotice(
+                    title = "Direct network mode is selected",
+                    detail = "Peer connections use clearnet TCP. Enable managed Tor above if you want onion reachability and Tor-assisted dialing.",
+                    tone = ZTone.Warn
+                )
+            )
+        }
+        if (ui.onionSeedEnabled && !seedReady && ui.nodeStatus == ServiceStatus.Online && torProcessOnline) {
+            add(
+                ScreenNotice(
+                    title = "Onion seed address is still pending",
+                    detail = "Publishing is enabled, but no shareable seed address has been reported yet. Keep the node online and check Tor logs if it does not appear.",
+                    tone = ZTone.Warn
+                )
+            )
+        }
+        if (ui.onboardingAutoLockMinutes <= 0) {
+            add(
+                ScreenNotice(
+                    title = "Automatic wallet lock is disabled",
+                    detail = "The session remains unlocked until you lock it manually. Configure an inactivity timeout in Settings if this device is shared.",
+                    tone = ZTone.Warn
+                )
+            )
+        }
+        if (!rpcEndpointLocal) {
+            add(
+                ScreenNotice(
+                    title = "Remote explorer RPC is configured",
+                    detail = "Regular Explorer lookups and peer metrics come from another machine. Its network route is unknown here, and private view-key scans remain blocked until the RPC endpoint is local.",
+                    tone = ZTone.Warn
+                )
+            )
+        }
+        if (ui.localRpcOnline && ui.peerTelemetryConsecutiveFailures >= 3) {
+            add(
+                ScreenNotice(
+                    title = "Peer transport split is stale",
+                    detail = "The configured RPC responds, but /peers failed ${ui.peerTelemetryConsecutiveFailures} consecutive poll(s). Tor/direct counts are labelled last known.",
+                    tone = ZTone.Warn
+                )
+            )
+        }
+    }
+
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "Privacy",
-        title = "Privacy stack",
-        subtitle = "Tor routing, discreet mode, and posture disclosure."
+        title = "Privacy controls",
+        subtitle = "See the network path active now, manage local disclosure, and spot degraded privacy states."
     ) {
-        Panel(
-            title = "Tor network",
-            meta = if (ui.torEnabled) ui.torStatus.name.lowercase() else "off"
-        ) {
-            ToggleRow(
-                "Connect over Tor (.onion)",
-                ui.torEnabled,
-                appState::setTorOnionMode
-            )
+        Panel(title = "Privacy runtime", meta = stateLabel.lowercase()) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stateLabel, style = ZTheme.text.monoDisplay, color = stateColor)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Pill("tor preference ${if (ui.torEnabled) "on" else "off"}", if (ui.torEnabled) ZTone.On else ZTone.Warn)
+                        Pill("process ${ui.torStatus.name.lowercase()}", processTone)
+                        Pill(
+                            "onion ${if (onionReady) "ready" else if (ui.torEnabled) "waiting" else "off"}",
+                            if (onionReady) ZTone.On else if (ui.torEnabled) ZTone.Warn else ZTone.Off
+                        )
+                        Pill(
+                            "seed ${if (seedReady) "address ready" else if (ui.onionSeedEnabled) "waiting" else "private"}",
+                            if (seedReady) ZTone.On else if (ui.onionSeedEnabled) ZTone.Warn else ZTone.Off
+                        )
+                    }
+                }
+                Column(
+                    Modifier.widthIn(min = 260.dp, max = 340.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ToggleRow(
+                        if (ui.managedTorEnabled || !ui.torEnabled) "Managed Tor / onion mode" else "Tor routing via external SOCKS",
+                        ui.torEnabled,
+                        appState::setTorOnionMode
+                    )
+                    HintText(
+                        if (ui.managedTorEnabled || !ui.torEnabled) {
+                            "Managed mode is hybrid; this switch does not mean Tor-only routing."
+                        } else {
+                            "An external SOCKS endpoint is configured. Turning this off disables Tor; enabling again selects managed hybrid mode."
+                        }
+                    )
+                }
+            }
             HintText(
-                if (ui.torEnabled)
-                    "Your node bootstraps and syncs only over Tor onion routes. No open ports needed, your IP stays hidden, and the mining console stays clean (no mixed clearnet dial attempts)."
-                else
-                    "Off: the node connects over plain clearnet TCP. Turn this on to route the network through Tor (recommended, and required if you're behind CGNAT)."
+                when {
+                    torFailed -> "Tor is not healthy. Onion reachability should not be assumed while this state is active."
+                    !rpcEndpointLocal -> "The configured node is remote, so its transport cannot be inferred here. Tor controls and process state refer only to this machine."
+                    onionReady && ui.torOnly -> "Tor is online, an onion identity is ready, and the node policy is Tor-only."
+                    onionReady -> "Managed Tor and the onion identity are ready. Hybrid mode can also dial direct TCP peers."
+                    torProcessOnline -> "The Tor process is online; the onion identity has not been reported yet."
+                    torChanging -> "Tor is changing state. The status and onion identity update when the process settles."
+                    ui.torEnabled -> "Tor is configured but currently idle. It normally starts with the node."
+                    !rpcEndpointLocal -> "Managed Tor is disabled on this machine. The configured remote node's transport cannot be inferred here."
+                    else -> "Tor is disabled and the local node uses direct clearnet connectivity."
+                }
             )
-            KeyValueRow("Tor process", ui.torStatus.name.lowercase())
-            ui.torError?.takeIf { it.isNotBlank() }?.let { ErrorText(it) }
-            if (ui.torEnabled) {
-                if (ui.torOnionHost.isNotBlank()) {
-                    CopyableKeyValueRow("Your onion host", ui.torOnionHost)
-                } else {
-                    KeyValueRow("Your onion host", if (ui.torStatus == ServiceStatus.Starting) "starting Tor…" else "created on first start")
+        }
+
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            StatusCard(
+                "Transport",
+                routeValue,
+                when (routeValue) {
+                    "Tor only" -> "Tor policy active"
+                    "Onion + TCP" -> "managed hybrid mode"
+                    "Tor + TCP" -> "onion identity pending"
+                    "Tor-only starting" -> "direct dialing blocked"
+                    "Tor-only stopping" -> "direct dialing remains blocked"
+                    "Tor-only unavailable" -> "Tor required; no fallback"
+                    "Remote route unknown" -> "configured RPC is remote"
+                    "Direct fallback" -> "Tor is not online"
+                    "Clearnet" -> "Tor preference off"
+                    else -> "network services idle"
+                },
+                Modifier.weight(1f)
+            )
+            StatusCard("Tor", ui.torStatus.name, if (onionReady) "onion identity ready" else "process state", Modifier.weight(1f))
+            StatusCard(
+                "Tor peers",
+                if (peerSplitKnown) ui.peerTorCount.toString() else "-",
+                when {
+                    peerSplitLive -> "current /peers sample"
+                    peerSplitKnown -> "last reported /peers sample"
+                    else -> "not reported"
+                },
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Direct peers",
+                if (peerSplitKnown) ui.peerDirectCount.toString() else "-",
+                when {
+                    peerSplitLive -> "current /peers sample"
+                    peerSplitKnown -> "last reported /peers sample"
+                    else -> "not reported"
+                },
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Auto-lock",
+                if (ui.onboardingAutoLockMinutes > 0) "${ui.onboardingAutoLockMinutes} min" else "Off",
+                when {
+                    ui.onboardingAutoLockMinutes <= 0 -> "manual lock only"
+                    runtimeKeepsSessionOpen -> "paused while services run"
+                    else -> "inactivity timeout"
+                },
+                Modifier.weight(1f)
+            )
+        }
+
+        if (notices.isNotEmpty()) {
+            Panel(title = "Attention", meta = "${notices.size} item(s)") {
+                notices.forEach { ScreenNoticeCard(it) }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+            Column(Modifier.weight(1.45f), verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+                Panel(title = "Tor network", meta = ui.torStatus.name.lowercase()) {
+                    KeyValueRow("Network mode", routeValue.lowercase())
+                    KeyValueRow("Tor process", ui.torStatus.name.lowercase())
+                    KeyValueRow("Tor controller", if (ui.managedTorEnabled) "managed by ZSilent" else "external SOCKS")
+                    if (ui.torEnabled) KeyValueRow("SOCKS endpoint", "${ui.torSocksHost}:${ui.torSocksPort}")
+                    if (ui.torOnionHost.isNotBlank()) {
+                        CopyableKeyValueRow("Onion host", ui.torOnionHost)
+                    } else {
+                        KeyValueRow(
+                            "Onion host",
+                            when {
+                                !ui.torEnabled -> "Tor disabled"
+                                ui.torStatus == ServiceStatus.Starting -> "starting Tor..."
+                                ui.torStatus == ServiceStatus.Error -> "unavailable"
+                                else -> "not reported"
+                            }
+                        )
+                    }
+                    torError?.let { ErrorText(it) }
+                    HintText(
+                        if (!rpcEndpointLocal) {
+                            "These Tor controls are local. The configured remote node's Tor-only or direct-dial policy is not reported by this screen."
+                        } else if (ui.torOnly) {
+                            "Tor-only policy is active. Direct peer dialing is disabled by the node policy."
+                        } else {
+                            "The standard managed mode is hybrid: it adds Tor/onion support while retaining direct TCP dialing for network availability."
+                        }
+                    )
+                }
+
+                Panel(title = "Onion seed", meta = if (seedReady) "address ready" else if (ui.onionSeedEnabled) "waiting" else "private") {
+                    ToggleRow("Publish my node as an onion seed", ui.onionSeedEnabled, appState::setOnionSeedEnabled)
+                    HintText("The preference is not proof of publication; the address below confirms when a shareable seed is ready.")
+                    if (seedAddress.isNotBlank()) {
+                        CopyableKeyValueRow("Seed address", seedAddress)
+                    } else {
+                        KeyValueRow(
+                            "Seed address",
+                            when {
+                                !ui.onionSeedEnabled -> "publishing disabled"
+                                !torProcessOnline -> "waiting for Tor"
+                                !ui.localRpcOnline -> "waiting for node RPC"
+                                else -> "not reported yet"
+                            }
+                        )
+                    }
+                }
+            }
+
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+                Panel(title = "Local disclosure", meta = if (ui.balancesHidden) "balances hidden" else "balances visible") {
+                    ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
+                    HintText("This changes only how balances are rendered in ZSilent; it does not change wallet or chain data.")
+                    ThinDivider()
+                    KeyValueRow("Wallet session", if (ui.sessionUnlocked && !ui.appLocked) "unlocked" else "locked")
+                    ZButton(
+                        onClick = { appState.lockApp("Locked manually.") },
+                        variant = ZButtonVariant.Outline,
+                        enabled = !ui.appLocked
+                    ) {
+                        Icon(Icons.Outlined.Lock, null, modifier = Modifier.size(14.dp))
+                        ZButtonText("Lock wallet & stop services")
+                    }
+                    HintText("Locking clears the wallet session and stops the node, miner and managed Tor processes.")
+                }
+
+                Panel(
+                    title = "Chain explorer",
+                    meta = "${if (ui.explorerEnabled) "enabled" else "off"} · ${if (rpcEndpointLocal) "local RPC" else "remote RPC"}"
+                ) {
+                    ToggleRow("Show Explorer section", ui.explorerEnabled) { appState.setExplorerEnabled(it) }
+                    HintText(
+                        if (rpcEndpointLocal) {
+                            "Explorer reads the chain view exposed by the node on this machine."
+                        } else {
+                            "Regular lookups use the configured remote node; private view-key scans are blocked remotely."
+                        }
+                    )
+                    KeyValueRow(
+                        "Configured RPC",
+                        "${if (rpcEndpointLocal) "local" else "remote"} · ${if (ui.localRpcOnline) "online" else "offline"}"
+                    )
+                    KeyValueRow(
+                        "Chain data",
+                        when {
+                            !ui.localRpcOnline -> "unavailable"
+                            ui.networkHeight <= 0L -> "tip reference unavailable"
+                            ui.syncRemainingBlocks <= 0L -> "at observed tip"
+                            ui.networkSynced -> "within mining tolerance"
+                            else -> "not at network tip"
+                        }
+                    )
                 }
             }
         }
-        Panel(
-            title = "Onion seed",
-            meta = if (ui.onionSeedEnabled) "publishing" else "private"
-        ) {
-            ToggleRow(
-                "Publish my node as an onion seed",
-                ui.onionSeedEnabled,
-                appState::setOnionSeedEnabled
-            )
-            HintText(
-                "When on, other people can bootstrap the network through your node using your onion address below — without you opening any port. Share it or send it to the network operator to be added to the seed list. Turning this on also enables Tor above."
-            )
-            if (ui.torSeedAddress.isNotBlank()) {
-                CopyableKeyValueRow("Your seed address", ui.torSeedAddress)
-            } else if (ui.torOnionMultiaddr.isNotBlank()) {
-                CopyableKeyValueRow("Your onion address", ui.torOnionMultiaddr)
-            } else if (ui.onionSeedEnabled) {
-                KeyValueRow("Your seed address", if (ui.torStatus == ServiceStatus.Starting) "waiting for Tor…" else "waiting for node")
-            } else {
-                KeyValueRow("Your seed address", "enable to generate")
-            }
-        }
-        Panel(title = "Display privacy", meta = if (ui.balancesHidden) "hidden" else "visible") {
-            ToggleRow("Hide balances on screen", ui.balancesHidden) { appState.toggleBalances() }
-            ToggleRow("Wallet session", !ui.appLocked) { appState.lockApp("Locked manually.") }
-        }
-        Panel(
-            title = "Experimental",
-            meta = if (ui.explorerEnabled) "1 enabled" else "off"
-        ) {
-            ToggleRow("Chain explorer", ui.explorerEnabled) { appState.setExplorerEnabled(it) }
-            HintText(
-                "Adds an Explorer section to the sidebar for browsing blocks and pending " +
-                    "transactions. It reads only from your own node — no public explorer is " +
-                    "contacted — so it can only show what your node has already synced."
-            )
-        }
-        // El prototipo muestra la postura con pills y no como pares clave/valor:
-        // de un vistazo se ve si algo esta fuera de lugar, sin leer cada linea.
-        Panel(title = "Security posture", meta = "what this build promises") {
-            PostureRow("Telemetry", true, "disabled")
-            PostureRow("Private keys in logs", true, "blocked")
-            PostureRow("Local-first execution", true, "yes")
-            PostureRow("Encrypted exports", true, "required")
-            PostureRow("Remote node", true, "disabled by default")
+
+        Panel(title = "Live privacy posture", meta = "current UI state") {
+            PostureRow("Network path", torProcessOnline, routeValue.lowercase())
+            PostureRow("Tor process", torProcessOnline, ui.torStatus.name.lowercase())
+            PostureRow("Onion identity", onionReady, if (onionReady) "ready" else "not ready")
+            PostureRow("Seed address", !ui.onionSeedEnabled || seedReady, if (seedReady) "ready" else if (ui.onionSeedEnabled) "waiting" else "private")
+            PostureRow("On-screen balances", ui.balancesHidden, if (ui.balancesHidden) "hidden" else "visible")
+            PostureRow("Wallet session", ui.appLocked, if (ui.sessionUnlocked && !ui.appLocked) "unlocked" else "locked")
             PostureRow(
-                "Tor transport",
-                ui.torEnabled,
-                if (ui.torEnabled) "onion" else "clearnet"
-            )
-            PostureRow(
-                "Auto-lock",
+                "Automatic lock",
                 ui.onboardingAutoLockMinutes > 0,
-                if (ui.onboardingAutoLockMinutes > 0) "${ui.onboardingAutoLockMinutes} min" else "disabled"
+                when {
+                    ui.onboardingAutoLockMinutes <= 0 -> "disabled"
+                    runtimeKeepsSessionOpen -> "${ui.onboardingAutoLockMinutes} min · paused"
+                    else -> "${ui.onboardingAutoLockMinutes} min"
+                }
             )
         }
     }
 }
 
 
-/**
- * Fila de postura de seguridad: etiqueta a la izquierda, pill a la derecha.
- *
- * `ok = false` no significa error, significa "esta promesa no se esta
- * cumpliendo ahora mismo" — por ejemplo Tor apagado. Por eso usa `warn` y no
- * `err`.
- */
+/** A live value that is either in its preferred state or needs review. */
 @Composable
 private fun PostureRow(label: String, ok: Boolean, value: String) {
     Row(
@@ -2870,64 +2800,573 @@ private fun PostureRow(label: String, ok: Boolean, value: String) {
     }
 }
 
+private data class ScreenNotice(
+    val title: String,
+    val detail: String,
+    val tone: ZTone
+)
+
 @Composable
-fun LogsScreen(ui: ZSilentUiState) {
+private fun ScreenNoticeCard(notice: ScreenNotice) {
+    val tint = when (notice.tone) {
+        ZTone.On -> ZTheme.semantics.success
+        ZTone.Warn -> ZTheme.semantics.warning
+        ZTone.Err -> ZTheme.semantics.danger
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val icon = when (notice.tone) {
+        ZTone.Err -> Icons.Outlined.ErrorOutline
+        ZTone.Warn -> Icons.Outlined.WarningAmber
+        ZTone.On -> Icons.Outlined.CheckCircle
+        else -> Icons.Outlined.Info
+    }
+    val shape = MaterialTheme.shapes.small
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(tint.copy(alpha = 0.08f), shape)
+            .border(BorderStroke(1.dp, tint.copy(alpha = 0.30f)), shape)
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(notice.title, style = MaterialTheme.typography.labelLarge, color = tint)
+            Text(notice.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private data class DisplayLogBuffer(
+    val entries: List<RuntimeLog>,
+    val compactedMiningProgress: Int
+)
+
+/** Keep one live mining sample without letting periodic progress own the table. */
+private fun compactRuntimeLogs(logs: List<RuntimeLog>): DisplayLogBuffer {
+    var keptMiningProgress = false
+    var compacted = 0
+    val visible = buildList {
+        logs.forEach { log ->
+            val miningProgress = log.source.equals("mining", ignoreCase = true) &&
+                Regex("""\bmining:\s*progress\b""", RegexOption.IGNORE_CASE).containsMatchIn(log.message)
+            when {
+                !miningProgress -> add(log)
+                !keptMiningProgress -> {
+                    add(log)
+                    keptMiningProgress = true
+                }
+                else -> compacted++
+            }
+        }
+    }
+    return DisplayLogBuffer(visible, compacted)
+}
+
+internal enum class NetworkSignalKind {
+    TorOnionResolution,
+    IrohRoute,
+    ChainServe,
+    Iroh,
+    Gossip,
+    P2P
+}
+
+internal data class NetworkSignalSummary(
+    val kind: NetworkSignalKind,
+    val count: Int,
+    val latest: RuntimeLog,
+    val level: LogLevel
+)
+
+internal fun networkSignalKind(log: RuntimeLog): NetworkSignalKind? {
+    val message = log.message.lowercase()
+    return when {
+        log.source.equals("tor", ignoreCase = true) &&
+            "reason resolve failed" in message &&
+            (".onion" in message || "hsdir" in message) -> NetworkSignalKind.TorOnionResolution
+        "noq_udp" in message &&
+            ("sendmsg error" in message || "networkunreachable" in message || "10051" in message) -> NetworkSignalKind.IrohRoute
+        "chain serve connection failed" in message -> NetworkSignalKind.ChainServe
+        "iroh" in message || "snapshot" in message -> NetworkSignalKind.Iroh
+        "gossip" in message || "block announce" in message -> NetworkSignalKind.Gossip
+        Regex("""\bp2p\b|\bpeer (?:connected|disconnected|dialed|accepted)\b""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(log.message) -> NetworkSignalKind.P2P
+        else -> null
+    }
+}
+
+internal fun summarizeNetworkSignals(logs: List<RuntimeLog>): List<NetworkSignalSummary> =
+    NetworkSignalKind.entries.mapNotNull { kind ->
+        val matches = logs.filter { networkSignalKind(it) == kind }
+        if (matches.isEmpty()) return@mapNotNull null
+        val level = matches.map(::effectiveLogLevel).maxByOrNull {
+            when (it) {
+                LogLevel.Info -> 0
+                LogLevel.Success -> 1
+                LogLevel.Warning -> 2
+                LogLevel.Error -> 3
+            }
+        } ?: LogLevel.Info
+        NetworkSignalSummary(kind, matches.size, matches.first(), level)
+    }
+
+private fun networkSignalTitle(kind: NetworkSignalKind): String = when (kind) {
+    NetworkSignalKind.TorOnionResolution -> "Tor onion resolution retries"
+    NetworkSignalKind.IrohRoute -> "Iroh direct IPv6 route"
+    NetworkSignalKind.ChainServe -> "Iroh chain serving"
+    NetworkSignalKind.Iroh -> "Iroh activity"
+    NetworkSignalKind.Gossip -> "Gossip activity"
+    NetworkSignalKind.P2P -> "P2P peer activity"
+}
+
+private fun networkSignalDetail(kind: NetworkSignalKind): String = when (kind) {
+    NetworkSignalKind.TorOnionResolution -> "Tor could not resolve one specific onion peer after exhausting its HSDir candidates. Other Tor peers and live sync can remain healthy; repeated attempts are grouped here."
+    NetworkSignalKind.IrohRoute -> "Windows could not route one direct IPv6 datagram. Iroh can still use another address or relay; this alone is not a global outage."
+    NetworkSignalKind.ChainServe -> "An incoming chain-serving connection ended. Treat it as a request-level warning unless live sync reports an error."
+    NetworkSignalKind.Iroh -> "Actual Iroh or snapshot messages retained in this session buffer."
+    NetworkSignalKind.Gossip -> "Actual gossip or block-announcement messages retained in this session buffer."
+    NetworkSignalKind.P2P -> "Actual P2P peer lifecycle messages retained in this session buffer."
+}
+
+@Composable
+private fun NetworkSignalRow(summary: NetworkSignalSummary) {
+    val tint = logLevelColor(summary.level)
+    val shape = MaterialTheme.shapes.small
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(tint.copy(alpha = 0.055f), shape)
+            .border(BorderStroke(1.dp, tint.copy(alpha = 0.20f)), shape)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(networkSignalTitle(summary.kind), style = MaterialTheme.typography.labelLarge, color = tint)
+            Text(networkSignalDetail(summary.kind), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Pill("${summary.count} retained", logLevelTone(summary.level))
+            Text("last ${formatLogClock(summary.latest.timestampMillis)}", style = ZTheme.text.mono, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun syncTelemetryClock(epoch: Long): String {
+    if (epoch <= 0L) return "not reported"
+    val millis = if (epoch < 10_000_000_000L) epoch * 1_000L else epoch
+    return formatLogClock(millis)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun LogsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
+    val rpcEndpointLocal = remember(appState) { appState.localRpc.isLocalEndpoint() }
+    var logsClockMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5_000)
+            logsClockMillis = System.currentTimeMillis()
+        }
+    }
+    val displayBuffer = remember(ui.logs) { compactRuntimeLogs(ui.logs) }
+    val peerSplitKnown = ui.peerTelemetryObservedAtMillis > 0L
+    val peerSplitLive = ui.localRpcOnline && peerSplitKnown && ui.peerTelemetryConsecutiveFailures == 0
+    val classifiedLogs = remember(displayBuffer.entries) {
+        displayBuffer.entries.map { log -> log to effectiveLogLevel(log) }
+    }
+    val warningCount = classifiedLogs.count { it.second == LogLevel.Warning }
+    val errorCount = classifiedLogs.count { it.second == LogLevel.Error }
+    val issueLogs = classifiedLogs.filter { it.second == LogLevel.Warning || it.second == LogLevel.Error }
+    val otherIssueLogs = issueLogs.filter { networkSignalKind(it.first) == null }
+    val networkSignals = remember(displayBuffer.entries) { summarizeNetworkSignals(displayBuffer.entries) }
+    val sourceCount = displayBuffer.entries.map { it.source.ifBlank { "runtime" }.lowercase() }.distinct().size
+    val latestLog = displayBuffer.entries.firstOrNull()
+    val sync = ui.nodeSyncStatus
+    val syncStatus = sync.status.trim()
+    val hasSyncTelemetry = syncStatus.isNotBlank() || sync.lastUpdated > 0L ||
+        !sync.lastSyncSource.isNullOrBlank() || !sync.lastSyncEvent.isNullOrBlank() ||
+        sync.gossipRxBlockResponse > 0L || sync.gossipPublishErr > 0L ||
+        ui.nodeSyncStatusObservedAtMillis > 0L
+    val syncEndpointUnavailable = ui.localRpcOnline && ui.nodeSyncStatusConsecutiveFailures >= 3
+    val syncSampleAgeMillis = logsClockMillis - ui.nodeSyncStatusObservedAtMillis
+    val syncSampleLive = ui.localRpcOnline && ui.nodeSyncStatusObservedAtMillis > 0L &&
+        !syncEndpointUnavailable && syncSampleAgeMillis in 0L..15_000L
+    val syncError = sync.lastSyncError?.trim()?.takeIf { it.isNotBlank() }
+    val syncTone = when {
+        syncError != null || syncStatus.equals("error", ignoreCase = true) -> ZTone.Err
+        syncStatus.equals("caught_up", ignoreCase = true) || syncStatus.equals("synced", ignoreCase = true) -> ZTone.On
+        hasSyncTelemetry -> ZTone.Warn
+        else -> ZTone.Off
+    }
+    val currentNotices = buildList {
+        if (!rpcEndpointLocal && ui.localRpcOnline) {
+            add(
+                ScreenNotice(
+                    "Remote RPC telemetry",
+                    "Peer, sync and gossip metrics belong to the configured remote node. They do not prove that a managed node process is running on this machine; the Iroh identity card remains local.",
+                    ZTone.Warn
+                )
+            )
+        }
+        if (ui.localRpcOnline && ui.peerTelemetryConsecutiveFailures >= 3) {
+            add(
+                ScreenNotice(
+                    "Peer transport telemetry is stale",
+                    "/peers failed ${ui.peerTelemetryConsecutiveFailures} consecutive poll(s). Total peers may still come from live stats; Tor/direct values are last known.",
+                    ZTone.Warn
+                )
+            )
+        }
+        if (!ui.zokaReady) {
+            add(ScreenNotice("Zoka binaries are unavailable", "Node and wallet commands cannot run until the packaged binaries are present.", ZTone.Err))
+        }
+        if (ui.nodeStatus == ServiceStatus.Error) {
+            add(ScreenNotice("Node is in an error state", "Review the newest Node entries below, then use the Node section to retry when the cause is resolved.", ZTone.Err))
+        }
+        if (ui.miningStatus == ServiceStatus.Error || !ui.miningDiagnostic.isNullOrBlank()) {
+            add(
+                ScreenNotice(
+                    "Mining needs attention",
+                    ui.miningDiagnostic?.takeIf { it.isNotBlank() } ?: "Mining reported an error state. Review Mining entries below.",
+                    ZTone.Err
+                )
+            )
+        }
+        if (ui.torEnabled && (ui.torStatus == ServiceStatus.Error || !ui.torError.isNullOrBlank())) {
+            add(
+                ScreenNotice(
+                    "Tor needs attention",
+                    ui.torError?.takeIf { it.isNotBlank() } ?: "Tor reported an error state. Review Tor entries below.",
+                    ZTone.Err
+                )
+            )
+        }
+        if (rpcEndpointLocal && ui.managedTorEnabled && ui.torEnabled &&
+            ui.nodeStatus == ServiceStatus.Online && ui.torStatus == ServiceStatus.Offline
+        ) {
+            add(
+                ScreenNotice(
+                    "Managed Tor is offline",
+                    "The local node is online while its managed Tor process is offline. Direct fallback may still keep the node reachable unless Tor-only policy is active.",
+                    ZTone.Warn
+                )
+            )
+        }
+        if (ui.localRpcOnline && ui.nodeStatus == ServiceStatus.Online && ui.localConnectedPeers <= 0L) {
+            add(
+                ScreenNotice(
+                    "Node has no connected peers",
+                    "RPC is responding, but the configured node currently reports an empty P2P mesh. Stored data remains readable while new network updates wait for peers.",
+                    ZTone.Warn
+                )
+            )
+        }
+        if (syncError != null || syncStatus.equals("error", ignoreCase = true)) {
+            add(
+                ScreenNotice(
+                    "Chain synchronization needs attention",
+                    syncError ?: "The configured node reports a synchronization error.",
+                    if (syncSampleLive) ZTone.Err else ZTone.Warn
+                )
+            )
+        }
+        if (syncEndpointUnavailable) {
+            add(
+                ScreenNotice(
+                    if (hasSyncTelemetry) "Sync telemetry is stale" else "Sync telemetry is unavailable",
+                    "The node RPC responds, but /sync/status failed ${ui.nodeSyncStatusConsecutiveFailures} consecutive poll(s). " +
+                        if (hasSyncTelemetry) "Values below are labelled last known." else "Peer totals from other live endpoints remain visible.",
+                    ZTone.Warn
+                )
+            )
+        }
+    }
+    val hasCurrentError = currentNotices.any { it.tone == ZTone.Err }
+    val stateLabel = when {
+        currentNotices.isNotEmpty() -> "ATTENTION"
+        ui.nodeStatus == ServiceStatus.Online && ui.localRpcOnline -> "HEALTHY"
+        ui.nodeStatus == ServiceStatus.Starting || ui.torStatus == ServiceStatus.Starting -> "STARTING"
+        ui.nodeStatus == ServiceStatus.Offline -> "IDLE"
+        else -> "MONITORING"
+    }
+    val stateTone = when {
+        hasCurrentError -> ZTone.Err
+        currentNotices.isNotEmpty() -> ZTone.Warn
+        ui.nodeStatus == ServiceStatus.Online && ui.localRpcOnline -> ZTone.On
+        ui.nodeStatus == ServiceStatus.Starting || ui.torStatus == ServiceStatus.Starting -> ZTone.Warn
+        else -> ZTone.Off
+    }
+    val stateColor = when (stateTone) {
+        ZTone.On -> ZTheme.semantics.success
+        ZTone.Warn -> ZTheme.semantics.warning
+        ZTone.Err -> ZTheme.semantics.danger
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "Logs",
-        title = "Runtime log stream",
-        subtitle = "Sanitized, local, redacted. Private data never appears."
+        title = "Runtime diagnostics",
+        subtitle = "A local rolling view of ZSilent messages plus telemetry from the configured RPC. Review content before sharing it."
     ) {
-        Panel(title = "Runtime log", meta = "${ui.logs.size} lines") {
-            if (ui.logs.isEmpty()) {
-                EmptyState("No runtime logs yet.")
+        Panel(title = "Live runtime health", meta = "current state") {
+            Text(stateLabel, style = ZTheme.text.monoDisplay, color = stateColor)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Pill("node ${ui.nodeStatus.name.lowercase()}", serviceStatusTone(ui.nodeStatus))
+                Pill(
+                    if (ui.torEnabled) "tor ${ui.torStatus.name.lowercase()}" else "tor disabled",
+                    if (ui.torEnabled) serviceStatusTone(ui.torStatus) else ZTone.Off
+                )
+                Pill(
+                    "mining ${ui.miningStatus.name.lowercase()} · ${formatHashrate(ui.mining.hashrateHps)}",
+                    serviceStatusTone(ui.miningStatus)
+                )
+                Pill(
+                    when {
+                        !ui.localRpcOnline -> "sync unavailable"
+                        ui.localRpcOnline && ui.networkHeight > 0L && ui.syncRemainingBlocks <= 0L -> "chain at tip"
+                        ui.networkSynced -> "chain near tip · ${ui.syncRemainingBlocks} behind"
+                        else -> "chain syncing"
+                    },
+                    when {
+                        !ui.localRpcOnline -> ZTone.Off
+                        ui.localRpcOnline && ui.networkHeight > 0L && ui.syncRemainingBlocks <= 0L -> ZTone.On
+                        ui.networkSynced -> ZTone.Warn
+                        else -> ZTone.Warn
+                    }
+                )
+                Pill("binaries ${if (ui.zokaReady) "ready" else "missing"}", if (ui.zokaReady) ZTone.On else ZTone.Err)
+            }
+            HintText(
+                when {
+                    currentNotices.isNotEmpty() -> "Current service state exposes ${currentNotices.size} item(s) that need attention. Retained warnings below do not by themselves make this state red."
+                    !rpcEndpointLocal && ui.localRpcOnline -> "The configured remote RPC is responding. Its metrics are labelled separately from this machine's managed runtime."
+                    ui.nodeStatus == ServiceStatus.Online && ui.localRpcOnline -> "The node and local RPC are responding. Historical transport warnings are summarized separately from live health."
+                    ui.nodeStatus == ServiceStatus.Offline -> "Services are idle. Start the node to receive live peer, sync and gossip telemetry."
+                    else -> "Services are changing state; live metrics update when the configured RPC becomes available."
+                }
+            )
+        }
+
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            StatusCard("Peers", if (ui.localRpcOnline) ui.localConnectedPeers.toString() else "-", if (ui.localRpcOnline) "live configured RPC mesh" else "configured RPC offline", Modifier.weight(1f))
+            StatusCard(
+                "Tor",
+                if (peerSplitKnown) ui.peerTorCount.toString() else "-",
+                if (peerSplitLive) "current onion peers" else if (peerSplitKnown) "last reported onion peers" else "not reported",
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Direct",
+                if (peerSplitKnown) ui.peerDirectCount.toString() else "-",
+                if (peerSplitLive) "current clearnet peers" else if (peerSplitKnown) "last reported clearnet peers" else "not reported",
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Iroh ID",
+                if (ui.irohEndpointId.isNotBlank()) "Known" else "Not reported",
+                if (ui.irohEndpointId.isNotBlank()) "local identity; not reachability" else "local identity unavailable",
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Sync",
+                if (hasSyncTelemetry) syncStatus.ifBlank { "reported" }.replace('_', ' ') else "-",
+                if (syncSampleLive) "live ${if (rpcEndpointLocal) "local" else "remote"} status" else "last known",
+                Modifier.weight(1f)
+            )
+        }
+
+        if (currentNotices.isNotEmpty()) {
+            Panel(title = "Current runtime alerts", meta = "${currentNotices.size} active signal(s)") {
+                currentNotices.forEach { ScreenNoticeCard(it) }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+            Column(Modifier.weight(1.15f), verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+                Panel(title = "Sync & gossip", meta = if (syncSampleLive) "live" else if (hasSyncTelemetry) "last known" else "unavailable") {
+                    if (!hasSyncTelemetry) {
+                        EmptyState("No sync telemetry yet.", sub = "The configured /sync/status endpoint populates this panel when its node is online.")
+                    } else {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Pill(syncStatus.ifBlank { "status reported" }.replace('_', ' '), syncTone)
+                            sync.mode.takeIf { it.isNotBlank() }?.let { Pill("mode $it", ZTone.Info) }
+                            sync.startupPhase.takeIf { it.isNotBlank() }?.let { Pill("phase ${it.replace('_', ' ')}", ZTone.Info) }
+                        }
+                        sync.lastSyncSource?.takeIf { it.isNotBlank() }?.let { KeyValueRow("Last source", it) }
+                        sync.lastSyncEvent?.takeIf { it.isNotBlank() }?.let { KeyValueRow("Last event", it) }
+                        KeyValueRow("Block responses (session total)", sync.gossipRxBlockResponse.toString())
+                        KeyValueRow("Publish errors (session total)", sync.gossipPublishErr.toString())
+                        KeyValueRow("Telemetry updated", syncTelemetryClock(sync.lastUpdated))
+                        HintText("Session totals are cumulative counters. A nonzero publish-error count is historical; live sync status and its trend indicate current impact.")
+                        if (!syncSampleLive) HintText("These are the last values returned by /sync/status; they are not presented as live telemetry.")
+                    }
+                }
+            }
+
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
+                Panel(title = "Retained network activity", meta = if (networkSignals.isEmpty()) "quiet" else "${networkSignals.size} family(s)") {
+                    if (networkSignals.isEmpty()) {
+                        EmptyState("No network messages retained.", sub = "Peer, Iroh, gossip and P2P events appear only when the runtime actually reports them.")
+                    } else {
+                        networkSignals.forEach { NetworkSignalRow(it) }
+                    }
+                    HintText("Counts describe this in-memory buffer, not lifetime network totals.")
+                }
+            }
+        }
+
+        if (otherIssueLogs.isNotEmpty()) {
+            Panel(title = "Other retained signals", meta = "${otherIssueLogs.size} line(s)") {
+                HintText("Historical buffer signals are separate from the live service state above.")
+                otherIssueLogs.take(3).forEach { (log, level) -> LogIssueRow(log, level) }
+                if (otherIssueLogs.size > 3) HintText("${otherIssueLogs.size - 3} more remain in the full stream.")
+            }
+        }
+
+        Panel(contentPadding = PaddingValues(0.dp)) {
+            Column(Modifier.padding(ZTheme.spacing.panel), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PanelHeader(
+                    title = "Runtime log",
+                    subtitle = "Newest first. Periodic mining progress keeps only its newest visual sample; complete diagnostic files remain unchanged.",
+                    right = {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Pill("${displayBuffer.entries.size} shown", if (displayBuffer.entries.isNotEmpty()) ZTone.Info else ZTone.Off)
+                            if (displayBuffer.compactedMiningProgress > 0) {
+                                Pill("${displayBuffer.compactedMiningProgress} mining updates compacted", ZTone.Off)
+                            }
+                            Pill("$warningCount warn · $errorCount error", if (errorCount > 0) ZTone.Err else if (warningCount > 0) ZTone.Warn else ZTone.On)
+                        }
+                    }
+                )
+                HintText("${ui.logs.size} retained line(s) across $sourceCount source(s)${latestLog?.let { "; latest ${formatLogClock(it.timestampMillis)}" } ?: ""}.")
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (classifiedLogs.isEmpty()) {
+                Box(Modifier.fillMaxWidth().padding(ZTheme.spacing.panel)) {
+                    EmptyState("No runtime logs yet.", sub = "Messages appear here as ZSilent starts and operates its services.")
+                }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 360.dp, max = 640.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(ui.logs) { log ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            // El prototipo abre cada linea con la hora. El dato
-                            // ya estaba en RuntimeLog.timestampMillis y no se
-                            // mostraba.
-                            Text(
-                                formatLogClock(log.timestampMillis),
-                                modifier = Modifier.widthIn(min = 64.dp),
-                                style = ZTheme.text.mono,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            )
-                            Text(
-                                logCategoryLabel(log.source),
-                                modifier = Modifier.widthIn(min = 72.dp, max = 96.dp),
-                                style = ZTheme.text.mono,
-                                color = logSourceColor(log.source)
-                            )
-                            val level = effectiveLogLevel(log)
-                            Text(
-                                level.name.uppercase(),
-                                modifier = Modifier.widthIn(min = 62.dp),
-                                style = ZTheme.text.pill,
-                                color = logLevelColor(level)
-                            )
-                            Text(
-                                log.message,
-                                modifier = Modifier.weight(1f),
-                                fontFamily = FontFamily.Monospace,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                LogTableHeader()
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(min = 360.dp, max = 640.dp)) {
+                    items(classifiedLogs) { (log, level) ->
+                        Column {
+                            LogTableRow(log, level)
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
                         }
                     }
                 }
             }
         }
     }
+}
+
+private fun serviceStatusTone(status: ServiceStatus): ZTone = when (status) {
+    ServiceStatus.Online -> ZTone.On
+    ServiceStatus.Starting, ServiceStatus.Stopping -> ZTone.Warn
+    ServiceStatus.Error -> ZTone.Err
+    ServiceStatus.Offline -> ZTone.Off
+}
+
+@Composable
+private fun LogIssueRow(log: RuntimeLog, level: LogLevel) {
+    val tint = logLevelColor(level)
+    val shape = MaterialTheme.shapes.small
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(tint.copy(alpha = 0.06f), shape)
+            .border(BorderStroke(1.dp, tint.copy(alpha = 0.22f)), shape)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(Modifier.width(148.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Pill(logLevelDisplay(log, level), logLevelTone(level))
+            Text(formatLogClock(log.timestampMillis), style = ZTheme.text.mono, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(logCategoryLabel(log.source), style = ZTheme.text.pill, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(log.message, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+@Composable
+private fun LogTableHeader() {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = ZTheme.spacing.panel, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        LogTableLabel("Time", Modifier.width(70.dp))
+        LogTableLabel("Source", Modifier.width(110.dp))
+        LogTableLabel("Level", Modifier.width(124.dp))
+        LogTableLabel("Message", Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun LogTableLabel(label: String, modifier: Modifier) {
+    Text(label.uppercase(), modifier = modifier, style = ZTheme.text.fieldLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun LogTableRow(log: RuntimeLog, level: LogLevel) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = ZTheme.spacing.panel, vertical = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            formatLogClock(log.timestampMillis),
+            modifier = Modifier.width(70.dp),
+            style = ZTheme.text.mono,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+        )
+        Text(
+            logCategoryLabel(log.source),
+            modifier = Modifier.width(110.dp),
+            style = ZTheme.text.mono,
+            color = logSourceColor(log.source),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Box(Modifier.width(124.dp)) { Pill(logLevelDisplay(log, level), logLevelTone(level)) }
+        Text(
+            log.message,
+            modifier = Modifier.weight(1f),
+            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+private fun logLevelTone(level: LogLevel): ZTone = when (level) {
+    LogLevel.Success -> ZTone.On
+    LogLevel.Warning -> ZTone.Warn
+    LogLevel.Error -> ZTone.Err
+    LogLevel.Info -> ZTone.Off
+}
+
+private val STRUCTURED_LOG_LEVEL = Regex(
+    """(?:^|[\s\[])(warn|warning|error|err|notice|info|debug|trace|success|ok)(?=[\s:\]])""",
+    RegexOption.IGNORE_CASE
+)
+
+private fun embeddedLogLevelToken(message: String): String? =
+    STRUCTURED_LOG_LEVEL.find(message)?.groupValues?.getOrNull(1)?.lowercase()
+
+private fun logLevelDisplay(log: RuntimeLog, level: LogLevel): String = when {
+    log.level != LogLevel.Info -> level.name
+    embeddedLogLevelToken(log.message) == "notice" -> "NOTICE"
+    else -> "${level.name} inferred"
 }
 
 /**
@@ -2956,18 +3395,23 @@ private fun logSourceColor(source: String): Color =
  * Severidad efectiva de una línea.
  *
  * Si el emisor declaró un nivel, gana ese. Si no —que es el caso de casi todos
- * los sitios hoy— se infiere del texto con una heurística **deliberadamente
- * conservadora**: solo marca error o warning ante señales fuertes, y ante la
- * duda devuelve `Info`. Un log pintado de rojo por equivocación es peor que uno
- * sin color, porque manda a buscar un problema que no existe.
+ * los sitios hoy— primero se respeta un nivel estructurado dentro del mensaje
+ * (por ejemplo el `WARN` de una línea cruda de iroh) y después se infiere con
+ * una heurística conservadora. El orden importa: un `WARN ... failed` sigue
+ * siendo warning y no se eleva a error por una palabra posterior.
  *
  * Es una medida de transición: a medida que los call sites declaren su nivel,
  * la heurística deja de intervenir sola.
  */
-private fun effectiveLogLevel(log: RuntimeLog): LogLevel {
+internal fun effectiveLogLevel(log: RuntimeLog): LogLevel {
     if (log.level != LogLevel.Info) return log.level
     val m = log.message.lowercase()
+    val embeddedLevel = embeddedLogLevelToken(log.message)
     return when {
+        embeddedLevel == "error" || embeddedLevel == "err" -> LogLevel.Error
+        embeddedLevel == "warn" || embeddedLevel == "warning" -> LogLevel.Warning
+        embeddedLevel == "success" || embeddedLevel == "ok" -> LogLevel.Success
+        embeddedLevel == "notice" || embeddedLevel == "info" || embeddedLevel == "debug" || embeddedLevel == "trace" -> LogLevel.Info
         listOf("failed", "failure", "error", "could not", "cannot ", "unreachable",
                "denied", "rejected", "invalid", "missing").any { it in m } -> LogLevel.Error
         listOf("warning", "retry", "retrying", "timeout", "timed out", "waiting",

@@ -2,6 +2,7 @@ package com.zsilent.core.core.node
 
 import com.zsilent.core.config.ZokaNetworkConfig
 import com.zsilent.core.core.process.ZokaProcessKiller
+import com.zsilent.core.models.LogLevel
 import com.zsilent.core.models.RuntimeLog
 import com.zsilent.core.models.ServiceStatus
 import com.zsilent.core.services.ZokaCli
@@ -16,6 +17,116 @@ import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+
+private val NODE_ANSI_CSI = Regex("\u001B\\[[;?0-9]*[ -/]*[@-~]")
+private val NODE_ANSI_OSC = Regex("\u001B\\][^\u0007\u001B]*(?:\u0007|\u001B\\\\)")
+private val EXPLICIT_DIAGNOSTIC_LEVEL = Regex(
+    """(?:^|[\s\[])(?:warn(?:ing)?|error|err)(?=[\s:\]])""",
+    RegexOption.IGNORE_CASE
+)
+private val NODE_NETWORK_CHURN_MARKERS = listOf(
+    "seed reconnect dial failed",
+    "seed reconnect warmup failed",
+    "seed dial started",
+    "Tor mode only allows",
+    "Unsupported resolved address",
+    "failed to add Kademlia peer",
+    "connection closed while pumping",
+    "keep-alive timeout",
+    "tried to dial local peer"
+)
+
+/**
+ * Labels emitted by `zoka fullnode --dashboard` on every refresh.
+ *
+ * These are presentation rows, not discrete runtime events. Matching remains
+ * anchored to the beginning of a normalized line so an operational message
+ * that merely mentions (for example) "connected peers" is not hidden.
+ */
+private val DASHBOARD_NOISE = listOf(
+    "ZOKA Fullnode",
+    "Session uptime",
+    "Last event",
+    "Local label",
+    "Address",
+    "Available",
+    "Locked",
+    "Total",
+    "Transactions",
+    "View-only",
+    "Peer ID",
+    "Listen address",
+    "Seed peer",
+    "Transport",
+    "Connected peers",
+    "Incompatible peers",
+    "PBFT peers",
+    "Pending private txs",
+    "Recent avg block txs",
+    "Next block reward",
+    "Next halving",
+    "Emitted supply",
+    "Remaining supply",
+    "Auto-mining",
+    "Algorithm",
+    "CPU power",
+    "Mining height",
+    "Synced height",
+    "Warmup remaining",
+    "Mode",
+    "Reward target",
+    "Coinbase maturity",
+    "Session rewards",
+    "Session mined blocks",
+    "Hashrate estimate",
+    "Difficulty",
+    "Solve time avg",
+    "Press Ctrl+C to stop."
+)
+
+private val DASHBOARD_SECTIONS = setOf("Mining", "Chain", "Network", "Wallet")
+private val OPERATIONAL_ROW_SUFFIX = Regex(
+    """^(?:changed|connected|disconnected|failed|recovered|accepted|rejected|started|stopped|switched|completed|advertised|degraded|restored|updated|rotated|unavailable|ready)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+private fun stripNodeTerminalCodes(line: String): String =
+    line.replace(NODE_ANSI_OSC, "").replace(NODE_ANSI_CSI, "")
+
+/** Visible-stream policy kept internal so its narrow matching can be tested. */
+internal fun shouldDropNodePanelLine(line: String): Boolean {
+    if (line.isBlank()) return true
+
+    val withoutTerminalCodes = stripNodeTerminalCodes(line).trim()
+    if (withoutTerminalCodes.isBlank()) return true
+    if (EXPLICIT_DIAGNOSTIC_LEVEL.containsMatchIn(withoutTerminalCodes)) return false
+    if (withoutTerminalCodes.matches(Regex("^[\\s|=\\-─━]+$"))) return true
+
+    val normalized = withoutTerminalCodes
+        .trimStart { it.isWhitespace() || it == '>' || it == '›' || it == '»' }
+        .trim()
+
+    if (DASHBOARD_SECTIONS.any { normalized.equals(it, ignoreCase = true) }) return true
+    return DASHBOARD_NOISE.any { label ->
+        if (normalized.equals(label, ignoreCase = true)) return@any true
+        if (!normalized.startsWith("$label ", ignoreCase = true)) return@any false
+
+        // A real event can legitimately start with a dashboard label (for
+        // example "Connected peers changed from 1 to 2"). Preserve those;
+        // `Last event` itself is the dashboard's continuously rewritten
+        // summary and remains intentionally compacted.
+        val suffix = normalized.substring(label.length).trimStart()
+        label.equals("Last event", ignoreCase = true) ||
+            !OPERATIONAL_ROW_SUFFIX.containsMatchIn(suffix)
+    }
+}
+
+/** Compact only unlevelled connection churn; explicit WARN/ERROR stays visible. */
+internal fun shouldDropNodeChurnLine(rawLine: String): Boolean {
+    val stripped = stripNodeTerminalCodes(rawLine)
+    if (EXPLICIT_DIAGNOSTIC_LEVEL.containsMatchIn(stripped)) return false
+    return NODE_NETWORK_CHURN_MARKERS.any { stripped.contains(it, ignoreCase = true) }
+}
 
 class NodeController(private val cli: ZokaCli) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -206,7 +317,13 @@ class NodeController(private val cli: ZokaCli) {
                 val expectedStop = stopRequested
                 process = null
                 stopRequested = false
-                _logs.tryEmit(RuntimeLog("node", "Node stopped with exit code $exitCode"))
+                _logs.tryEmit(
+                    RuntimeLog(
+                        "node",
+                        "Node stopped with exit code $exitCode",
+                        level = if (expectedStop || exitCode == 0) LogLevel.Info else LogLevel.Warning
+                    )
+                )
                 if (expectedStop) {
                     _status.value = ServiceStatus.Offline
                     restartAttempt = 0
@@ -216,7 +333,13 @@ class NodeController(private val cli: ZokaCli) {
             }.onFailure {
                 process = null
                 stopRequested = false
-                _logs.tryEmit(RuntimeLog("node", "Failed to start node: ${sanitize(it.message ?: "unknown error")}"))
+                _logs.tryEmit(
+                    RuntimeLog(
+                        "node",
+                        "Failed to start node: ${sanitize(it.message ?: "unknown error")}",
+                        level = LogLevel.Error
+                    )
+                )
                 _status.value = ServiceStatus.Error
             }
         }
@@ -230,13 +353,25 @@ class NodeController(private val cli: ZokaCli) {
         }
         restartAttempt += 1
         if (restartAttempt > 5) {
-            _logs.tryEmit(RuntimeLog("node", "Node exited unexpectedly $restartAttempt times in a row; giving up auto-restart. Toggle the node again from the panel."))
+            _logs.tryEmit(
+                RuntimeLog(
+                    "node",
+                    "Node exited unexpectedly $restartAttempt times in a row; giving up auto-restart. Toggle the node again from the panel.",
+                    level = LogLevel.Error
+                )
+            )
             _status.value = ServiceStatus.Error
             restartAttempt = 0
             return
         }
         val backoffSeconds = (2 * restartAttempt).coerceAtMost(30).toLong()
-        _logs.tryEmit(RuntimeLog("node", "Node exited unexpectedly (code=$exitCode). Auto-restart attempt $restartAttempt in ${backoffSeconds}s..."))
+        _logs.tryEmit(
+            RuntimeLog(
+                "node",
+                "Node exited unexpectedly (code=$exitCode). Auto-restart attempt $restartAttempt in ${backoffSeconds}s...",
+                level = LogLevel.Warning
+            )
+        )
         _status.value = ServiceStatus.Starting
         kotlinx.coroutines.delay(backoffSeconds * 1000L)
         if (stopRequested) {
@@ -335,7 +470,7 @@ class NodeController(private val cli: ZokaCli) {
     }
 
     private fun sanitize(line: String): String {
-        val noAnsi = line.replace(Regex("\\[[;?0-9]*[ -/]*[@-~]"), "")
+        val noAnsi = stripNodeTerminalCodes(line)
         val sensitive = listOf(
             "seed phrase", "recovery phrase", "mnemonic",
             "private key", "spend key", "scan key", "spending key",
@@ -348,74 +483,15 @@ class NodeController(private val cli: ZokaCli) {
         }
     }
 
-    private fun isNetworkChurn(rawLine: String): Boolean {
-        val stripped = rawLine.replace(Regex("\\[[;?0-9]*[ -/]*[@-~]"), "")
-        return NETWORK_CHURN_MARKERS.any { stripped.contains(it, ignoreCase = true) }
-    }
+    private fun isNetworkChurn(rawLine: String): Boolean = shouldDropNodeChurnLine(rawLine)
 
-    private fun shouldDropLine(line: String): Boolean {
-        if (line.isBlank()) return true
-        if (line.all { it == '-' || it == '=' || it == ' ' || it == '|' }) return true
-        return DASHBOARD_NOISE.any { line.startsWith(it) }
-    }
+    private fun shouldDropLine(line: String): Boolean = shouldDropNodePanelLine(line)
 
     companion object {
         /// Rotate the node log past this size, keeping one previous file, so
         /// a node left running for weeks can't fill the disk.
         private const val MAX_LOG_BYTES = 8L * 1024 * 1024
 
-        // Repetitive, non-actionable p2p connection churn. Dropped from the
-        // panel entirely (the fluid mining console / dashboard summary line
-        // still shows the aggregate peer count and last event).
-        private val NETWORK_CHURN_MARKERS = listOf(
-            "seed reconnect dial failed",
-            "seed reconnect warmup failed",
-            "seed dial started",
-            "Tor mode only allows",
-            "Unsupported resolved address",
-            "failed to add Kademlia peer",
-            "connection closed while pumping",
-            "keep-alive timeout",
-            "tried to dial local peer"
-        )
-
-        private val DASHBOARD_NOISE = listOf(
-            "ZOKA Fullnode",
-            "Session uptime",
-            "Last event",
-            "Wallet",
-            "Local label",
-            "Address",
-            "Available",
-            "Locked",
-            "Total",
-            "Transactions",
-            "View-only",
-            "Network",
-            "Peer ID",
-            "Listen address",
-            "Seed peer",
-            "Transport",
-            "Connected peers",
-            "Incompatible peers",
-            "PBFT peers",
-            "Chain",
-            "Pending private txs",
-            "Recent avg block txs",
-            "Next block reward",
-            "Emitted supply",
-            "Remaining supply",
-            "Next halving",
-            "Mining",
-            "Auto-mining",
-            "Algorithm",
-            "CPU power",
-            "Mining height",
-            "Synced height",
-            "Warmup remaining",
-            "Mode",
-            "Reward target",
-        )
     }
 
     private fun supportsTorFlags(binary: File): Boolean {
