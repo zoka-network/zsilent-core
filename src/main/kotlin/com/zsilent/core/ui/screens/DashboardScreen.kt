@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zsilent.core.models.ServiceStatus
@@ -747,18 +748,32 @@ private fun DashboardPrimaryGrid(
     rpcEndpointLocal: Boolean
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= 860.dp) {
+        val ancho = maxWidth
+        if (ancho >= 860.dp) {
+            // Lo que va a medir cada panel, derivado de los mismos pesos con
+            // que se dibujan. Se calcula aca porque este es el unico punto que
+            // conoce el ancho: los hijos ya no pueden medirse solos sin
+            // romper la fila de igual alto.
+            val usable = ancho - ZTheme.spacing.gap
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
             ) {
-                DashboardChainPanel(ui, telemetry, nowMillis, rpcEndpointLocal, Modifier.weight(1.45f).fillMaxHeight())
-                DashboardPeerPanel(ui, nowMillis, rpcEndpointLocal, Modifier.weight(1f).fillMaxHeight())
+                DashboardChainPanel(
+                    ui, telemetry, nowMillis, rpcEndpointLocal,
+                    usable * (1.45f / 2.45f),
+                    Modifier.weight(1.45f).fillMaxHeight()
+                )
+                DashboardPeerPanel(
+                    ui, nowMillis, rpcEndpointLocal,
+                    usable * (1f / 2.45f),
+                    Modifier.weight(1f).fillMaxHeight()
+                )
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
-                DashboardChainPanel(ui, telemetry, nowMillis, rpcEndpointLocal)
-                DashboardPeerPanel(ui, nowMillis, rpcEndpointLocal)
+                DashboardChainPanel(ui, telemetry, nowMillis, rpcEndpointLocal, ancho)
+                DashboardPeerPanel(ui, nowMillis, rpcEndpointLocal, ancho)
             }
         }
     }
@@ -770,6 +785,7 @@ private fun DashboardChainPanel(
     telemetry: List<DashboardTelemetrySample>,
     nowMillis: Long,
     rpcEndpointLocal: Boolean,
+    availableWidth: Dp,
     modifier: Modifier = Modifier
 ) {
     val syncFresh = dashboardTelemetrySampleFresh(ui.localRpcOnline, ui.nodeSyncStatusObservedAtMillis, ui.nodeSyncStatusConsecutiveFailures, nowMillis)
@@ -791,7 +807,8 @@ private fun DashboardChainPanel(
                 (if (rpcEndpointLocal) "Local" else "Configured RPC") to if (localKnown) localHeight.toString() else "—",
                 "Observed target" to if (targetKnown) targetHeight.toString() else "—",
                 "Lag" to if (targetKnown) "$lag blocks" else "—"
-            )
+            ),
+            availableWidth
         )
         Box(Modifier.fillMaxWidth().height(176.dp), contentAlignment = Alignment.Center) {
             DashboardLineChart(
@@ -826,6 +843,7 @@ private fun DashboardPeerPanel(
     ui: ZSilentUiState,
     nowMillis: Long,
     rpcEndpointLocal: Boolean,
+    availableWidth: Dp,
     modifier: Modifier = Modifier
 ) {
     val splitKnown = ui.peerTelemetryObservedAtMillis > 0L
@@ -843,8 +861,8 @@ private fun DashboardPeerPanel(
         },
         modifier = modifier
     ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth >= 430.dp) {
+        run {
+            if (availableWidth >= 430.dp) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -894,17 +912,23 @@ private fun DashboardSecondaryGrid(
     reportedWork: Long
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= 860.dp) {
+        val ancho = maxWidth
+        if (ancho >= 860.dp) {
+            val usable = ancho - ZTheme.spacing.gap
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
             ) {
-                DashboardMiningPanel(ui, reportedWork, Modifier.weight(1.08f).fillMaxHeight())
+                DashboardMiningPanel(
+                    ui, reportedWork,
+                    usable * (1.08f / 2.08f),
+                    Modifier.weight(1.08f).fillMaxHeight()
+                )
                 DashboardBalancePanel(ui, Modifier.weight(1f).fillMaxHeight())
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
-                DashboardMiningPanel(ui, reportedWork)
+                DashboardMiningPanel(ui, reportedWork, ancho)
                 DashboardBalancePanel(ui)
             }
         }
@@ -915,6 +939,7 @@ private fun DashboardSecondaryGrid(
 private fun DashboardMiningPanel(
     ui: ZSilentUiState,
     reportedWork: Long,
+    availableWidth: Dp,
     modifier: Modifier = Modifier
 ) {
     Panel(
@@ -956,13 +981,15 @@ private fun DashboardMiningPanel(
                 "Solo blocks" to ui.mining.blocksMined.toString(),
                 "Solo difficulty" to (ui.mining.difficultyBits.takeIf { it > 0 }?.toString() ?: "—"),
                 "CPU threads" to ui.mining.availableCpuThreads.toString()
-            )
+            ),
+            availableWidth
         )
         DashboardInlineMetricGrid(
             listOf(
                 "Average solve" to dashboardSeconds(ui.mining.avgSolveTimeSecs),
                 "Last solve" to dashboardSeconds(ui.mining.lastSolveTimeSecs)
-            )
+            ),
+            availableWidth
         )
         HintText(
             "Team state comes from the service flag above. The numeric values are the latest retained solo-miner snapshot; no freshness timestamp is available, and reported work is not a hardware-side hashrate measurement."
@@ -1275,9 +1302,20 @@ private fun DashboardInlineMetric(label: String, value: String, modifier: Modifi
 }
 
 @Composable
-private fun DashboardInlineMetricGrid(metrics: List<Pair<String, String>>) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= 500.dp) {
+/**
+ * Métricas en fila si entran, apiladas si no.
+ *
+ * El ancho llega por parámetro y no se mide acá con `BoxWithConstraints`.
+ * `BoxWithConstraints` es un `SubcomposeLayout`, y Compose no sabe darle
+ * medidas intrínsecas: en cuanto este componente cae dentro de una fila con
+ * `height(IntrinsicSize.Min)` —que es como se consigue que dos paneles queden
+ * de igual alto— la aplicación se cae con "Asking for intrinsic measurements
+ * of SubcomposeLayout layouts is not supported". Solo pasaba al maximizar,
+ * porque recién ahí el Dashboard cambia a la disposición de dos columnas.
+ */
+private fun DashboardInlineMetricGrid(metrics: List<Pair<String, String>>, availableWidth: Dp) {
+    run {
+        if (availableWidth >= 500.dp) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 metrics.forEach { (label, value) ->
                     DashboardInlineMetric(label, value, Modifier.weight(1f))
