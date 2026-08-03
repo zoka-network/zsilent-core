@@ -147,6 +147,8 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
         }
 
+        ExplorerSupplyPanel(ui)
+
         ExplorerHealthNotice(
             ui = ui,
             localEndpoint = localEndpoint,
@@ -785,3 +787,88 @@ private fun latestBlockNumbers(height: Long, count: Int): List<Long> {
     val first = (height - count + 1).coerceAtLeast(0)
     return (height downTo first).toList()
 }
+
+/**
+ * ZKA en circulación: lo emitido, el techo y lo que falta.
+ *
+ * Va en el explorador porque es donde se busca el estado de la cadena. Antes
+ * el dato existía únicamente en el panel de diagnóstico del nodo, entre una
+ * docena de filas técnicas, y en la práctica no se encontraba.
+ *
+ * Se muestra desde `total_supply_emitted_atoms`, que es lo que la cadena lleva
+ * contabilizado, y no desde `emission_zka`: aquél es un decimal recalculado
+ * suponiendo que cada bloque pagó lo que le tocaba, y el punto flotante
+ * redondea la última cifra. Con átomos enteros la cifra es exacta.
+ */
+@Composable
+private fun ExplorerSupplyPanel(ui: ZSilentUiState) {
+    val emitted = ui.stats.totalSupplyEmittedAtoms
+    val max = ui.stats.maxSupplyAtoms
+    // Un nodo anterior a 2.0 no envía estos campos. Ahí no se inventa nada: se
+    // dice que no los reporta, en vez de mostrar un cero que se lee como dato.
+    val reported = emitted > 0L && max > 0L
+
+    Panel(
+        title = "ZKA supply",
+        meta = if (!ui.localRpcOnline) "node unavailable"
+               else if (reported) "from chain state"
+               else "not reported by this node"
+    ) {
+        if (!ui.localRpcOnline || !reported) {
+            HintText(
+                if (!ui.localRpcOnline) {
+                    "Start the node to read the emitted supply from the chain."
+                } else {
+                    "This node does not report the emitted supply. Nodes from 2.0 onward do."
+                }
+            )
+            return@Panel
+        }
+
+        val pct = emitted.toDouble() * 100.0 / max.toDouble()
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            StatusCard(
+                "In circulation",
+                formatZkaExact(emitted),
+                "ZKA emitted so far",
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Maximum",
+                formatZkaExact(max),
+                "hard cap, never exceeded",
+                Modifier.weight(1f)
+            )
+            StatusCard(
+                "Left to mine",
+                formatZkaExact(ui.stats.remainingSupplyAtoms),
+                "%.4f%% emitted".format(pct),
+                Modifier.weight(1f)
+            )
+        }
+        HintText(
+            "Counted by the chain itself, block by block, not estimated from the height. " +
+                "Emitted includes coinbase rewards that are still maturing and cannot be " +
+                "spent yet."
+        )
+    }
+}
+
+/**
+ * Átomos a ZKA sin perder una sola cifra.
+ *
+ * Aritmética entera a propósito: convertir a decimal antes de formatear
+ * redondea el último dígito, y este número se muestra precisamente porque se
+ * quiere exacto.
+ */
+private fun formatZkaExact(atoms: Long): String {
+    val whole = atoms / ATOMS_PER_ZKA_EXPLORER
+    val frac = atoms % ATOMS_PER_ZKA_EXPLORER
+    val grouped = whole.toString().reversed().chunked(3).joinToString(",").reversed()
+    return "$grouped.${frac.toString().padStart(6, '0')}"
+}
+
+private const val ATOMS_PER_ZKA_EXPLORER = 1_000_000L

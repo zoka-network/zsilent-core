@@ -97,6 +97,22 @@ data class NodeStats(
     val hashrateHs: Double = 0.0,
     @SerialName("emission_zka")
     val emissionZka: Double = 0.0,
+    /**
+     * ZKA emitidos según la propia cadena, en átomos.
+     *
+     * Se prefiere a [emissionZka] para mostrar la cifra: aquél es un decimal
+     * recalculado desde la fórmula de halving —una estimación derivada de la
+     * altura— y pasar por punto flotante redondea la última cifra. Este es el
+     * total que la cadena lleva contabilizado, entero y exacto.
+     *
+     * Cero en nodos anteriores a 2.0, que no envían el campo.
+     */
+    @SerialName("total_supply_emitted_atoms")
+    val totalSupplyEmittedAtoms: Long = 0,
+    @SerialName("max_supply_atoms")
+    val maxSupplyAtoms: Long = 0,
+    @SerialName("remaining_supply_atoms")
+    val remainingSupplyAtoms: Long = 0,
     @SerialName("last_block_time")
     val lastBlockTime: Long = 0,
     @SerialName("connected_peers")
