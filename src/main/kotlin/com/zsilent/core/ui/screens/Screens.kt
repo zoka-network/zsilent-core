@@ -1797,6 +1797,11 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     KeyValueRow("Onion address", if (ui.onionSeedEnabled) "waiting for Tor…" else "enable the onion seed in Settings")
                 }
             }
+
+            // Va pegado al panel de arriba a proposito: ese muestra la
+            // direccion que uno REGALA, este las que a uno LE DIERON. Son las
+            // dos mitades del mismo intercambio y se leen juntas.
+            TorPeersPanel(ui, appState)
             }
         }
 
@@ -4538,5 +4543,109 @@ private fun formatHashrate(hashesPerSecond: Long): String {
         value >= 1_000_000.0 -> "%.2f MH/s".format(value / 1_000_000.0)
         value >= 1_000.0 -> "%.2f KH/s".format(value / 1_000.0)
         else -> "$hashesPerSecond H/s"
+    }
+}
+
+/**
+ * Peers Tor: direcciones onion que el usuario agrega a mano.
+ *
+ * Existe porque quien no puede abrir puertos en su router depende de salir a
+ * buscar vecinos, y la red conocida es chica. Intercambiar direcciones con
+ * alguien de confianza arma un enlace que sobrevive a los reinicios: el nodo
+ * las trata como semillas, las guarda en su peerstore y reintenta mientras no
+ * llegue al objetivo de vecinos.
+ *
+ * Se aplican al arrancar el nodo, no en caliente, porque viajan como argumentos
+ * del proceso. La pantalla lo dice en vez de dejar al usuario preguntandose por
+ * que no pasa nada.
+ */
+@Composable
+private fun TorPeersPanel(ui: ZSilentUiState, appState: ZSilentAppState) {
+    var entrada by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    // Direcciones de los pares conectados ahora, para marcar cuales de los
+    // manuales estan efectivamente en linea.
+    val conectadas = ui.peers.mapNotNull { it.address }.toSet()
+
+    Panel(
+        title = "Peers Tor",
+        meta = if (ui.manualPeers.isEmpty()) "ninguno" else "${ui.manualPeers.size} guardado(s)"
+    ) {
+        Text(
+            "Agregá direcciones onion de gente que conozcas. Tu nodo las trata como " +
+                "semillas: las guarda y reintenta mientras estén online, aunque se apaguen " +
+                "por días. Sirve sobre todo si no podés abrir puertos en tu router.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = entrada,
+                onValueChange = { entrada = it; error = null },
+                label = { Text("Dirección onion o multiaddr") },
+                singleLine = true,
+                colors = zFieldColors(),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.weight(1f)
+            )
+            ZButton(
+                onClick = {
+                    error = appState.addManualPeer(entrada)
+                    if (error == null) entrada = ""
+                },
+                enabled = entrada.isNotBlank(),
+                variant = ZButtonVariant.Accent,
+                size = ZButtonSize.Small
+            ) { ZButtonText("Agregar") }
+        }
+        error?.let { ErrorText(it) }
+
+        if (ui.manualPeers.isEmpty()) {
+            HintText(
+                "Todavía no agregaste ninguno. Pedile la dirección a alguien y pasale la " +
+                    "tuya, que está en el panel de arriba."
+            )
+        } else {
+            ui.manualPeers.forEach { peer ->
+                val enLinea = conectadas.any { it.startsWith(peer) || peer.startsWith(it) }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Pill(
+                        text = if (enLinea) "EN LÍNEA" else "SIN CONECTAR",
+                        tone = if (enLinea) ZTone.On else ZTone.Off
+                    )
+                    Text(
+                        peer,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    ZButton(
+                        onClick = { appState.removeManualPeer(peer) },
+                        variant = ZButtonVariant.Danger,
+                        size = ZButtonSize.Small
+                    ) { ZButtonText("Quitar") }
+                }
+            }
+            HintText(
+                "Los cambios se aplican al reiniciar el nodo. \"Sin conectar\" no significa " +
+                    "que esté mal: puede estar apagado, o el circuito de Tor todavía " +
+                    "armándose."
+            )
+        }
+
+        HintText(
+            "Compartir tu dirección onion le permite a quien la tenga saber cuándo tu nodo " +
+                "está online y conectarse. Entre gente que se conoce está bien; publicarla " +
+                "en un canal abierto es otra cosa."
+        )
     }
 }

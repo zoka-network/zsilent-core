@@ -94,6 +94,7 @@ data class ZSilentUiState(
     val teamMiningEnabled: Boolean = false,
     val p2pExchangeRisksAccepted: Boolean = false,
     val tronNetwork: String = "mainnet",
+    val manualPeers: List<String> = emptyList(),
     val tronApiUrl: String = "https://api.trongrid.io",
     val tronApiKey: String = "",
     val tronFallbackUrls: String = "",
@@ -294,6 +295,7 @@ class ZSilentAppState(
                     teamMiningEnabled = setup.teamMiningEnabled,
                     p2pExchangeRisksAccepted = setup.p2pExchangeRisksAccepted,
                     tronNetwork = setup.tronNetwork,
+                    manualPeers = setup.manualPeers,
                     tronApiUrl = setup.tronApiUrl,
                     tronApiKey = setup.tronApiKey,
                     tronFallbackUrls = setup.tronFallbackUrls,
@@ -524,6 +526,7 @@ class ZSilentAppState(
                     teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                     tronNetwork = snapshot.tronNetwork,
+                manualPeers = snapshot.manualPeers,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
                     tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -623,6 +626,7 @@ class ZSilentAppState(
                 teamMiningEnabled = snapshot.teamMiningEnabled,
                 p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                 tronNetwork = snapshot.tronNetwork,
+                manualPeers = snapshot.manualPeers,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,
                 tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -706,6 +710,7 @@ class ZSilentAppState(
                     teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                     tronNetwork = snapshot.tronNetwork,
+                manualPeers = snapshot.manualPeers,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
                     tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -762,6 +767,7 @@ class ZSilentAppState(
                     teamMiningEnabled = snapshot.teamMiningEnabled,
                     p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                     tronNetwork = snapshot.tronNetwork,
+                manualPeers = snapshot.manualPeers,
                     tronApiUrl = snapshot.tronApiUrl,
                     tronApiKey = snapshot.tronApiKey,
                     tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -871,6 +877,48 @@ class ZSilentAppState(
      * Si el nodo no estaba corriendo no se arranca — cambiar un ajuste no es
      * pedir que el nodo se encienda.
      */
+    /**
+     * Normaliza lo que el usuario pegó en Peers Tor a un multiaddr válido.
+     *
+     * Se acepta tanto la dirección onion cruda como el multiaddr completo,
+     * porque la gente comparte una u otra indistintamente por chat. Devuelve
+     * `null` si no se parece a ninguna de las dos: es preferible rechazarla al
+     * pegarla que guardarla y que el nodo la marque en vano para siempre.
+     */
+    fun normalizeOnionPeer(entrada: String): String? = normalizeManualPeer(entrada)
+
+    /**
+     * Agrega un par manual. Devuelve el motivo si no se pudo.
+     *
+     * Se aplica al arrancar el nodo, no en caliente: las semillas viajan como
+     * argumentos del proceso.
+     */
+    fun addManualPeer(entrada: String): String? {
+        val normalizado = normalizeOnionPeer(entrada)
+            ?: return "No parece una dirección onion válida. Pegá el multiaddr completo o la dirección de 56 caracteres."
+        if (_uiState.value.manualPeers.any { it.equals(normalizado, ignoreCase = true) }) {
+            return "Ese par ya está en la lista."
+        }
+        update {
+            it.copy(
+                manualPeers = it.manualPeers + normalizado,
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        persistCurrentSetup()
+        return null
+    }
+
+    fun removeManualPeer(peer: String) {
+        update {
+            it.copy(
+                manualPeers = it.manualPeers.filterNot { p -> p == peer },
+                lastActivityMillis = System.currentTimeMillis()
+            )
+        }
+        persistCurrentSetup()
+    }
+
     fun setTronNetwork(network: String) {
         val normalized = if (network.trim().equals("nile", ignoreCase = true)) "nile" else "mainnet"
         if (normalized == _uiState.value.tronNetwork) return
@@ -2162,6 +2210,7 @@ class ZSilentAppState(
                 torOnly = snapshot.torOnly,
                 externalAddrs = externalAddrs,
                 tronNetwork = snapshot.tronNetwork,
+                manualPeers = snapshot.manualPeers,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,
                 tronFallbackUrls = snapshot.tronFallbackUrls
@@ -3193,6 +3242,7 @@ class ZSilentAppState(
                 teamMiningEnabled = snapshot.teamMiningEnabled,
                 p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
                 tronNetwork = snapshot.tronNetwork,
+                manualPeers = snapshot.manualPeers,
                 tronApiUrl = snapshot.tronApiUrl,
                 tronApiKey = snapshot.tronApiKey,
                 tronFallbackUrls = snapshot.tronFallbackUrls,
@@ -3428,4 +3478,33 @@ private fun OnboardingStep.previous(): OnboardingStep = when (this) {
     OnboardingStep.Privacy -> OnboardingStep.Account
     OnboardingStep.Tutorial -> OnboardingStep.Privacy
     OnboardingStep.Dashboard -> OnboardingStep.Tutorial
+}
+
+/**
+ * Normaliza lo que alguien pegó en Peers Tor a un multiaddr válido.
+ *
+ * Se acepta el multiaddr completo o la dirección onion cruda, con o sin
+ * `.onion`, con o sin puerto, en cualquier caja. La gente comparte estas
+ * direcciones por chat y cada uno copia un pedazo distinto; aceptar una sola
+ * forma haría fallar la mitad de los intentos sin motivo aparente.
+ *
+ * Devuelve `null` si no se parece a ninguna. Rechazar al pegar es mejor que
+ * guardar basura: una dirección inválida se queda en la lista y el nodo la
+ * marca en vano en cada ronda.
+ *
+ * Está fuera de la clase para poder probarla sin levantar la aplicación entera.
+ */
+internal fun normalizeManualPeer(entrada: String): String? {
+    val texto = entrada.trim().removeSuffix("/")
+    if (texto.isEmpty()) return null
+    if (texto.startsWith("/onion3/") || texto.startsWith("/dns4/") || texto.startsWith("/ip4/")) {
+        return texto
+    }
+    val sinEsquema = texto.removePrefix("http://").removePrefix("https://")
+    val partes = sinEsquema.split(":")
+    val host = partes[0].removeSuffix(".onion")
+    val puerto = partes.getOrNull(1)?.toIntOrNull() ?: 28080
+    // Una direccion onion v3 son exactamente 56 caracteres en base32.
+    if (host.length != 56 || !host.all { it.isLetterOrDigit() }) return null
+    return "/onion3/${host.lowercase()}:$puerto"
 }

@@ -682,6 +682,15 @@ data class PersistedSetup(
     // parser falls back to, so a stale setup file can never silently start
     // verifying real trades against testnet money.
     val tronNetwork: String = "mainnet",
+    /**
+     * Direcciones onion que el usuario agregó a mano en Peers Tor.
+     *
+     * Se guardan acá y no en el peerstore del nodo porque son una decisión del
+     * usuario, no un descubrimiento de la red: el peerstore descarta una
+     * dirección tras suficientes fallos, y una que alguien agregó a propósito
+     * tiene que sobrevivir a que el otro esté apagado una semana.
+     */
+    val manualPeers: List<String> = emptyList(),
     val tronApiUrl: String = "https://api.trongrid.io",
     val tronApiKey: String = "",
     val tronFallbackUrls: String = "",

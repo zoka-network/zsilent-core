@@ -155,7 +155,16 @@ class NodeController(private val cli: ZokaCli) {
         val tronNetwork: String,
         val tronApiUrl: String,
         val tronApiKey: String,
-        val tronFallbackUrls: String
+        val tronFallbackUrls: String,
+        /**
+         * Direcciones onion que el usuario agregó a mano.
+         *
+         * Viajan como `--seed` repetido, que es el mismo camino de las semillas
+         * del manifiesto: el nodo las guarda en su peerstore y reintenta contra
+         * ellas mientras no llegue al objetivo de vecinos. No hace falta nada
+         * nuevo del lado del nodo.
+         */
+        val manualPeers: List<String>
     )
 
     private val _status = MutableStateFlow(ServiceStatus.Offline)
@@ -177,7 +186,8 @@ class NodeController(private val cli: ZokaCli) {
         tronNetwork: String = "",
         tronApiUrl: String = "",
         tronApiKey: String = "",
-        tronFallbackUrls: String = ""
+        tronFallbackUrls: String = "",
+        manualPeers: List<String> = emptyList()
     ) {
         val binary = cli.zoka
         if (process?.isAlive == true) {
@@ -220,7 +230,8 @@ class NodeController(private val cli: ZokaCli) {
             tronNetwork,
             tronApiUrl,
             tronApiKey,
-            tronFallbackUrls
+            tronFallbackUrls,
+            manualPeers
         )
         _status.value = ServiceStatus.Starting
         readyFile.parentFile?.mkdirs()
@@ -246,6 +257,15 @@ class NodeController(private val cli: ZokaCli) {
         }
         if (ZokaNetworkConfig.BootstrapMultiaddr.isNotBlank()) {
             command += listOf("--seed", ZokaNetworkConfig.BootstrapMultiaddr)
+        }
+        // Los pares manuales van después de la semilla del manifiesto y antes
+        // de cualquier otra cosa: el nodo los trata igual que a una semilla,
+        // así que quedan en el peerstore y sobreviven a los reinicios.
+        for (peer in manualPeers) {
+            val limpio = peer.trim()
+            if (limpio.isNotEmpty()) {
+                command += listOf("--seed", limpio)
+            }
         }
         // Always launch the node in node-only mode (--no-mine). Mining is toggled
         // at RUNTIME via the node's /mining RPC, so the node stays online + synced
