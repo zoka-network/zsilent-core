@@ -658,7 +658,17 @@ private fun DashboardMetricStrip(
     val peerCount = dashboardPeerCount(ui)
     // Keep only the current contiguous live run. If telemetry goes stale and
     // later recovers, a new line begins instead of visually bridging the gap.
-    val syncSamples = if (syncFresh) telemetry.takeLastWhile { it.syncFresh } else emptyList()
+    // La serie retenida no se tira por un hueco.
+    //
+    // `takeLastWhile` cortaba en la primera muestra no fresca contando desde
+    // el final, así que una sola lectura tardía dejaba la lista vacía y el
+    // gráfico en blanco -- aunque hubiera cuarenta muestras buenas detrás. El
+    // contador de muestras bajaba (44, 43, ...) y la línea desaparecía.
+    //
+    // Ahora se descartan solo las muestras no frescas y se conserva el resto,
+    // que es lo que un gráfico de los últimos minutos debe mostrar: los datos
+    // que sí se pudieron leer.
+    val syncSamples = if (syncFresh) telemetry.filter { it.syncFresh } else emptyList()
     val peerSamples = if (peersFresh) telemetry.takeLastWhile { it.peersFresh } else emptyList()
     val gossipRates = dashboardCounterRatePerMinute(syncSamples) { it.gossipResponses }
     val currentGossipRate = if (syncFresh) gossipRates.lastOrNull() else null
@@ -1370,13 +1380,26 @@ private fun dashboardTelemetryFresh(
 ): Boolean = localRpcOnline && observedAtMillis > 0L && consecutiveFailures < 3 &&
     nowMillis - observedAtMillis in 0L..DASHBOARD_LIVE_WINDOW_MILLIS
 
-private fun dashboardTelemetrySampleFresh(
+/**
+ * Si la serie del gráfico se puede seguir dibujando.
+ *
+ * Exigía `consecutiveFailures == 0`, o sea que **una sola** lectura tardía
+ * bastaba para declarar la telemetría muerta: el gráfico se vaciaba, las
+ * tarjetas pasaban a "last known" y todo volvía un segundo después. Contra un
+ * nodo que responde por Tor eso pasa seguido, y el tablero quedaba titilando
+ * sin parar.
+ *
+ * La función de la que depende ya tolera hasta tres fallos seguidos para
+ * mostrar los valores; esta descartaba esa holgura justo para lo que más se
+ * nota. Ahora comparten criterio: un tropiezo aislado no borra nada, y hacen
+ * falta varios seguidos para admitir que ya no hay telemetría viva.
+ */
+internal fun dashboardTelemetrySampleFresh(
     localRpcOnline: Boolean,
     observedAtMillis: Long,
     consecutiveFailures: Int,
     nowMillis: Long
-): Boolean = dashboardTelemetryFresh(localRpcOnline, observedAtMillis, consecutiveFailures, nowMillis) &&
-    consecutiveFailures == 0
+): Boolean = dashboardTelemetryFresh(localRpcOnline, observedAtMillis, consecutiveFailures, nowMillis)
 
 private fun dashboardPeerCount(ui: ZSilentUiState): Long = ui.peers.size.toLong()
 

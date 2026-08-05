@@ -300,6 +300,26 @@ class ZokaRpcClient(val baseUrl: String) {
         return codec.decodeFromString(body)
     }
 
+    /**
+     * El comprador suelta la oferta que había tomado y vuelve al mercado.
+     *
+     * Sin esto, arrepentirse dejaba la venta trabada los 45 minutos completos:
+     * nadie más podía tomarla y el vendedor tampoco podía cancelarla, porque
+     * cancelar exige que esté abierta.
+     */
+    suspend fun releaseClaim(offerId: String): Boolean {
+        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
+        val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/release-claim")
+        if (response.status == HttpStatusCode.NotFound) {
+            throw EndpointUnsupported("/p2p-exchange/offers/$offerId/release-claim")
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(body.ifBlank { "release refused: ${response.status}" })
+        }
+        return true
+    }
+
     suspend fun cancelOffer(offerId: String): OfferSummary {
         require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
         val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/cancel")

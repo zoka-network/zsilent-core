@@ -823,6 +823,20 @@ private fun ExchangeMain(ui: ZSilentUiState, appState: ZSilentAppState) {
                     reload()
                 }
             },
+            onReleaseClaim = { offer ->
+                scope.launch {
+                    val outcome = withContext(Dispatchers.IO) {
+                        runCatching { appState.localRpc.releaseClaim(offer.id) }
+                    }
+                    outcome
+                        .onSuccess {
+                            actionError = null
+                            actionNotice = "Offer released. It is back on the market for others."
+                        }
+                        .onFailure { actionError = it.message ?: "Could not release the offer." }
+                    reload()
+                }
+            },
             onReport = { offer, tronTxHash ->
                 scope.launch {
                     val outcome = withContext(Dispatchers.IO) {
@@ -855,7 +869,8 @@ private fun OfferFeedPanel(
     onCheckNow: () -> Unit,
     onClaim: (OfferSummary) -> Unit,
     onCancel: (OfferSummary) -> Unit,
-    onReport: (OfferSummary, String) -> Unit
+    onReport: (OfferSummary, String) -> Unit,
+    onReleaseClaim: (OfferSummary) -> Unit
 ) {
     when (state) {
         OfferFeed.Loading -> Panel(title = "Offers") {
@@ -949,7 +964,8 @@ private fun OfferFeedPanel(
                                 onClaim = onClaim,
                                 onCancel = onCancel,
                                 onReport = onReport,
-                                onCheckNow = onCheckNow
+                                onCheckNow = onCheckNow,
+                                onReleaseClaim = onReleaseClaim
                             )
                         }
                     }
@@ -963,7 +979,8 @@ private fun OfferFeedPanel(
                             onClaim = onClaim,
                             onCancel = onCancel,
                             onReport = onReport,
-                            onCheckNow = onCheckNow
+                            onCheckNow = onCheckNow,
+                            onReleaseClaim = onReleaseClaim
                         )
                     }
                 }
@@ -1036,7 +1053,8 @@ private fun HistoryOfferCard(
     onClaim: (OfferSummary) -> Unit,
     onCancel: (OfferSummary) -> Unit,
     onReport: (OfferSummary, String) -> Unit,
-    onCheckNow: () -> Unit
+    onCheckNow: () -> Unit,
+    onReleaseClaim: (OfferSummary) -> Unit
 ) {
     var detailsOpen by remember(offer.id) { mutableStateOf(false) }
     val isSeller = offer.sellerAddress == activeWalletAddress
@@ -1161,6 +1179,7 @@ private fun HistoryOfferCard(
                         onCancel = onCancel,
                         onReport = onReport,
                         onCheckNow = onCheckNow,
+                        onReleaseClaim = onReleaseClaim,
                         showTableRow = false
                     )
                 }
@@ -1178,6 +1197,7 @@ private fun OfferRow(
     onCancel: (OfferSummary) -> Unit,
     onReport: (OfferSummary, String) -> Unit,
     onCheckNow: () -> Unit,
+    onReleaseClaim: (OfferSummary) -> Unit,
     showTableRow: Boolean = true
 ) {
     var nowSeconds by remember(offer.id) {
@@ -1310,6 +1330,20 @@ private fun OfferRow(
                 HintText(
                     "Nothing else to do. The seller's node checks Tron every few seconds and " +
                         "releases the ZKA on its own once your transfer lands."
+                )
+                // Arrepentirse tiene salida. Sin esto la venta quedaba trabada
+                // los 45 minutos completos: nadie mas podia tomarla y el
+                // vendedor tampoco podia cancelarla, porque cancelar exige que
+                // la oferta este abierta.
+                ZButton(
+                    onClick = { onReleaseClaim(offer) },
+                    variant = ZButtonVariant.Outline,
+                    size = ZButtonSize.Small
+                ) { ZButtonText("Changed my mind — release this offer") }
+                HintText(
+                    "Only do this if you have NOT sent the USDT. The offer goes back to the " +
+                        "market for someone else, and a payment sent afterwards would arrive " +
+                        "with nothing reserved for you."
                 )
             }
             isSeller && offer.status == "Claimed" -> {
