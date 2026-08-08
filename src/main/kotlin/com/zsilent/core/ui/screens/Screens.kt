@@ -2996,9 +2996,16 @@ fun LogsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         sync.gossipRxBlockResponse > 0L || sync.gossipPublishErr > 0L ||
         ui.nodeSyncStatusObservedAtMillis > 0L
     val syncEndpointUnavailable = ui.localRpcOnline && ui.nodeSyncStatusConsecutiveFailures >= 3
-    val syncSampleAgeMillis = logsClockMillis - ui.nodeSyncStatusObservedAtMillis
+    // La edad se acota a cero por el mismo motivo que en el tablero (ver
+    // `dashboardTelemetryFresh`): `logsClockMillis` avanza cada 5 s y el dato
+    // del nodo llega cada ~3 s, así que lo normal es que el dato sea más nuevo
+    // que el último tic y la resta dé negativo. Con `in 0L..15_000L` eso caía
+    // fuera del rango y la telemetría se marcaba muerta justo cuando estaba
+    // más fresca.
+    val syncSampleAgeMillis =
+        (logsClockMillis - ui.nodeSyncStatusObservedAtMillis).coerceAtLeast(0L)
     val syncSampleLive = ui.localRpcOnline && ui.nodeSyncStatusObservedAtMillis > 0L &&
-        !syncEndpointUnavailable && syncSampleAgeMillis in 0L..15_000L
+        !syncEndpointUnavailable && syncSampleAgeMillis <= 15_000L
     val syncError = sync.lastSyncError?.trim()?.takeIf { it.isNotBlank() }
     val syncTone = when {
         syncError != null || syncStatus.equals("error", ignoreCase = true) -> ZTone.Err

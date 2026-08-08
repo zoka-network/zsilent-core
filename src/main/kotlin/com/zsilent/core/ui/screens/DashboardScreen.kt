@@ -1372,13 +1372,31 @@ private fun dashboardTelemetrySample(ui: ZSilentUiState, nowMillis: Long): Dashb
     )
 }
 
+/**
+ * Si la telemetría se puede tratar como viva.
+ *
+ * La edad se acota a cero a propósito. `nowMillis` es el reloj del tablero,
+ * que avanza cada 5 s; `observedAtMillis` es el instante real en que llegó el
+ * dato del nodo, cada ~3 s. Como 3 no divide a 5, lo normal es que el dato sea
+ * **más nuevo** que el último tic del reloj y la resta dé negativo.
+ *
+ * Antes la condición era `in 0L..DASHBOARD_LIVE_WINDOW_MILLIS`, y un negativo
+ * queda fuera de ese rango: el tablero declaraba "no disponible" justo cuando
+ * el dato era más fresco que nunca. Simulando las dos cadencias, eso pasaba el
+ * **60 % del tiempo** — las métricas titilaban sin parar y no se estabilizaban
+ * nunca, con el nodo respondiendo en milisegundos.
+ *
+ * Un dato del futuro no existe acá: ambas marcas salen del mismo
+ * `System.currentTimeMillis()` de la misma máquina, así que un negativo solo
+ * significa "llegó entre dos tics" y su edad real es cero.
+ */
 private fun dashboardTelemetryFresh(
     localRpcOnline: Boolean,
     observedAtMillis: Long,
     consecutiveFailures: Int,
     nowMillis: Long
 ): Boolean = localRpcOnline && observedAtMillis > 0L && consecutiveFailures < 3 &&
-    nowMillis - observedAtMillis in 0L..DASHBOARD_LIVE_WINDOW_MILLIS
+    (nowMillis - observedAtMillis).coerceAtLeast(0L) <= DASHBOARD_LIVE_WINDOW_MILLIS
 
 /**
  * Si la serie del gráfico se puede seguir dibujando.
