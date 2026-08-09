@@ -51,10 +51,20 @@ private data class DesktopConfig(
 )
 
 object ZokaNetworkConfig {
-    // Fallback only: the real RPC comes from the packaged manifest
-    // (rpc.zoka.network). The old DigitalOcean IP was decommissioned
-    // 2026-07-09; use the DNS name so the host can rotate without a rebuild.
-    private const val DEFAULT_REMOTE_RPC_URL = "http://rpc.zoka.network:3000"
+    // Sin respaldo a un servidor que ya no existe.
+    //
+    // Esto apuntaba a `rpc.zoka.network:3000`, pensado para que el host
+    // pudiera rotar sin recompilar. Pero la red paso a ser serverless el
+    // 2026-07-09 y ese nombre ya ni siquiera resuelve en DNS: cada ZSilent
+    // instalado lo intenta en cada ciclo de consulta y falla, para siempre.
+    //
+    // El manifiesto es coherente con eso -- `public_rpc` viene vacio --, asi
+    // que la cadena de respaldo tenia que terminar en "no hay", no en un host
+    // muerto. Vacio esta contemplado en los dos usos: `ZokaCli` ya consulta
+    // `isNotBlank()` antes de pasarlo, y la llamada del tablero vive dentro de
+    // un `runCatching`. Un despliegue que quiera volver a tener RPC publico lo
+    // pone en el manifiesto o en `ZSILENT_REMOTE_RPC_URL`.
+    private const val DEFAULT_REMOTE_RPC_URL = ""
     private const val DEFAULT_CHAIN_ID = "zoka-mainnet-zenith-v1"
     private const val DEFAULT_NETWORK = "mainnet"
 

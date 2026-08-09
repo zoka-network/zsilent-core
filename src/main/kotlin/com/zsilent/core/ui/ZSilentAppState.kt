@@ -247,6 +247,13 @@ class ZSilentAppState(
     @Volatile private var autoRpcSyncBackoffUntilMillis = 0L
     private var sessionPassword: CharArray? = null
     private var integratedMiningRequested = false
+
+    /**
+     * Si el nodo en marcha es el de solo-sincronizar (arrancado antes del
+     * login) y por lo tanto hay que reemplazarlo por uno completo cuando el
+     * usuario inicia sesion.
+     */
+    private var syncOnlyNodeRunning = false
     private var lastMiningThreads = 0
     private var lastLocalHeightReadMillis = 0L
     // Guards the one-shot iroh EndpointId fetch so a transient failure doesn't
@@ -312,6 +319,18 @@ class ZSilentAppState(
                     selectedSection = AppSection.Dashboard
                 )
             }
+            // Empezar a bajar bloques ya, con el usuario todavia en el login.
+            //
+            // Antes el nodo no arrancaba hasta desbloquear la wallet, asi que
+            // todo el tiempo que la pantalla de login estaba abierta era tiempo
+            // perdido: la red seguia produciendo bloques y el nodo ni los
+            // pedia. En un nodo que ya venia atrasado eso agranda el hueco
+            // justo cuando mas caro es cerrarlo.
+            //
+            // Arranca en modo solo-sincronizar: sin abrir wallet, sin
+            // contrasena y sin minar. Al iniciar sesion, `maybeAutoStartNode`
+            // lo reinicia en modo completo.
+            maybeStartSyncOnlyNode()
         }
         refreshWallets()
         scope.launch {
@@ -1249,10 +1268,70 @@ class ZSilentAppState(
         }
     }
 
+    /**
+     * Arranca el nodo en modo solo-sincronizar mientras el usuario sigue en el
+     * login.
+     *
+     * Bajar bloques no necesita claves, asi que no hay motivo para esperar la
+     * contrasena: el nodo descarga y valida la cadena, y cuando el usuario
+     * inicia sesion `maybeAutoStartNode` lo reinicia en modo completo (wallet,
+     * minado y exchange).
+     *
+     * No se toca ninguna wallet: no se desbloquea, no se crea y la contrasena
+     * ni siquiera viaja al proceso hijo.
+     */
+    private fun maybeStartSyncOnlyNode() {
+        val snapshot = _uiState.value
+        if (!snapshot.onboardingNodeEnabled) return
+        // Si la sesion ya esta abierta, el arranque completo manda: seria peor
+        // levantar un nodo sin wallet y tener que reiniciarlo enseguida.
+        if (!snapshot.appLocked && !snapshot.walletLocked) return
+        if (snapshot.nodeStatus != ServiceStatus.Offline) return
+        // Un minero externo ya es dueño del estado de la cadena; dos procesos
+        // sobre la misma base se pelean por el lock de RocksDB.
+        if (snapshot.mining.running) return
+
+        appendLog(
+            RuntimeLog(
+                "node",
+                "Starting block sync before login (no wallet opened). Mining, exchange and private scanning stay off until the wallet session starts."
+            )
+        )
+        syncOnlyNodeRunning = true
+        nodeController.start(
+            password = "",
+            address = "",
+            network = ZokaNetworkConfig.Network,
+            autoMine = false,
+            torProxy = if (snapshot.torEnabled) "${snapshot.torSocksHost}:${snapshot.torSocksPort}" else "",
+            torOnly = snapshot.torOnly,
+            tronNetwork = snapshot.tronNetwork,
+            manualPeers = snapshot.manualPeers,
+            syncOnly = true
+        )
+    }
+
     private fun maybeAutoStartNode() {
         val snapshot = _uiState.value
         if (!snapshot.onboardingNodeEnabled) {
             appendLog(RuntimeLog("node", "Auto-start skipped: node disabled in setup."))
+            return
+        }
+        // El nodo que corre desde antes del login no tiene wallet abierta, asi
+        // que no puede minar ni operar el exchange. Ahora que hay sesion, se
+        // reemplaza por uno completo; los bloques que bajo mientras tanto ya
+        // estan en la base y no se vuelven a pedir.
+        if (syncOnlyNodeRunning) {
+            syncOnlyNodeRunning = false
+            appendLog(RuntimeLog("node", "Wallet session started: restarting the node with the wallet open."))
+            scope.launch {
+                runCatching { stopNode() }
+                // Dar tiempo a que el proceso suelte el puerto RPC y la base
+                // antes de levantar el siguiente; el mismo margen que usa el
+                // reinicio por cambio de red.
+                kotlinx.coroutines.delay(3_000)
+                startNode(autoMine = _uiState.value.onboardingMiningEnabled)
+            }
             return
         }
         if (snapshot.nodeStatus != ServiceStatus.Offline) {

@@ -164,7 +164,16 @@ class NodeController(private val cli: ZokaCli) {
          * ellas mientras no llegue al objetivo de vecinos. No hace falta nada
          * nuevo del lado del nodo.
          */
-        val manualPeers: List<String>
+        val manualPeers: List<String>,
+        /**
+         * El modo con el que arranco este proceso.
+         *
+         * Viaja en los parametros porque el reinicio automatico vuelve a
+         * llamar a `start` con ellos: sin esto, un nodo levantado antes del
+         * login se reiniciaria pidiendo una contrasena que todavia no existe,
+         * y se quedaria abajo hasta que el usuario iniciara sesion.
+         */
+        val syncOnly: Boolean
     )
 
     private val _status = MutableStateFlow(ServiceStatus.Offline)
@@ -187,7 +196,16 @@ class NodeController(private val cli: ZokaCli) {
         tronApiUrl: String = "",
         tronApiKey: String = "",
         tronFallbackUrls: String = "",
-        manualPeers: List<String> = emptyList()
+        manualPeers: List<String> = emptyList(),
+        /**
+         * Bajar bloques sin abrir ninguna wallet.
+         *
+         * Permite empezar a sincronizar apenas se abre ZSilent, mientras el
+         * usuario todavia esta en el login. El nodo no desbloquea, no crea y
+         * no escribe ninguna wallet: solo descarga y valida bloques. Cuando se
+         * inicia sesion, ZSilent reinicia el nodo en modo completo.
+         */
+        syncOnly: Boolean = false
     ) {
         val binary = cli.zoka
         if (process?.isAlive == true) {
@@ -199,7 +217,10 @@ class NodeController(private val cli: ZokaCli) {
             _logs.tryEmit(RuntimeLog("node", "zoka binary not found. Build target/release/zoka first."))
             return
         }
-        if (password.isBlank()) {
+        // En modo solo-sincronizar no hay wallet que abrir, asi que tampoco
+        // hay contrasena que pedir: exigirla aca seria volver a atar el
+        // arranque al login, que es justo lo que este modo evita.
+        if (!syncOnly && password.isBlank()) {
             _status.value = ServiceStatus.Error
             _logs.tryEmit(RuntimeLog("node", "Wallet password is required to start the node."))
             return
@@ -231,7 +252,8 @@ class NodeController(private val cli: ZokaCli) {
             tronApiUrl,
             tronApiKey,
             tronFallbackUrls,
-            manualPeers
+            manualPeers,
+            syncOnly
         )
         _status.value = ServiceStatus.Starting
         readyFile.parentFile?.mkdirs()
@@ -245,7 +267,6 @@ class NodeController(private val cli: ZokaCli) {
             // line format, so keep requesting that explicitly here.
             "--dashboard",
             "--network", network,
-            "--password-env", "ZSILENT_NODE_PASSWORD",
             "--power", power,
             "--allow-isolated-start",
             "--sync-warmup-secs", "30",
@@ -271,6 +292,14 @@ class NodeController(private val cli: ZokaCli) {
         // at RUNTIME via the node's /mining RPC, so the node stays online + synced
         // while mining is turned on/off without a restart. The miner params are
         // still passed so the runtime-enabled miner uses them.
+        // La contrasena solo viaja cuando hay una wallet que abrir. En modo
+        // solo-sincronizar no se pasa: el nodo no la necesita y asi no hay
+        // ninguna credencial en juego mientras el usuario no inicio sesion.
+        if (!syncOnly) {
+            command += listOf("--password-env", "ZSILENT_NODE_PASSWORD")
+        } else {
+            command += "--sync-only"
+        }
         command += "--no-mine"
         if (threads != null && threads > 0) {
             command += listOf("--threads", threads.toString())
@@ -295,7 +324,12 @@ class NodeController(private val cli: ZokaCli) {
             command += listOf("--external-addr", addr)
         }
         val builder = cli.processBuilder(binary, command)
-        builder.environment()["ZSILENT_NODE_PASSWORD"] = password
+        // Sin wallet que abrir no se exporta ninguna credencial al proceso
+        // hijo. Esto es lo que hace que el arranque previo al login no tenga
+        // secretos en juego, ni siquiera en el entorno del proceso.
+        if (!syncOnly) {
+            builder.environment()["ZSILENT_NODE_PASSWORD"] = password
+        }
         // Enable the runtime mining-control RPC (/mining/start|stop) so mining can
         // be toggled in-process without restarting the node.
         builder.environment()["ZOKA_API_ENABLE_MINING_CONTROL"] = "true"
@@ -410,7 +444,9 @@ class NodeController(private val cli: ZokaCli) {
             externalAddrs = params.externalAddrs,
             tronApiUrl = params.tronApiUrl,
             tronApiKey = params.tronApiKey,
-            tronFallbackUrls = params.tronFallbackUrls
+            tronFallbackUrls = params.tronFallbackUrls,
+            manualPeers = params.manualPeers,
+            syncOnly = params.syncOnly
         )
     }
 
