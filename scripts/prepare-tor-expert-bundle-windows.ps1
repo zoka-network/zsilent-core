@@ -9,10 +9,24 @@ param(
 
     [string]$OutDir = "",
 
+    # La version de tor.exe que tiene que salir del paquete. Es parametro y no
+    # constante para que actualizar Tor no exija editar este archivo: Tor paso a
+    # publicar arreglos de seguridad cada dos semanas (0.4.9.12 el 8/09,
+    # 0.4.9.13 anunciada para el 22/09), y una constante enterrada aca es justo
+    # lo que se olvida.
+    [string]$ExpectedTorVersion = "0.4.9.12",
+
     [switch]$VerifySignature
 )
 
 $ErrorActionPreference = "Stop"
+
+# Windows PowerShell 5.1 negocia TLS 1.0/1.1 por defecto, y los servidores de
+# Tor ya no los aceptan: la descarga moria con "EOF inesperado o 0 bytes" antes
+# de verificar nada. En CI no se veia porque ahi corre PowerShell 7, que ya usa
+# TLS 1.2+. Forzarlo aca hace que el mismo script funcione en la PC del
+# operador, que es donde se actualiza el Tor instalado.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 if ([string]::IsNullOrWhiteSpace($OutDir)) {
     $OutDir = Join-Path $PSScriptRoot "..\..\third_party\tor\windows-x86_64"
@@ -110,8 +124,8 @@ try {
     } else {
         ""
     }
-    if ($torVersion -ne "0.4.9.11") {
-        throw "Unexpected Tor version '$torVersion'; expected 0.4.9.11"
+    if ($torVersion -ne $ExpectedTorVersion) {
+        throw "Unexpected Tor version '$torVersion'; expected $ExpectedTorVersion"
     }
 
     $bundleVersionMatch = [regex]::Match($Url, '/torbrowser/([^/]+)/')
