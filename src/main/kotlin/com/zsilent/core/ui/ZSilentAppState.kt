@@ -90,14 +90,8 @@ data class ZSilentUiState(
     // opt-in default is reserved for the sections that move funds; this one
     // is read-only and never leaves the local node.
     val explorerEnabled: Boolean = true,
-    val p2pExchangeEnabled: Boolean = false,
     val teamMiningEnabled: Boolean = false,
-    val p2pExchangeRisksAccepted: Boolean = false,
-    val tronNetwork: String = "mainnet",
     val manualPeers: List<String> = emptyList(),
-    val tronApiUrl: String = "https://api.trongrid.io",
-    val tronApiKey: String = "",
-    val tronFallbackUrls: String = "",
     val appLocked: Boolean = true,
     val sessionUnlocked: Boolean = false,
     val loginBusy: Boolean = false,
@@ -298,14 +292,8 @@ class ZSilentAppState(
                     compactDensity = setup.compactDensity,
                     animationsEnabled = setup.animationsEnabled,
                     explorerEnabled = setup.explorerEnabled,
-                    p2pExchangeEnabled = setup.p2pExchangeEnabled,
                     teamMiningEnabled = setup.teamMiningEnabled,
-                    p2pExchangeRisksAccepted = setup.p2pExchangeRisksAccepted,
-                    tronNetwork = setup.tronNetwork,
                     manualPeers = setup.manualPeers,
-                    tronApiUrl = setup.tronApiUrl,
-                    tronApiKey = setup.tronApiKey,
-                    tronFallbackUrls = setup.tronFallbackUrls,
                     torEnabled = setup.torEnabled,
                     torOnly = setup.torOnly,
                     torSocksHost = setup.torSocksHost,
@@ -541,14 +529,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
-                    p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
-                    p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
-                    tronNetwork = snapshot.tronNetwork,
                 manualPeers = snapshot.manualPeers,
-                    tronApiUrl = snapshot.tronApiUrl,
-                    tronApiKey = snapshot.tronApiKey,
-                    tronFallbackUrls = snapshot.tronFallbackUrls,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -641,14 +623,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
-                p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                 teamMiningEnabled = snapshot.teamMiningEnabled,
-                p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
-                tronNetwork = snapshot.tronNetwork,
                 manualPeers = snapshot.manualPeers,
-                tronApiUrl = snapshot.tronApiUrl,
-                tronApiKey = snapshot.tronApiKey,
-                tronFallbackUrls = snapshot.tronFallbackUrls,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost,
@@ -725,14 +701,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
-                    p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
-                    p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
-                    tronNetwork = snapshot.tronNetwork,
                 manualPeers = snapshot.manualPeers,
-                    tronApiUrl = snapshot.tronApiUrl,
-                    tronApiKey = snapshot.tronApiKey,
-                    tronFallbackUrls = snapshot.tronFallbackUrls,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -782,14 +752,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = enabled,
-                    p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                     teamMiningEnabled = snapshot.teamMiningEnabled,
-                    p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
-                    tronNetwork = snapshot.tronNetwork,
                 manualPeers = snapshot.manualPeers,
-                    tronApiUrl = snapshot.tronApiUrl,
-                    tronApiKey = snapshot.tronApiKey,
-                    tronFallbackUrls = snapshot.tronFallbackUrls,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
                     torSocksHost = snapshot.torSocksHost,
@@ -811,37 +775,12 @@ class ZSilentAppState(
      *
      * Persiste con `persistCurrentSetup()` y no construyendo el `PersistedSetup`
      * a mano: construirlo campo por campo hace que cada campo nuevo del record
-     * se escriba con su default y pise lo que el usuario tenía. Es exactamente
-     * lo que habría pasado acá con los campos de Tron.
+     * se escriba con su default y pise lo que el usuario tenía.
      */
     fun setDarkTheme(enabled: Boolean) {
         if (_uiState.value.darkTheme == enabled) return
         update { it.copy(darkTheme = enabled) }
         persistCurrentSetup()
-    }
-
-    fun setP2PExchangeEnabled(enabled: Boolean) {
-        val snapshot = _uiState.value
-        if (snapshot.p2pExchangeEnabled == enabled) return
-        update {
-            it.copy(
-                p2pExchangeEnabled = enabled,
-                selectedSection = if (!enabled && it.selectedSection == AppSection.P2PExchange) {
-                    AppSection.Dashboard
-                } else {
-                    it.selectedSection
-                },
-                lastActivityMillis = System.currentTimeMillis()
-            )
-        }
-        persistCurrentSetup()
-        appendLog(
-            RuntimeLog(
-                "exchange",
-                if (enabled) "Experimental P2P Exchange enabled."
-                else "Experimental P2P Exchange disabled."
-            )
-        )
     }
 
     fun setTeamMiningEnabled(enabled: Boolean) {
@@ -868,34 +807,6 @@ class ZSilentAppState(
         )
     }
 
-    fun acceptP2PExchangeRisks() {
-        if (_uiState.value.p2pExchangeRisksAccepted) return
-        update {
-            it.copy(
-                p2pExchangeRisksAccepted = true,
-                lastActivityMillis = System.currentTimeMillis()
-            )
-        }
-        persistCurrentSetup()
-    }
-
-    /**
-     * Which Tron network the node verifies USDT payments against.
-     *
-     * Takes effect on the next node start, not live: the running node already
-     * built its TronClient from the environment it launched with. Restarting
-     * the node is the same mechanism Tor availability already requires before
-     * selling, so this does not introduce a new pattern.
-     */
-    /**
-     * Cambia la red de Tron y reinicia el nodo para que tome efecto.
-     *
-     * La red viaja al nodo como variable de entorno, así que sólo se lee al
-     * arrancarlo: antes había que pararlo y arrancarlo a mano, y olvidarse
-     * significaba seguir consultando la red vieja sin ninguna señal de ello.
-     * Si el nodo no estaba corriendo no se arranca — cambiar un ajuste no es
-     * pedir que el nodo se encienda.
-     */
     /**
      * Normaliza lo que el usuario pegó en Peers Tor a un multiaddr válido.
      *
@@ -936,70 +847,6 @@ class ZSilentAppState(
             )
         }
         persistCurrentSetup()
-    }
-
-    fun setTronNetwork(network: String) {
-        val normalized = if (network.trim().equals("nile", ignoreCase = true)) "nile" else "mainnet"
-        if (normalized == _uiState.value.tronNetwork) return
-        // La URL viaja con la red. Si la que hay guardada es el endpoint por
-        // defecto de la OTRA red, se mueve con ella; una propia se respeta.
-        //
-        // Sin esto quedaba la URL de mainnet con la red en Nile, el nodo pedía
-        // el contrato de Nile al servidor de mainnet, TronGrid devolvía 403 y
-        // ningún pago se veía nunca. La venta expiraba como si el comprador no
-        // hubiera pagado. Pasó el 2026-08-02.
-        val defaults = mapOf(
-            "mainnet" to "https://api.trongrid.io",
-            "nile" to "https://nile.trongrid.io"
-        )
-        val actual = _uiState.value.tronApiUrl.trim().trimEnd('/')
-        val eraDeOtraRed = defaults.any { (red, url) ->
-            red != normalized && url.trimEnd('/') == actual
-        }
-        val nuevaUrl = if (actual.isBlank() || eraDeOtraRed) {
-            defaults.getValue(normalized)
-        } else {
-            _uiState.value.tronApiUrl
-        }
-        update {
-            it.copy(
-                tronNetwork = normalized,
-                tronApiUrl = nuevaUrl,
-                lastActivityMillis = System.currentTimeMillis()
-            )
-        }
-        persistCurrentSetup()
-
-        val wasRunning = nodeController.status.value == ServiceStatus.Online ||
-            nodeController.status.value == ServiceStatus.Starting
-        val wasMining = _uiState.value.localMiningEnabled
-        if (!wasRunning) return
-        scope.launch {
-            runCatching { stopNode() }
-            // Dar tiempo a que el proceso suelte el puerto RPC y la base antes
-            // de levantar el siguiente; arrancar encima del anterior falla con
-            // un choque de RocksDB que se lee como un error sin relación.
-            kotlinx.coroutines.delay(3_000)
-            startNode(autoMine = wasMining)
-        }
-    }
-
-    fun setTronApiSettings(url: String, apiKey: String, fallbackUrls: String) {
-        update {
-            it.copy(
-                tronApiUrl = url.trim().ifBlank { "https://api.trongrid.io" },
-                tronApiKey = apiKey.trim(),
-                tronFallbackUrls = fallbackUrls
-                    .split(',', '\n')
-                    .map(String::trim)
-                    .filter(String::isNotBlank)
-                    .distinct()
-                    .joinToString(","),
-                lastActivityMillis = System.currentTimeMillis()
-            )
-        }
-        persistCurrentSetup()
-        appendLog(RuntimeLog("exchange", "Saved Tron provider settings; restart the node to apply them."))
     }
 
     /** Marca el Intro como visto. Se llama una sola vez, al pulsar Launch. */
@@ -1274,8 +1121,8 @@ class ZSilentAppState(
      *
      * Bajar bloques no necesita claves, asi que no hay motivo para esperar la
      * contrasena: el nodo descarga y valida la cadena, y cuando el usuario
-     * inicia sesion `maybeAutoStartNode` lo reinicia en modo completo (wallet,
-     * minado y exchange).
+     * inicia sesion `maybeAutoStartNode` lo reinicia en modo completo (wallet
+     * y minado).
      *
      * No se toca ninguna wallet: no se desbloquea, no se crea y la contrasena
      * ni siquiera viaja al proceso hijo.
@@ -1294,7 +1141,7 @@ class ZSilentAppState(
         appendLog(
             RuntimeLog(
                 "node",
-                "Starting block sync before login (no wallet opened). Mining, exchange and private scanning stay off until the wallet session starts."
+                "Starting block sync before login (no wallet opened). Mining and private scanning stay off until the wallet session starts."
             )
         )
         syncOnlyNodeRunning = true
@@ -1305,7 +1152,6 @@ class ZSilentAppState(
             autoMine = false,
             torProxy = if (snapshot.torEnabled) "${snapshot.torSocksHost}:${snapshot.torSocksPort}" else "",
             torOnly = snapshot.torOnly,
-            tronNetwork = snapshot.tronNetwork,
             manualPeers = snapshot.manualPeers,
             syncOnly = true
         )
@@ -1318,7 +1164,7 @@ class ZSilentAppState(
             return
         }
         // El nodo que corre desde antes del login no tiene wallet abierta, asi
-        // que no puede minar ni operar el exchange. Ahora que hay sesion, se
+        // que no puede minar. Ahora que hay sesion, se
         // reemplaza por uno completo; los bloques que bajo mientras tanto ya
         // estan en la base y no se vuelven a pedir.
         if (syncOnlyNodeRunning) {
@@ -1384,13 +1230,7 @@ class ZSilentAppState(
                     autoLockMinutes = current.onboardingAutoLockMinutes,
                     darkTheme = current.darkTheme,
                     explorerEnabled = current.explorerEnabled,
-                    p2pExchangeEnabled = current.p2pExchangeEnabled,
                     teamMiningEnabled = current.teamMiningEnabled,
-                    p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
-                    tronNetwork = current.tronNetwork,
-                    tronApiUrl = current.tronApiUrl,
-                    tronApiKey = current.tronApiKey,
-                    tronFallbackUrls = current.tronFallbackUrls,
                     torEnabled = current.torEnabled,
                     torOnly = current.torOnly,
                     torSocksHost = current.torSocksHost,
@@ -1527,13 +1367,7 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
-                        p2pExchangeEnabled = current.p2pExchangeEnabled,
                         teamMiningEnabled = current.teamMiningEnabled,
-                        p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
-                        tronNetwork = current.tronNetwork,
-                        tronApiUrl = current.tronApiUrl,
-                        tronApiKey = current.tronApiKey,
-                        tronFallbackUrls = current.tronFallbackUrls,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -1682,13 +1516,7 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
-                        p2pExchangeEnabled = current.p2pExchangeEnabled,
                         teamMiningEnabled = current.teamMiningEnabled,
-                        p2pExchangeRisksAccepted = current.p2pExchangeRisksAccepted,
-                        tronNetwork = current.tronNetwork,
-                        tronApiUrl = current.tronApiUrl,
-                        tronApiKey = current.tronApiKey,
-                        tronFallbackUrls = current.tronFallbackUrls,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -2288,11 +2116,7 @@ class ZSilentAppState(
                 torProxy = torProxy,
                 torOnly = snapshot.torOnly,
                 externalAddrs = externalAddrs,
-                tronNetwork = snapshot.tronNetwork,
                 manualPeers = snapshot.manualPeers,
-                tronApiUrl = snapshot.tronApiUrl,
-                tronApiKey = snapshot.tronApiKey,
-                tronFallbackUrls = snapshot.tronFallbackUrls
             )
             if (externalAddrs.isNotEmpty()) {
                 watchNodeReadySeedAddress()
@@ -3317,14 +3141,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
-                p2pExchangeEnabled = snapshot.p2pExchangeEnabled,
                 teamMiningEnabled = snapshot.teamMiningEnabled,
-                p2pExchangeRisksAccepted = snapshot.p2pExchangeRisksAccepted,
-                tronNetwork = snapshot.tronNetwork,
                 manualPeers = snapshot.manualPeers,
-                tronApiUrl = snapshot.tronApiUrl,
-                tronApiKey = snapshot.tronApiKey,
-                tronFallbackUrls = snapshot.tronFallbackUrls,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
                 torSocksHost = snapshot.torSocksHost.ifBlank { "127.0.0.1" },

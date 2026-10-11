@@ -11,7 +11,6 @@ enum class AppSection {
     Node,
     Mining,
     MiningPool,
-    P2PExchange,
     Explorer,
     Privacy,
     Logs,
@@ -257,129 +256,6 @@ data class ViewScanKeyRequest(
     @SerialName("scan_key_hex")
     val scanKeyHex: String,
     val limit: Int? = null
-)
-
-// ── P2P exchange ─────────────────────────────────────────────────────────
-//
-// Mirrors the node's `p2p_exchange::Offer`. Amounts stay integers on this side
-// too: ZKA in atoms, USDT in micro-USDT (TRC-20 carries six decimals). Parsing
-// them into Double for display is fine; doing arithmetic on that Double is not,
-// because the node decides payment matching on the integer value.
-@Serializable
-data class OfferSummary(
-    val id: String = "",
-    @SerialName("seller_address")
-    val sellerAddress: String = "",
-    @SerialName("zka_atoms")
-    val zkaAtoms: Long = 0,
-    @SerialName("micro_usdt")
-    val microUsdt: Long = 0,
-    @SerialName("usdt_receive_address")
-    val usdtReceiveAddress: String = "",
-    val status: String = "Open",
-    @SerialName("created_at")
-    val createdAt: Long = 0,
-    @SerialName("claim_expires_at")
-    val claimExpiresAt: Long? = null,
-    @SerialName("claimed_by")
-    val claimedBy: String? = null,
-    /**
-     * Cuánto quedó realmente inmovilizado en la wallet del vendedor.
-     *
-     * Es mayor o igual a [zkaAtoms]: una nota privada no se parte, así que
-     * respaldar una venta de 20 ZKA puede exigir bloquear una de 27,99 entera.
-     * La diferencia vuelve como vuelto al cerrarse la operación.
-     *
-     * Se muestra junto al importe vendido porque, sin eso, el usuario ve bajar
-     * su saldo más de lo que vendió y cree que perdió algo.
-     */
-    @SerialName("reserved_atoms")
-    val reservedAtoms: Long = 0
-)
-
-@Serializable
-data class OfferList(
-    val offers: List<OfferSummary> = emptyList(),
-    val verification: String = "unknown"
-)
-
-/**
- * Salud de la reserva de una oferta propia, según el nodo.
- *
- * `reservationOk` en falso significa que el ZKA prometido ya no está bloqueado:
- * la liberación va a fallar cuando el comprador pague. El nodo deja de anunciar
- * esas ofertas, pero si ya estaba tomada hay que verlo y cancelar a mano.
- */
-@Serializable
-data class OfferDiagnostic(
-    @SerialName("offer_id")
-    val offerId: String = "",
-    val status: String = "",
-    @SerialName("sold_atoms")
-    val soldAtoms: Long = 0,
-    @SerialName("locked_atoms")
-    val lockedAtoms: Long = 0,
-    @SerialName("excess_atoms")
-    val excessAtoms: Long = 0,
-    @SerialName("notes_expected")
-    val notesExpected: Int = 0,
-    @SerialName("notes_found")
-    val notesFound: Int = 0,
-    @SerialName("reservation_ok")
-    val reservationOk: Boolean = true,
-    val problems: List<String> = emptyList()
-)
-
-@Serializable
-data class ExchangeDiagnostics(
-    @SerialName("checked_at")
-    val checkedAt: Long = 0,
-    @SerialName("live_offers")
-    val liveOffers: Int = 0,
-    @SerialName("unhealthy_offers")
-    val unhealthyOffers: Int = 0,
-    val verification: String = "unknown",
-    val offers: List<OfferDiagnostic> = emptyList()
-)
-
-@Serializable
-data class ClaimOfferResponse(
-    @SerialName("offer_id")
-    val offerId: String = "",
-    @SerialName("seller_address")
-    val sellerAddress: String = "",
-    val status: String = "claim_requested"
-)
-
-@Serializable
-data class CreateOfferRequest(
-    @SerialName("zka_atoms")
-    val zkaAtoms: Long,
-    @SerialName("micro_usdt")
-    val microUsdt: Long,
-    @SerialName("usdt_receive_address")
-    val usdtReceiveAddress: String
-)
-
-@Serializable
-data class ReportPaymentFailureRequest(
-    @SerialName("tron_tx_hash")
-    val tronTxHash: String,
-    @SerialName("acknowledge_public_disclosure")
-    val acknowledgePublicDisclosure: Boolean
-)
-
-@Serializable
-data class PaymentFailureSummary(
-    @SerialName("offer_id")
-    val offerId: String = "",
-    @SerialName("seller_address")
-    val sellerAddress: String = "",
-    @SerialName("buyer_address")
-    val buyerAddress: String = "",
-    @SerialName("tron_tx_hash")
-    val tronTxHash: String = "",
-    val timestamp: Long = 0
 )
 
 // GET /mempool/tx/:hash — only ever describes an unconfirmed transaction.
@@ -670,18 +546,9 @@ data class PersistedSetup(
     // saw an Explorer entry in 1.9.1, so defaulting to true keeps it where
     // they expect rather than making the section disappear on upgrade.
     val explorerEnabled: Boolean = true,
-    // Moves real funds, so legacy setup files and fresh installs stay opted
-    // out until the user enables the experimental section deliberately.
-    val p2pExchangeEnabled: Boolean = false,
     // Team mining is experimental and can produce uneven short-term payouts,
     // so it is absent from the sidebar until explicitly enabled.
     val teamMiningEnabled: Boolean = false,
-    val p2pExchangeRisksAccepted: Boolean = false,
-    // "mainnet" or "nile". Absent (older setup files) must read as mainnet —
-    // the same real-funds-aware default the node's own ZOKA_TRON_NETWORK
-    // parser falls back to, so a stale setup file can never silently start
-    // verifying real trades against testnet money.
-    val tronNetwork: String = "mainnet",
     /**
      * Direcciones onion que el usuario agregó a mano en Peers Tor.
      *
@@ -691,9 +558,6 @@ data class PersistedSetup(
      * tiene que sobrevivir a que el otro esté apagado una semana.
      */
     val manualPeers: List<String> = emptyList(),
-    val tronApiUrl: String = "https://api.trongrid.io",
-    val tronApiKey: String = "",
-    val tronFallbackUrls: String = "",
     val torEnabled: Boolean = true,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",

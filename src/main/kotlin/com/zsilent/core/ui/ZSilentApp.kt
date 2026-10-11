@@ -36,7 +36,6 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.CurrencyExchange
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Explore
@@ -85,7 +84,6 @@ import com.zsilent.core.ui.screens.MiningPoolScreen
 import com.zsilent.core.ui.screens.MiningScreen
 import com.zsilent.core.ui.screens.NodeScreen
 import com.zsilent.core.ui.screens.OnboardingScreen
-import com.zsilent.core.ui.screens.P2PExchangeScreen
 import com.zsilent.core.ui.screens.PrivacyScreen
 import com.zsilent.core.ui.screens.SettingsScreen
 import com.zsilent.core.ui.screens.WalletScreen
@@ -109,7 +107,7 @@ private enum class NavGroup(val label: String) {
 private val AppSection.group: NavGroup
     get() = when (this) {
         AppSection.Dashboard, AppSection.Wallet -> NavGroup.Core
-        AppSection.Node, AppSection.Mining, AppSection.MiningPool, AppSection.P2PExchange -> NavGroup.Network
+        AppSection.Node, AppSection.Mining, AppSection.MiningPool -> NavGroup.Network
         AppSection.Explorer, AppSection.Privacy, AppSection.Logs -> NavGroup.Insight
         AppSection.Settings -> NavGroup.System
     }
@@ -176,9 +174,6 @@ fun ZSilentApp(appState: ZSilentAppState) {
                         // sidebar ya no lista.
                         AppSection.MiningPool  ->
                             if (uiState.teamMiningEnabled) MiningPoolScreen(uiState, appState)
-                            else DashboardScreen(uiState, appState)
-                        AppSection.P2PExchange ->
-                            if (uiState.p2pExchangeEnabled) P2PExchangeScreen(uiState, appState)
                             else DashboardScreen(uiState, appState)
                         AppSection.Explorer    ->
                             if (uiState.explorerEnabled) ExplorerScreen(uiState, appState)
@@ -267,10 +262,6 @@ private fun TopBar(
                     "expl ${if (ui.explorerEnabled) "on" else "off"}",
                     if (ui.explorerEnabled) ZTone.On else ZTone.Off
                 )
-                Pill(
-                    "swap ${if (ui.p2pExchangeEnabled) "on" else "off"}",
-                    if (ui.p2pExchangeEnabled) ZTone.On else ZTone.Off
-                )
             }
             ThemeToggleButton(darkTheme = ui.darkTheme, onClick = onToggleTheme)
         }
@@ -331,7 +322,6 @@ private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
     AppSection.entries.filter { section ->
         when (section) {
             AppSection.Explorer -> uiState.explorerEnabled
-            AppSection.P2PExchange -> uiState.p2pExchangeEnabled
             AppSection.MiningPool -> uiState.teamMiningEnabled
             else -> true
         }
@@ -432,8 +422,8 @@ private fun CollapsibleSidebar(
                             AppSection.Node -> nodeRunning
                             AppSection.Mining -> miningRunning
                             AppSection.MiningPool -> poolRunning
-                            // Explorer y P2P Exchange no llevan punto: estar
-                            // habilitadas no es estar haciendo algo, y un verde
+                            // Explorer no lleva punto: estar
+                            // habilitada no es estar haciendo algo, y un verde
                             // permanente no informa nada.
                             else -> false
                         },
@@ -613,7 +603,6 @@ private fun AppSection.navItem(): NavItem = when (this) {
     AppSection.Node      -> NavItem("Node",      Icons.Outlined.Memory)
     AppSection.Mining    -> NavItem("Mining",    Icons.Outlined.Bolt)
     AppSection.MiningPool  -> NavItem("Mining Pool",  Icons.Outlined.Groups)
-    AppSection.P2PExchange -> NavItem("P2P Exchange", Icons.Outlined.CurrencyExchange)
     AppSection.Explorer    -> NavItem("Explorer",     Icons.Outlined.Explore)
     AppSection.Privacy   -> NavItem("Privacy",   Icons.Outlined.Security)
     AppSection.Logs      -> NavItem("Logs",      Icons.Outlined.Terminal)

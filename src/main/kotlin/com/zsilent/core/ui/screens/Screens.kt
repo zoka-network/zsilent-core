@@ -140,7 +140,6 @@ import com.zsilent.core.ui.components.zButtonColors
 import com.zsilent.core.ui.components.zPastelButtonColors
 import com.zsilent.core.ui.components.zOutlinedButtonColors
 import kotlinx.coroutines.delay
-import java.net.URI
 import java.nio.file.Path
 
 private data class SyncSample(
@@ -3478,8 +3477,8 @@ private fun ComingSoonScreen(
     }
 }
 
-// P2PExchangeScreen and MiningPoolScreen live in their own files. Both take
-// (ui, appState) and read real state, so no Coming Soon placeholders remain.
+// MiningPoolScreen lives in its own file. It takes (ui, appState) and reads
+// real state, so no Coming Soon placeholder remains.
 
 // ExplorerScreen lives in ExplorerScreen.kt — it reads real chain state and is
 // wired into the router. No Coming Soon placeholder for this section.
@@ -3597,7 +3596,7 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
         SettingsStateBanner(ui)
         val torLive = ui.torEnabled && ui.torStatus == ServiceStatus.Online
         val hasWallet = ui.activeWalletAddress.isNotBlank()
-        val experimentalOn = ui.p2pExchangeEnabled || ui.teamMiningEnabled
+        val experimentalOn = ui.teamMiningEnabled
 
         // Rejilla pareja de tres columnas. Antes dos tarjetas no llevaban
         // weight y se dimensionaban por su texto, asi que la fila quedaba
@@ -3615,7 +3614,7 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
             SettingsMenuCard(
                 title = "Network",
                 detail = when {
-                    !ui.localRpcOnline -> "Node offline: no chain, no peers, no offers."
+                    !ui.localRpcOnline -> "Node offline: no chain, no peers."
                     ui.localConnectedPeers > 0 -> "Connected to ${ui.localConnectedPeers} peer(s) over p2p."
                     else -> "Node online but alone: nothing reaches you and nothing leaves."
                 },
@@ -3634,11 +3633,11 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
                 onClick = { onOpen(SettingsPage.Network) }
             )
             // Faltaba: Tor es parte del protocolo y se decide aca, no solo en
-            // Privacy. Sin el, la verificacion de pagos del exchange no corre.
+            // Privacy.
             SettingsMenuCard(
                 title = "Privacy & Tor",
                 detail = if (torLive) "Traffic routed over Tor onion services."
-                else "Tor is off. Payment verification cannot run without it.",
+                else "Tor is off. Peers can see your IP address.",
                 icon = Icons.Outlined.Shield,
                 meta = if (torLive) "tor on" else if (ui.torEnabled) "starting" else "tor off",
                 health = when {
@@ -3681,15 +3680,11 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsMenuCard(
                 title = "Experimental",
-                detail = listOfNotNull(
-                    "P2P Exchange".takeIf { ui.p2pExchangeEnabled },
-                    "Team Mining".takeIf { ui.teamMiningEnabled }
-                ).takeIf { it.isNotEmpty() }
-                    ?.let { "On: ${it.joinToString(" + ")}. These can move funds." }
-                    ?: "Off. Nothing experimental can touch your balance.",
-                icon = Icons.Outlined.CurrencyExchange,
-                // Ambar cuando estan encendidas, no verde: funcionan, pero
-                // mueven dinero y conviene que se note que estan activas.
+                detail = if (ui.teamMiningEnabled) "On: Team Mining. It can move funds."
+                else "Off. Nothing experimental can touch your balance.",
+                icon = Icons.Outlined.Groups,
+                // Ambar cuando esta encendido, no verde: funciona, pero mueve
+                // dinero y conviene que se note que esta activo.
                 meta = if (experimentalOn) "active" else "off",
                 health = if (experimentalOn) SettingHealth.Warn else SettingHealth.Neutral,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -3801,7 +3796,7 @@ private fun SettingsMenuCard(
 }
 
 /**
- * Cartel de estado de la app, hermano de los de Node, Mining, Pool y Exchange.
+ * Cartel de estado de la app, hermano de los de Node, Mining y Pool.
  *
  * Resume de un vistazo lo que hace falta para operar. `READY` exige todo a la
  * vez, porque cada pieza que falta bloquea algo distinto: sin sesión no se firma,
@@ -3860,8 +3855,8 @@ private fun SettingsStateBanner(ui: ZSilentUiState) {
                 ui.nodeStatus == ServiceStatus.Error -> "The node reported an error. Check Logs for the reason before trusting any balance shown here."
                 !sessionOk -> "The wallet session is locked. Unlock it to sign anything."
                 !nodeOk -> "The node is offline. Start it from the Node section."
-                !syncOk -> "The chain is still catching up. Balances and offers may be behind until it finishes."
-                !torOk -> "Tor is off. The app works, but payment verification in P2P Exchange needs it and will stay blocked."
+                !syncOk -> "The chain is still catching up. Balances may be behind until it finishes."
+                !torOk -> "Tor is off. The app works, but peers can see your IP address."
                 else -> "Everything needed to operate is up."
             }
         )
@@ -4081,29 +4076,6 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
 
 @Composable
 private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppState) {
-    var tronUrl by remember(ui.tronApiUrl) { mutableStateOf(ui.tronApiUrl) }
-    var tronApiKey by remember(ui.tronApiKey) { mutableStateOf(ui.tronApiKey) }
-    var fallbackUrls by remember(ui.tronFallbackUrls) { mutableStateOf(ui.tronFallbackUrls) }
-    var providerError by remember { mutableStateOf<String?>(null) }
-    var providerNotice by remember { mutableStateOf<String?>(null) }
-
-    Panel(title = "P2P Exchange", meta = "experimental opt-in") {
-        ToggleRow("Enable P2P Exchange", ui.p2pExchangeEnabled) {
-            appState.setP2PExchangeEnabled(it)
-        }
-        Text(
-            "This section can move real ZKA and USDT. It stays out of the sidebar until " +
-                "you opt in, and the first entry still requires explicit risk acceptance.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall
-        )
-        KeyValueRow(
-            "Risk acknowledgement",
-            if (ui.p2pExchangeRisksAccepted) "accepted" else "required on first entry"
-        )
-        HintText("There is no escrow, arbiter, refund or per-offer amount cap in v1.")
-    }
-
     Panel(title = "Team Mining", meta = "experimental opt-in") {
         ToggleRow("Enable Team Mining", ui.teamMiningEnabled) {
             appState.setTeamMiningEnabled(it)
@@ -4120,92 +4092,7 @@ private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppSta
                 "make that otherwise-valid block impossible."
         )
     }
-
-    Panel(
-        title = "Tron network",
-        meta = if (ui.tronNetwork == "nile") "Nile testnet" else "Mainnet"
-    ) {
-        com.zsilent.core.ui.components.SegmentedSelector(
-            options = listOf("Mainnet", "Nile testnet"),
-            selected = if (ui.tronNetwork == "nile") "Nile testnet" else "Mainnet",
-            onSelect = { appState.setTronNetwork(if (it == "Nile testnet") "nile" else "mainnet") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        if (ui.tronNetwork == "nile") {
-            HintText(
-                "Nile is play money — for testing the exchange flow without Tor or real " +
-                    "USDT at risk. Payments never cross networks: a Nile transfer cannot " +
-                    "settle a mainnet offer, or the reverse."
-            )
-        } else {
-            HintText("Real USDT. Payment checks require Tor — this is not optional on mainnet.")
-        }
-        HintText("Applies the next time the node starts.")
-    }
-
-    Panel(title = "Tron payment provider", meta = "applies after node restart") {
-        OutlinedTextField(
-            value = tronUrl,
-            onValueChange = { tronUrl = it.trim() },
-            label = { Text("Primary Tron API URL") },
-            singleLine = true,
-            colors = zFieldColors(),
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.fillMaxWidth()
-        )
-        PasswordField(
-            value = tronApiKey,
-            onValueChange = { tronApiKey = it },
-            label = "Optional API key",
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = fallbackUrls,
-            onValueChange = { fallbackUrls = it },
-            label = { Text("Fallback URLs (comma or newline separated)") },
-            minLines = 2,
-            colors = zFieldColors(),
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.fillMaxWidth()
-        )
-        providerError?.let { ErrorText(it) }
-        providerNotice?.let {
-            Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-        }
-        Button(
-            onClick = {
-                val urls = listOf(tronUrl) + fallbackUrls
-                    .split(',', '\n')
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                val invalid = urls.firstOrNull { !isHttpProviderUrl(it) }
-                if (invalid != null) {
-                    providerError = "Use a complete http:// or https:// URL: $invalid"
-                    providerNotice = null
-                } else {
-                    appState.setTronApiSettings(tronUrl, tronApiKey, fallbackUrls)
-                    providerError = null
-                    providerNotice = "Saved. Restart the local node to apply these provider settings."
-                }
-            },
-            colors = zButtonColors(),
-            shape = MaterialTheme.shapes.small,
-            contentPadding = SettingsButtonPadding
-        ) {
-            Text("Save provider settings")
-        }
-        HintText(
-            "The node always sends these queries through its SOCKS proxy. It refuses to " +
-                "verify payments when Tor is unavailable; there is no direct fallback."
-        )
-    }
 }
-
-private fun isHttpProviderUrl(value: String): Boolean = runCatching {
-    val uri = URI(value.trim())
-    (uri.scheme == "http" || uri.scheme == "https") && !uri.host.isNullOrBlank()
-}.getOrDefault(false)
-
 
 /**
  * Ajustes de apariencia (decisión D4).

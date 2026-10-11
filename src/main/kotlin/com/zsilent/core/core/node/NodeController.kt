@@ -152,10 +152,6 @@ class NodeController(private val cli: ZokaCli) {
         val torProxy: String,
         val torOnly: Boolean,
         val externalAddrs: List<String>,
-        val tronNetwork: String,
-        val tronApiUrl: String,
-        val tronApiKey: String,
-        val tronFallbackUrls: String,
         /**
          * Direcciones onion que el usuario agregó a mano.
          *
@@ -192,10 +188,6 @@ class NodeController(private val cli: ZokaCli) {
         torProxy: String = "",
         torOnly: Boolean = false,
         externalAddrs: List<String> = emptyList(),
-        tronNetwork: String = "",
-        tronApiUrl: String = "",
-        tronApiKey: String = "",
-        tronFallbackUrls: String = "",
         manualPeers: List<String> = emptyList(),
         /**
          * Bajar bloques sin abrir ninguna wallet.
@@ -248,10 +240,6 @@ class NodeController(private val cli: ZokaCli) {
             torProxy,
             torOnly,
             cleanExternalAddrs,
-            tronNetwork,
-            tronApiUrl,
-            tronApiKey,
-            tronFallbackUrls,
             manualPeers,
             syncOnly
         )
@@ -333,22 +321,6 @@ class NodeController(private val cli: ZokaCli) {
         // Enable the runtime mining-control RPC (/mining/start|stop) so mining can
         // be toggled in-process without restarting the node.
         builder.environment()["ZOKA_API_ENABLE_MINING_CONTROL"] = "true"
-        // Read before tronApiUrl on the Rust side (TronConfig::from_env), so
-        // an unset tronApiUrl there defaults to *this* network's endpoint
-        // rather than always mainnet's. Left unset here, the node's own
-        // fallback to "mainnet" applies — the same real-funds-aware default.
-        tronNetwork.trim().takeIf { it.isNotBlank() }?.let {
-            builder.environment()["ZOKA_TRON_NETWORK"] = it
-        }
-        tronApiUrl.trim().takeIf { it.isNotBlank() }?.let {
-            builder.environment()["ZOKA_TRON_API_URL"] = it
-        }
-        tronApiKey.trim().takeIf { it.isNotBlank() }?.let {
-            builder.environment()["ZOKA_TRON_API_KEY"] = it
-        }
-        tronFallbackUrls.trim().takeIf { it.isNotBlank() }?.let {
-            builder.environment()["ZOKA_TRON_FALLBACK_URLS"] = it
-        }
         builder.redirectErrorStream(true)
 
         scope.launch {
@@ -442,9 +414,6 @@ class NodeController(private val cli: ZokaCli) {
             torProxy = params.torProxy,
             torOnly = params.torOnly,
             externalAddrs = params.externalAddrs,
-            tronApiUrl = params.tronApiUrl,
-            tronApiKey = params.tronApiKey,
-            tronFallbackUrls = params.tronFallbackUrls,
             manualPeers = params.manualPeers,
             syncOnly = params.syncOnly
         )

@@ -1,5 +1,9 @@
 # Guía de cambio visual — ZSilent Core → diseño `zoka-whisper-desk`
 
+> **2026-10-11: el P2P Exchange se retiró de ZSilent** por decisión del usuario.
+> Lo que esta guía dice de la Etapa 10 y de `P2PExchangeScreen.kt` queda como registro
+> histórico: esa pantalla ya no existe.
+
 Documento de trabajo para portar el lenguaje visual del prototipo
 `ZokaNetwork/zoka-whisper-desk` (React + TanStack + Tailwind v4) a ZSilent Core
 (Kotlin + Compose Desktop + Material 3).

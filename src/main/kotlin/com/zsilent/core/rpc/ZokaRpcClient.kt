@@ -4,17 +4,10 @@ import com.zsilent.core.models.AccountCheck
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.ChainHeightResponse
-import com.zsilent.core.models.ClaimOfferResponse
-import com.zsilent.core.models.CreateOfferRequest
 import com.zsilent.core.models.JoinMiningTeamRequest
-import com.zsilent.core.models.PaymentFailureSummary
-import com.zsilent.core.models.ReportPaymentFailureRequest
 import com.zsilent.core.models.ViewScanKeyRequest
 import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.models.MempoolTransaction
-import com.zsilent.core.models.ExchangeDiagnostics
-import com.zsilent.core.models.OfferList
-import com.zsilent.core.models.OfferSummary
 import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
@@ -184,9 +177,9 @@ class ZokaRpcClient(val baseUrl: String) {
     /**
      * Raised when the node answers 404 on an endpoint the app knows about.
      *
-     * For the exchange this is expected rather than exceptional: a node built
-     * before offers existed has no such route, and the UI must say "your node
-     * is too old" instead of "there are no offers", which would be a lie about
+     * For team mining this is expected rather than exceptional: a node built
+     * before teams existed has no such route, and the UI must say "your node
+     * is too old" instead of "there are no teams", which would be a lie about
      * the network.
      */
     class EndpointUnsupported(val path: String) : Exception("node has no $path endpoint")
@@ -234,123 +227,6 @@ class ZokaRpcClient(val baseUrl: String) {
         val body = response.bodyAsText()
         if (!response.status.isSuccess()) {
             throw IllegalStateException(body.ifBlank { "team mining request failed: ${response.status}" })
-        }
-        return codec.decodeFromString(body)
-    }
-
-    /**
-     * Offers this node knows about. Throws [EndpointUnsupported] when the node
-     * predates the exchange.
-     */
-    suspend fun exchangeOffers(): OfferList =
-        getOrNull<OfferList>("/p2p-exchange/offers")
-            ?: throw EndpointUnsupported("/p2p-exchange/offers")
-
-    /**
-     * Integridad de la reserva que respalda cada oferta viva de este nodo.
-     *
-     * Solo habla de las ofertas propias: la reserva vive en la cartera del
-     * vendedor y nadie más puede verla. Devuelve `null` en nodos anteriores al
-     * endpoint, para que una versión vieja no rompa la pantalla.
-     */
-    suspend fun exchangeDiagnostics(): ExchangeDiagnostics? =
-        getOrNull<ExchangeDiagnostics>("/p2p-exchange/diagnostics")
-
-    /**
-     * Pide una pasada de verificación ahora, sin esperar el ciclo de 10 s.
-     *
-     * Es comodidad, no corrección: el nodo revisa igual por su cuenta.
-     */
-    suspend fun exchangeCheckNow(): Boolean {
-        if (baseUrl.isBlank()) return false
-        return runCatching {
-            client.post("$baseUrl/p2p-exchange/check-now").status.isSuccess()
-        }.getOrDefault(false)
-    }
-
-    suspend fun createOffer(request: CreateOfferRequest): OfferSummary {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val response = client.post("$baseUrl/p2p-exchange/offers") {
-            contentType(ContentType.Application.Json)
-            setBody(codec.encodeToString(request))
-        }
-        if (response.status == HttpStatusCode.NotFound) {
-            throw EndpointUnsupported("/p2p-exchange/offers")
-        }
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            // The node explains refusals (below minimum, too many open offers,
-            // malformed TRON address); surface its wording rather than a
-            // generic failure the user cannot act on.
-            throw IllegalStateException(body.ifBlank { "offer rejected: ${response.status}" })
-        }
-        return codec.decodeFromString(body)
-    }
-
-    suspend fun claimOffer(offerId: String): ClaimOfferResponse {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/claim")
-        if (response.status == HttpStatusCode.NotFound) {
-            throw EndpointUnsupported("/p2p-exchange/offers/$offerId/claim")
-        }
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException(body.ifBlank { "claim refused: ${response.status}" })
-        }
-        return codec.decodeFromString(body)
-    }
-
-    /**
-     * El comprador suelta la oferta que había tomado y vuelve al mercado.
-     *
-     * Sin esto, arrepentirse dejaba la venta trabada los 45 minutos completos:
-     * nadie más podía tomarla y el vendedor tampoco podía cancelarla, porque
-     * cancelar exige que esté abierta.
-     */
-    suspend fun releaseClaim(offerId: String): Boolean {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/release-claim")
-        if (response.status == HttpStatusCode.NotFound) {
-            throw EndpointUnsupported("/p2p-exchange/offers/$offerId/release-claim")
-        }
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException(body.ifBlank { "release refused: ${response.status}" })
-        }
-        return true
-    }
-
-    suspend fun cancelOffer(offerId: String): OfferSummary {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val response = client.post("$baseUrl/p2p-exchange/offers/$offerId/cancel")
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException(body.ifBlank { "cancellation refused: ${response.status}" })
-        }
-        return codec.decodeFromString(body)
-    }
-
-    suspend fun reportPaymentFailure(
-        offerId: String,
-        tronTxHash: String
-    ): PaymentFailureSummary {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val response = client.post(
-            "$baseUrl/p2p-exchange/offers/$offerId/report-payment-failure"
-        ) {
-            contentType(ContentType.Application.Json)
-            setBody(
-                codec.encodeToString(
-                    ReportPaymentFailureRequest(
-                        tronTxHash = tronTxHash,
-                        acknowledgePublicDisclosure = true
-                    )
-                )
-            )
-        }
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException(body.ifBlank { "report refused: ${response.status}" })
         }
         return codec.decodeFromString(body)
     }
