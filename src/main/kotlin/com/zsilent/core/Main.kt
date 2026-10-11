@@ -391,7 +391,7 @@ private fun WindowScope.InstallWindowDragHandler() {
 
 @Composable
 private fun OutdatedVersionScreen() {
-    val releaseUrl = "https://github.com/ZokaNetwork/zsilent-core/releases/latest"
+    val releaseUrl = "https://github.com/zoka-network/zsilent-core/releases/latest"
     val scheme = MaterialTheme.colorScheme
     // El naranja #FF6B35 anterior no existe en la paleta nueva. Esto es una
     // advertencia bloqueante, así que va en el semántico de warning.
