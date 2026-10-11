@@ -82,10 +82,10 @@ foreach ($name in $requiredSetup) {
     $null = Get-RequiredHash -Path (Join-Path $trustedSetupDir $name)
 }
 
-$expectedTorBundleVersion = "15.0.22"
-$expectedTorVersion = "0.4.9.12"
-$expectedTorUrl = "https://archive.torproject.org/tor-package-archive/torbrowser/15.0.22/tor-expert-bundle-windows-x86_64-15.0.22.tar.gz"
-$expectedTorArchiveSha256 = "231dad6b9cb401a54c260db7046965ef04e4f72ff071b140d423fb5da281ab1e"
+$expectedTorBundleVersion = "15.0.24"
+$expectedTorVersion = "0.4.9.13"
+$expectedTorUrl = "https://archive.torproject.org/tor-package-archive/torbrowser/15.0.24/tor-expert-bundle-windows-x86_64-15.0.24.tar.gz"
+$expectedTorArchiveSha256 = "e9dc6ccc93cd6afa507193f4de284d6424233ff5102155cd2c94b259e8a22b65"
 $torMetadataPath = Join-Path $TorBundleDir ".zsilent-bundle.json"
 if (-not (Test-Path -LiteralPath $torMetadataPath -PathType Leaf)) {
     throw "Missing verified Tor metadata: $torMetadataPath. Re-run prepare-tor-expert-bundle-windows.ps1 for Expert Bundle $expectedTorBundleVersion."
