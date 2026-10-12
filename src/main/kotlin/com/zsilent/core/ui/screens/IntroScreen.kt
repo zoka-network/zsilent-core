@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zsilent.core.config.ZokaNetworkConfig
 import com.zsilent.core.ui.components.Pill
+import com.zsilent.core.ui.components.QuanticTagline
+import com.zsilent.core.ui.components.QuanticWordmark
 import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZButtonSize
 import com.zsilent.core.ui.components.ZButtonText
@@ -204,19 +206,14 @@ private fun BrandColumn(ready: Boolean, onLaunch: () -> Unit, modifier: Modifier
             com.zsilent.core.ui.onboarding.NoirBrandBadge(size = 40.dp)
             Column {
                 Text("ZSilent", style = MaterialTheme.typography.titleLarge, color = scheme.onSurface)
-                Text(
-                    "ZOKA NETWORK · LOCAL CLIENT",
-                    style = ZTheme.text.navGroup,
-                    color = scheme.onSurfaceVariant
-                )
+                QuanticWordmark(style = ZTheme.text.navGroup, suffix = "TESTNET")
             }
         }
 
-        Text(
-            "A silent runtime\nfor private value.",
-            style = MaterialTheme.typography.displaySmall,
-            color = scheme.onSurface
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            QuanticWordmark(style = ZTheme.text.brandHero)
+            QuanticTagline()
+        }
 
         Text(
             "ZSilent runs a local node, holds its own keys and speaks a zero-knowledge " +

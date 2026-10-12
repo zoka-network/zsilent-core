@@ -55,10 +55,20 @@ Esto es un cambio de capa de presentación exclusivamente.
 Las cuatro se resolvieron el 2026-07-27, todas hacia la réplica fiel del
 prototipo.
 
-**D1 — El acento es blanco. Réplica exacta.**
+**D1 — El acento es blanco. Réplica exacta.** *(Reemplazada el 2026-10-12, ver abajo.)*
 `primary` y `accent` pasan de `#A8E6B0` a `#F8F8F8` en oscuro y `#090909` en
 claro. Los botones primarios son blancos con texto negro. El `#A8E6B0` sale de la
 interfaz por completo; el único color son los cuatro estados semánticos.
+
+**D1 bis (2026-10-12) — El acento es el rosa de Zoka Quantic.** ZSilent pasa a
+presentarse como cliente de Zoka Quantic (hoy sobre su testnet) con la identidad
+de zoka.network: `primary` es `#F2ABD0` en oscuro (texto `#0A0709` encima) y
+`#A8326A` en claro (6.1:1 sobre el fondo). El botón `Accent` copia el de la web:
+contorno rosa con texto claro, relleno rosa al pasar el mouse. La marca es
+`QuanticWordmark` ("ZOKA" + "QUANTIC" en rosa) y la bajada `QuanticTagline`
+("Private by design."), en bienvenida, intro, login y barra lateral. El resto
+de la paleta, las tipografías y las superficies no cambian. Capturas: prueba
+`QuanticScreenshotsTest` con `ZSILENT_SCREENSHOTS_DIR`.
 
 **D2 — Entran los dos temas, con toggle.**
 `ZSilentTheme` recibe `darkTheme` y hay que persistirlo en `SetupStore` junto con

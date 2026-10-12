@@ -66,12 +66,13 @@ object ZokaNetworkConfig {
     // pone en el manifiesto o en `ZSILENT_REMOTE_RPC_URL`.
     private const val DEFAULT_REMOTE_RPC_URL = ""
 
-    // Zenith es la testnet de Zoka Quantic desde octubre de 2026. Su chain id
-    // lleva "mainnet" por historia y no se puede renombrar: de el sale el hash
-    // del genesis. Por eso `Network` sigue valiendo "mainnet" para esta cadena
-    // (es la palabra que se le pasa al nodo con --network, y los nodos viejos
-    // no conocen otra) y lo que se le muestra a la persona sale de
-    // `DisplayName`/`IsTestnet`, nunca de `Network`.
+    // La cadena Zenith es la testnet de Zoka Quantic desde octubre de 2026, y
+    // ZSilent se presenta como cliente de Zoka Quantic: lo que ve la persona es
+    // "Zoka Quantic · Testnet". El chain id lleva "mainnet" por historia y no
+    // se puede renombrar: de el sale el hash del genesis. Por eso `Network`
+    // sigue valiendo "mainnet" para esta cadena (es la palabra que se le pasa
+    // al nodo con --network, y los nodos viejos no conocen otra) y lo que se
+    // muestra sale de `DisplayName`/`ShortName`/`IsTestnet`, nunca de `Network`.
     const val ZENITH_CHAIN_ID = "zoka-mainnet-zenith-v1"
     private const val DEFAULT_CHAIN_ID = ZENITH_CHAIN_ID
     private const val DEFAULT_NETWORK = "mainnet"
@@ -91,9 +92,12 @@ object ZokaNetworkConfig {
     /** True when the configured chain has no monetary value (Zenith included). */
     val IsTestnet: Boolean
         get() = isTestnet(current.chainId, current.network)
-    /** Network name for people: titles, pills and onboarding. */
+    /** Network name for people: titles, dialogs and onboarding. */
     val DisplayName: String
         get() = displayName(current.chainId, current.network)
+    /** Lowercase compact form for status pills ("quantic testnet"). */
+    val ShortName: String
+        get() = shortName(current.chainId, current.network)
     val LocalRpcUrl: String
         get() = current.localRpcUrl
     val RemoteRpcUrl: String
@@ -189,9 +193,18 @@ object ZokaNetworkConfig {
     fun displayName(chainId: String, network: String): String {
         val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
         return when {
-            chain == ZENITH_CHAIN_ID -> "Zenith testnet"
+            chain == ZENITH_CHAIN_ID -> "Zoka Quantic · Testnet"
             network.equals("testnet", ignoreCase = true) -> "Testnet"
             else -> "Mainnet"
+        }
+    }
+
+    fun shortName(chainId: String, network: String): String {
+        val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
+        return when {
+            chain == ZENITH_CHAIN_ID -> "quantic testnet"
+            network.equals("testnet", ignoreCase = true) -> "testnet"
+            else -> "mainnet"
         }
     }
 

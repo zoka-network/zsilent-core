@@ -32,7 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
@@ -328,10 +331,21 @@ private fun WindowScope.WindowTitleBar(
         // testnet, que es la peor forma posible de equivocarse: el título es lo
         // primero que se mira para saber si lo que hay en pantalla es dinero.
         // Zenith paso a ser la testnet de Zoka Quantic: se mira el chain id,
-        // no `Network`, que para Zenith sigue diciendo "mainnet".
-        val networkLabel = ZokaNetworkConfig.DisplayName
+        // no `Network`, que para Zenith sigue diciendo "mainnet". "Quantic" va
+        // en el rosa de la marca, como en zoka.network.
+        val title = "ZSilent Core · ${ZokaNetworkConfig.DisplayName} · v${ZokaNetworkConfig.AppVersion}"
+        val brandAt = title.indexOf("Quantic")
+        val brandColor = MaterialTheme.colorScheme.primary
         Text(
-            "ZSilent Core · $networkLabel · v${ZokaNetworkConfig.AppVersion}",
+            buildAnnotatedString {
+                if (brandAt < 0) {
+                    append(title)
+                } else {
+                    append(title.substring(0, brandAt))
+                    withStyle(SpanStyle(color = brandColor)) { append("Quantic") }
+                    append(title.substring(brandAt + "Quantic".length))
+                }
+            },
             style = MaterialTheme.typography.labelLarge,
             color = if (ZokaNetworkConfig.IsTestnet) {
                 MaterialTheme.colorScheme.tertiary

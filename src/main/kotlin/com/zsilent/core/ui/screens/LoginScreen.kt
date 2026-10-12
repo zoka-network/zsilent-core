@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
 import com.zsilent.core.ui.components.Pill
+import com.zsilent.core.ui.components.QuanticWordmark
 import com.zsilent.core.ui.components.Truncate
 import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZButtonSize
@@ -186,11 +187,7 @@ fun LoginContent(
                 NoirBrandBadge(size = 40.dp)
                 Column {
                     Text("ZSilent", style = MaterialTheme.typography.titleLarge, color = scheme.onSurface)
-                    Text(
-                        "LOCAL SESSION · LOCKED",
-                        style = ZTheme.text.navGroup,
-                        color = scheme.onSurfaceVariant
-                    )
+                    QuanticWordmark(style = ZTheme.text.navGroup, suffix = "TESTNET · LOCKED")
                 }
             }
 

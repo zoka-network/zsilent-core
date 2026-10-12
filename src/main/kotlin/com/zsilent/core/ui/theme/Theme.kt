@@ -35,16 +35,25 @@ import androidx.compose.ui.unit.sp
 //     superficies la producen los BORDES, no los rellenos. Si un panel "no se
 //     ve", falta el borde de 1dp en `outlineVariant` — no aclarar el relleno.
 //
-//  3. El acento es acromático: blanco en oscuro, casi negro en claro. El color
-//     existe únicamente como los cuatro estados semánticos de ZSemanticColors.
+//  3. El acento es el rosa de Zoka Quantic, el mismo de zoka.network
+//     (#F2ABD0 sobre negro). Fuera del acento, el color existe solo como los
+//     cuatro estados semánticos de ZSemanticColors. En claro el rosa se
+//     oscurece (#A8326A, contraste 6.1:1 sobre el fondo) para que se lea.
 // ─────────────────────────────────────────────────────────────────────────────
 
 private val Ink              = Color(0xFF000000)
 private val Paper            = Color(0xFFF8F8F8)
 
+/** Rosa de marca de Zoka Quantic sobre fondo oscuro (zoka.network). */
+val QuanticPink              = Color(0xFFF2ABD0)
+/** Texto sobre el rosa: el casi negro cálido del botón de la web. */
+val QuanticOnPink            = Color(0xFF0A0709)
+/** Rosa de marca para el tema claro, con contraste suficiente sobre blanco. */
+val QuanticPinkDeep          = Color(0xFFA8326A)
+
 private val DarkScheme: ColorScheme = darkColorScheme(
-    primary                 = Paper,
-    onPrimary               = Ink,
+    primary                 = QuanticPink,
+    onPrimary               = QuanticOnPink,
     primaryContainer        = Color(0xFF1B1B1B),
     onPrimaryContainer      = Paper,
     secondary               = Color(0xFF070707),
@@ -75,8 +84,8 @@ private val DarkScheme: ColorScheme = darkColorScheme(
 )
 
 private val LightScheme: ColorScheme = lightColorScheme(
-    primary                 = Color(0xFF090909),
-    onPrimary               = Color(0xFFFCFCFC),
+    primary                 = QuanticPinkDeep,
+    onPrimary               = Color(0xFFFFFFFF),
     primaryContainer        = Color(0xFFD7D7D7),
     onPrimaryContainer      = Color(0xFF090909),
     secondary               = Color(0xFFEBEBEB),
@@ -289,6 +298,13 @@ data class ZTextStyles(
     val monoLarge: TextStyle,
     /** Balance principal de la tarjeta de wallet. */
     val monoDisplay: TextStyle,
+    /**
+     * Marca ZOKA QUANTIC grande (bienvenida, intro). Copia el h1 de
+     * zoka.network: Inter Medium, interlineado 1 y tracking de -0.05em.
+     */
+    val brandHero: TextStyle,
+    /** Bajada de la marca ("Private by design."): -0.025em, como la web. */
+    val brandTagline: TextStyle,
 )
 
 private val ZTextDefaults = ZTextStyles(
@@ -300,6 +316,8 @@ private val ZTextDefaults = ZTextStyles(
     mono        = mono(12, FontWeight.Normal, 18),
     monoLarge   = mono(20, FontWeight.Normal, 24),
     monoDisplay = mono(36, FontWeight.Medium, 40),
+    brandHero   = inter(44, FontWeight.Medium, 46, -2.2f),
+    brandTagline = inter(26, FontWeight.Normal, 31, -0.65f),
 )
 
 val LocalZTextStyles = staticCompositionLocalOf { ZTextDefaults }

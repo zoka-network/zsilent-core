@@ -98,6 +98,8 @@ import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
 import com.zsilent.core.ui.components.SectionTitle
 import com.zsilent.core.ui.components.Pill
+import com.zsilent.core.ui.components.QuanticTagline
+import com.zsilent.core.ui.components.QuanticWordmark
 import com.zsilent.core.ui.components.ZButton
 import com.zsilent.core.ui.components.ZButtonSize
 import com.zsilent.core.ui.components.ZButtonText
@@ -362,11 +364,7 @@ fun OnboardingShell(
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleMedium
                         )
-                        Text(
-                            "ZOKA NETWORK",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = ZTheme.text.navGroup
-                        )
+                        QuanticWordmark(style = ZTheme.text.navGroup, suffix = "TESTNET")
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -816,11 +814,12 @@ fun WordChip(
 @Composable
 fun WelcomeStepNoir() {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        ScreenEyebrow("Welcome · Zenith testnet")
-        ScreenTitle("Your private gateway to the Zoka Network.")
+        ScreenEyebrow("Welcome · Testnet")
+        QuanticWordmark(style = ZTheme.text.brandHero)
+        QuanticTagline()
         ScreenBody(
-            "Create, restore and protect your wallet locally on Zenith, the Zoka Network testnet. " +
-                "Zenith ZKA are test coins with no monetary value; balances do not carry over to " +
+            "Create, restore and protect your wallet locally on the Zoka Quantic testnet. " +
+                "Testnet ZKA are test coins with no monetary value and do not carry over to " +
                 "the Zoka Quantic mainnet. " +
                 "Your keys never leave this device. ZSilent runs the full node, mining engine and " +
                 "zero-knowledge transfer flow under your sole control."

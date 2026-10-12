@@ -366,10 +366,9 @@ private fun CollapsibleSidebar(
                             style = MaterialTheme.typography.titleMedium,
                             color = scheme.onSurface
                         )
-                        Text(
-                            "ZOKA · v${com.zsilent.core.config.ZokaNetworkConfig.AppVersion}",
+                        com.zsilent.core.ui.components.QuanticWordmark(
                             style = ZTheme.text.navGroup,
-                            color = scheme.onSurfaceVariant
+                            suffix = "v${com.zsilent.core.config.ZokaNetworkConfig.AppVersion}"
                         )
                     }
                 }

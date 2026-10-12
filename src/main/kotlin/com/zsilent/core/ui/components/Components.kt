@@ -64,7 +64,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -409,17 +412,19 @@ fun ZButton(
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
 
+    // Accent copia el botón de zoka.network: contorno rosa con texto claro, que
+    // se rellena de rosa (texto oscuro) al pasar el mouse.
     val container = when (variant) {
         ZButtonVariant.Default -> scheme.surfaceContainerHigh
         ZButtonVariant.Ghost   -> Color.Transparent
-        ZButtonVariant.Accent  -> scheme.primary
+        ZButtonVariant.Accent  -> if (hovered && enabled) scheme.primary else Color.Transparent
         ZButtonVariant.Danger  -> danger.copy(alpha = if (hovered) 0.20f else 0.10f)
         ZButtonVariant.Outline -> Color.Transparent
     }
     val fg = when (variant) {
         ZButtonVariant.Default -> scheme.onSurface
         ZButtonVariant.Ghost   -> if (hovered) scheme.onSurface else scheme.onSurfaceVariant
-        ZButtonVariant.Accent  -> scheme.onPrimary
+        ZButtonVariant.Accent  -> if (hovered && enabled) scheme.onPrimary else scheme.onSurface
         ZButtonVariant.Danger  -> danger
         ZButtonVariant.Outline -> scheme.onSurface
     }
@@ -475,6 +480,45 @@ fun ZButtonText(text: String) {
         fontWeight = FontWeight.Medium,
         color = LocalContentColor.current,
         maxLines = 1,
+    )
+}
+
+/**
+ * Marca de Zoka Quantic como en zoka.network: "ZOKA" en el color del texto y
+ * "QUANTIC" en el rosa de acento, siempre en una sola línea. `suffix` agrega
+ * un dato después de un punto medio (por ejemplo "TESTNET").
+ */
+@Composable
+fun QuanticWordmark(
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    suffix: String? = null,
+    suffixColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Text(
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = scheme.onSurface)) { append("ZOKA ") }
+            withStyle(SpanStyle(color = scheme.primary)) { append("QUANTIC") }
+            if (suffix != null) {
+                withStyle(SpanStyle(color = suffixColor)) { append(" · $suffix") }
+            }
+        },
+        style = style,
+        maxLines = 1,
+        softWrap = false,
+        modifier = modifier,
+    )
+}
+
+/** Bajada de la marca, en el gris claro del lema de zoka.network (#C2C2C7). */
+@Composable
+fun QuanticTagline(modifier: Modifier = Modifier) {
+    Text(
+        "Private by design.",
+        style = ZTheme.text.brandTagline,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+        modifier = modifier,
     )
 }
 
