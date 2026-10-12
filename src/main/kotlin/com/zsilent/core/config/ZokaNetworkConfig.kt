@@ -65,7 +65,15 @@ object ZokaNetworkConfig {
     // un `runCatching`. Un despliegue que quiera volver a tener RPC publico lo
     // pone en el manifiesto o en `ZSILENT_REMOTE_RPC_URL`.
     private const val DEFAULT_REMOTE_RPC_URL = ""
-    private const val DEFAULT_CHAIN_ID = "zoka-mainnet-zenith-v1"
+
+    // Zenith es la testnet de Zoka Quantic desde octubre de 2026. Su chain id
+    // lleva "mainnet" por historia y no se puede renombrar: de el sale el hash
+    // del genesis. Por eso `Network` sigue valiendo "mainnet" para esta cadena
+    // (es la palabra que se le pasa al nodo con --network, y los nodos viejos
+    // no conocen otra) y lo que se le muestra a la persona sale de
+    // `DisplayName`/`IsTestnet`, nunca de `Network`.
+    const val ZENITH_CHAIN_ID = "zoka-mainnet-zenith-v1"
+    private const val DEFAULT_CHAIN_ID = ZENITH_CHAIN_ID
     private const val DEFAULT_NETWORK = "mainnet"
 
     /** App version, injected at build time via -Dzsilent.version (see build.gradle.kts). */
@@ -80,6 +88,12 @@ object ZokaNetworkConfig {
 
     val Network: String
         get() = current.network
+    /** True when the configured chain has no monetary value (Zenith included). */
+    val IsTestnet: Boolean
+        get() = isTestnet(current.chainId, current.network)
+    /** Network name for people: titles, pills and onboarding. */
+    val DisplayName: String
+        get() = displayName(current.chainId, current.network)
     val LocalRpcUrl: String
         get() = current.localRpcUrl
     val RemoteRpcUrl: String
@@ -162,6 +176,23 @@ object ZokaNetworkConfig {
             manifestPath = manifestFile?.absolutePath.orEmpty(),
             minimumClientVersion = manifest?.minimumClientVersion.orEmpty()
         ).also(::configure)
+    }
+
+    // Sin configurar todavia (chain id vacio) se asume la cadena por defecto,
+    // que es Zenith: mostrar "Mainnet" un instante seria justo el error que el
+    // titulo tiene que evitar.
+    fun isTestnet(chainId: String, network: String): Boolean {
+        val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
+        return chain == ZENITH_CHAIN_ID || network.equals("testnet", ignoreCase = true)
+    }
+
+    fun displayName(chainId: String, network: String): String {
+        val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
+        return when {
+            chain == ZENITH_CHAIN_ID -> "Zenith testnet"
+            network.equals("testnet", ignoreCase = true) -> "Testnet"
+            else -> "Mainnet"
+        }
     }
 
     fun displayUrl(url: String): String {

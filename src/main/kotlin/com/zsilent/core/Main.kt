@@ -327,15 +327,13 @@ private fun WindowScope.WindowTitleBar(
         // a mano como "Zenith mainnet" y seguía diciendo mainnet corriendo en
         // testnet, que es la peor forma posible de equivocarse: el título es lo
         // primero que se mira para saber si lo que hay en pantalla es dinero.
-        val networkLabel = if (ZokaNetworkConfig.Network.equals("testnet", true)) {
-            "TESTNET"
-        } else {
-            "Zenith mainnet"
-        }
+        // Zenith paso a ser la testnet de Zoka Quantic: se mira el chain id,
+        // no `Network`, que para Zenith sigue diciendo "mainnet".
+        val networkLabel = ZokaNetworkConfig.DisplayName
         Text(
             "ZSilent Core · $networkLabel · v${ZokaNetworkConfig.AppVersion}",
             style = MaterialTheme.typography.labelLarge,
-            color = if (ZokaNetworkConfig.Network.equals("testnet", true)) {
+            color = if (ZokaNetworkConfig.IsTestnet) {
                 MaterialTheme.colorScheme.tertiary
             } else {
                 MaterialTheme.colorScheme.onSurface
@@ -412,7 +410,7 @@ private fun OutdatedVersionScreen() {
                 textAlign = TextAlign.Center
             )
             Text(
-                "Esta versión de ZSilent Core (v${ZokaNetworkConfig.AppVersion}) ya no es compatible con la red ZOKA Mainnet Zenith.\n\nDescargá la versión más reciente (v${ZokaNetworkConfig.MinimumClientVersion} o superior) para continuar minando y usando la red.",
+                "Esta versión de ZSilent Core (v${ZokaNetworkConfig.AppVersion}) ya no es compatible con la red ${ZokaNetworkConfig.DisplayName}.\n\nDescargá la versión más reciente (v${ZokaNetworkConfig.MinimumClientVersion} o superior) para continuar minando y usando la red.",
                 color = scheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center

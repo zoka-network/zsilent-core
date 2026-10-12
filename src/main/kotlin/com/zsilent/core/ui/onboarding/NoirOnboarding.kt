@@ -816,10 +816,12 @@ fun WordChip(
 @Composable
 fun WelcomeStepNoir() {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        ScreenEyebrow("Welcome · Zenith mainnet")
+        ScreenEyebrow("Welcome · Zenith testnet")
         ScreenTitle("Your private gateway to the Zoka Network.")
         ScreenBody(
-            "Create, restore and protect your wallet locally for the Zenith mainnet of Zoka Network. " +
+            "Create, restore and protect your wallet locally on Zenith, the Zoka Network testnet. " +
+                "Zenith ZKA are test coins with no monetary value; balances do not carry over to " +
+                "the Zoka Quantic mainnet. " +
                 "Your keys never leave this device. ZSilent runs the full node, mining engine and " +
                 "zero-knowledge transfer flow under your sole control."
         )

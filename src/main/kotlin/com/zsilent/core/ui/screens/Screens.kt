@@ -3843,8 +3843,8 @@ private fun SettingsStateBanner(ui: ZSilentUiState) {
                     Pill("chain ${if (syncOk) "synced" else "syncing"}", if (syncOk) ZTone.On else ZTone.Warn)
                     Pill("binaries ${if (binariesOk) "ready" else "missing"}", if (binariesOk) ZTone.On else ZTone.Err)
                     Pill(
-                        "network ${com.zsilent.core.config.ZokaNetworkConfig.Network.ifBlank { "mainnet" }}",
-                        if (com.zsilent.core.config.ZokaNetworkConfig.Network.equals("testnet", true)) ZTone.Warn else ZTone.Default
+                        "network ${com.zsilent.core.config.ZokaNetworkConfig.DisplayName.lowercase()}",
+                        if (com.zsilent.core.config.ZokaNetworkConfig.IsTestnet) ZTone.Warn else ZTone.Default
                     )
                 }
             }
