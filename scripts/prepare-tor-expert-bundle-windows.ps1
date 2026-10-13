@@ -14,7 +14,7 @@ param(
     # publicar arreglos de seguridad cada dos semanas (0.4.9.12 el 8/09,
     # 0.4.9.13 anunciada para el 22/09), y una constante enterrada aca es justo
     # lo que se olvida.
-    [string]$ExpectedTorVersion = "0.4.9.13",
+    [string]$ExpectedTorVersion = "0.4.9.14",
 
     [switch]$VerifySignature
 )
