@@ -142,7 +142,9 @@ if (-not $Package) {
 }
 
 $gradlew = Join-Path $zsilentRoot "gradlew.bat"
-& $gradlew packageMsi "-Pzoka.nodeRepoRoot=$NodeRepoRoot" "-Pzsilent.torBundleDir=$TorBundleDir" "-Pzsilent.requireTorBundle=true" --no-daemon --stacktrace
+# -p: el runbook corre este script desde la raiz del nodo, donde no hay build
+# de Gradle; sin esto Gradle buscaba el proyecto en el directorio actual.
+& $gradlew -p $zsilentRoot packageMsi "-Pzoka.nodeRepoRoot=$NodeRepoRoot" "-Pzsilent.torBundleDir=$TorBundleDir" "-Pzsilent.requireTorBundle=true" --no-daemon --stacktrace
 if ($LASTEXITCODE -ne 0) { throw "Gradle packageMsi failed with exit code $LASTEXITCODE" }
 
 $msi = Join-Path $zsilentRoot "build\compose\binaries\main\msi\ZSilent Core-$appVersion.msi"
