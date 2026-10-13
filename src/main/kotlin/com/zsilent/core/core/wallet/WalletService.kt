@@ -6,6 +6,7 @@ import com.zsilent.core.models.FeeEstimate
 import com.zsilent.core.models.SendResult
 import com.zsilent.core.models.WalletHistory
 import com.zsilent.core.models.WalletListResponse
+import com.zsilent.core.models.WalletReceiveInfo
 import com.zsilent.core.services.ZokaCli
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -101,6 +102,19 @@ class WalletService(private val cli: ZokaCli) {
         require(wallet.isNotBlank()) { "wallet is required" }
         runWalletJsonCommand(
             args = listOf("wallet-balance", "--address", wallet, "--network", network, "--json", "--rpc-only"),
+            password = password
+        )
+    }
+
+    /** Dirección zkq1 de la wallet y altura de activación de la red. */
+    suspend fun hybridReceive(
+        wallet: String,
+        password: CharArray,
+        network: String = ZokaNetworkConfig.Network
+    ): WalletReceiveInfo = withContext(Dispatchers.IO) {
+        require(wallet.isNotBlank()) { "wallet is required" }
+        runWalletJsonCommand(
+            args = listOf("wallet-receive", "--address", wallet, "--hybrid", "--network", network, "--json"),
             password = password
         )
     }

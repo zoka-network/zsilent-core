@@ -258,6 +258,19 @@ data class ViewScanKeyRequest(
     val limit: Int? = null
 )
 
+// `zoka wallet-receive --hybrid --json`. La zkq1 vale para recibir solo si
+// `hybrid_activation_height` no es nulo; antes nadie puede pagarle. Un binario
+// sin `pq-experimental` no la informa (el comando falla) y la app la oculta.
+@Serializable
+data class WalletReceiveInfo(
+    val wallet: String = "",
+    val address: String = "",
+    @SerialName("hybrid_address")
+    val hybridAddress: String? = null,
+    @SerialName("hybrid_activation_height")
+    val hybridActivationHeight: Long? = null
+)
+
 // GET /mempool/tx/:hash — only ever describes an unconfirmed transaction.
 // The node has no tx-hash index over confirmed blocks, so a hash that is
 // already mined 404s here rather than resolving.

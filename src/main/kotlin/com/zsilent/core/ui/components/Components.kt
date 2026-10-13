@@ -964,19 +964,28 @@ fun CopyableKeyValueRow(label: String, value: String) {
 // ── Estados y varios ─────────────────────────────────────────────────────────
 
 @Composable
-fun QrCode(value: String, modifier: Modifier = Modifier) {
+fun QrCode(
+    value: String,
+    modifier: Modifier = Modifier,
+    // Una zkq1 tiene unos 1.715 caracteres: con Q no entra en ningun QR (el
+    // maximo es 1.273 bytes), asi que esa usa L, mas tamaño y modulos
+    // cuadrados, que se leen mejor cuando el codigo es denso.
+    errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.Q,
+    boxSize: Dp = 224.dp,
+    squareModules: Boolean = false,
+) {
     // Nivel de correccion Q (25%): al estilizar los modulos se pierde algo de
     // margen de lectura, y Q lo compensa de sobra. Con el nivel por defecto (L)
     // un QR con puntos redondeados puede volverse dificil de escanear con
     // camaras malas o poca luz.
-    val matrix = remember(value) {
+    val matrix = remember(value, errorCorrection) {
         runCatching {
             QRCodeWriter().encode(
                 value,
                 BarcodeFormat.QR_CODE,
                 0, 0,
                 mapOf(
-                    EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.Q,
+                    EncodeHintType.ERROR_CORRECTION to errorCorrection,
                     EncodeHintType.MARGIN to 1,
                 )
             )
@@ -996,7 +1005,7 @@ fun QrCode(value: String, modifier: Modifier = Modifier) {
 
     Box(
         modifier = modifier
-            .size(224.dp)
+            .size(boxSize)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, shape)
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
             .padding(12.dp)
@@ -1018,8 +1027,8 @@ fun QrCode(value: String, modifier: Modifier = Modifier) {
                 return (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7)
             }
 
-            // Modulos de datos como puntos redondeados.
-            val dot = cell * 0.86f
+            // Modulos de datos como puntos redondeados (o cuadrados llenos).
+            val dot = if (squareModules) cell else cell * 0.86f
             val inset = (cell - dot) / 2f
             for (x in 0 until qr.width) {
                 for (y in 0 until qr.height) {
@@ -1028,7 +1037,7 @@ fun QrCode(value: String, modifier: Modifier = Modifier) {
                         color = foreground,
                         topLeft = Offset(originX + x * cell + inset, originY + y * cell + inset),
                         size = Size(dot, dot),
-                        cornerRadius = CornerRadius(dot / 2f, dot / 2f),
+                        cornerRadius = if (squareModules) CornerRadius.Zero else CornerRadius(dot / 2f, dot / 2f),
                     )
                 }
             }

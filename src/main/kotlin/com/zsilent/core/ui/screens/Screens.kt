@@ -1182,7 +1182,10 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
     var amount      by remember { mutableStateOf("") }
     var password    by remember { mutableStateOf("") }
     var reviewOpen  by remember { mutableStateOf(false) }
-    val recipientLooksValid = address.startsWith("zka1")
+    // La zkq1 se acepta solo con la activación informada por el nodo; el CLI
+    // la vuelve a validar entera al enviar.
+    val recipientLooksValid = address.startsWith("zka1") ||
+        (ui.hybridActivationHeight != null && address.startsWith("zkq1") && address.length in 1600..1800)
     val amountLooksValid    = amount.toDoubleOrNull()?.let { it > 0.0 } == true
     val selectedWallet      = ui.wallets.firstOrNull { it.address == fromWallet }
     val fromLooksValid      = ui.wallets.any { it.address == fromWallet }
@@ -1557,6 +1560,34 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
                     ThinDivider()
                     KeyValueRow("Privacy", "receive address only")
                     KeyValueRow("Keys", "never exported")
+                }
+            }
+        }
+        LaunchedEffect(ui.activeWalletAddress) { appState.refreshHybridReceiveAddress() }
+        ui.hybridReceiveAddress?.let { zkq1 ->
+            Panel(title = "Quantic address (zkq1)", meta = "post-quantum") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    QrCode(
+                        zkq1,
+                        errorCorrection = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.L,
+                        boxSize = 420.dp,
+                        squareModules = true
+                    )
+                    Column(
+                        modifier = Modifier.widthIn(max = 520.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            "Payments to this address stay private against a future quantum computer. " +
+                                "Wallets that do not support zkq1 yet can still pay the address above.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        MonoText("${zkq1.take(24)}…${zkq1.takeLast(12)}", maxLines = 1)
+                        CopyIconButton(zkq1)
+                        ThinDivider()
+                        KeyValueRow("Length", "${zkq1.length} characters")
+                        KeyValueRow("Active since block", "${ui.hybridActivationHeight ?: "-"}")
+                    }
                 }
             }
         }

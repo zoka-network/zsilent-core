@@ -92,6 +92,10 @@ data class ZSilentUiState(
     val explorerEnabled: Boolean = true,
     val teamMiningEnabled: Boolean = false,
     val manualPeers: List<String> = emptyList(),
+    /** Dirección zkq1 de la wallet activa; nula mientras la red no la active. */
+    val hybridReceiveAddress: String? = null,
+    /** Altura de activación de la zkq1 informada por el nodo; nula = no activa. */
+    val hybridActivationHeight: Long? = null,
     val appLocked: Boolean = true,
     val sessionUnlocked: Boolean = false,
     val loginBusy: Boolean = false,
@@ -2950,6 +2954,37 @@ class ZSilentAppState(
         )
     }
 
+    /**
+     * Pregunta al nodo por la zkq1 de la wallet activa.
+     *
+     * Solo se guarda si la red ya fijó la altura de activación: antes nadie
+     * puede pagarle y mostrarla invitaría a un envío que la red rechaza. Si el
+     * binario no trae `pq-experimental` el comando falla y queda oculta.
+     */
+    fun refreshHybridReceiveAddress() {
+        val walletAddress = _uiState.value.activeWalletAddress
+        val password = sessionPassword?.copyOf() ?: return
+        if (walletAddress.isBlank()) {
+            password.fill('\u0000')
+            return
+        }
+        scope.launch {
+            val info = try {
+                runCatching { walletService.hybridReceive(walletAddress, password) }.getOrNull()
+            } finally {
+                password.fill('\u0000')
+            }
+            update {
+                if (it.activeWalletAddress != walletAddress) return@update it
+                val activation = info?.hybridActivationHeight
+                it.copy(
+                    hybridReceiveAddress = info?.hybridAddress?.takeIf { activation != null },
+                    hybridActivationHeight = activation
+                )
+            }
+        }
+    }
+
     private fun refreshUnlockedWalletData(
         walletAddress: String,
         walletLabel: String,
@@ -2990,6 +3025,7 @@ class ZSilentAppState(
                         walletError = null
                     )
                 }
+                refreshHybridReceiveAddress()
             }.onFailure { error ->
                 balancePassword.fill('\u0000')
                 historyPassword.fill('\u0000')
