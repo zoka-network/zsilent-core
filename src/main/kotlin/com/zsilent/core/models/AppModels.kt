@@ -281,6 +281,24 @@ data class MempoolTransaction(
     val status: String = ""
 )
 
+// GET /private/tx/:hash, reducido a lo que muestra el explorador. El cuerpo
+// completo trae pruebas y anillos (unos 350 KB) que acá no se usan. `status` y
+// `block_height` los calcula el nodo contra la cadena: el estado que viaja
+// dentro de la transacción lo estampa quien la crea y no cambia nunca.
+// Valores de `status`: Confirmed, Pending, Rejected, Spent o Unknown.
+//
+// `fee` queda afuera a propósito: en las pruebas nuevas la comisión va oculta y
+// el campo viene en 0, que en pantalla se leería como "sin comisión".
+@Serializable
+data class PrivateTxLookup(
+    @SerialName("tx_hash")
+    val txHash: String = "",
+    val status: String = "",
+    @SerialName("block_height")
+    val blockHeight: Long? = null,
+    val timestamp: Long = 0
+)
+
 @Serializable
 data class WalletListResponse(
     val network: String = "",

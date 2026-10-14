@@ -3,6 +3,7 @@ package com.zsilent.core.rpc
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.MempoolTransaction
+import com.zsilent.core.models.PrivateTxLookup
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -170,5 +171,48 @@ class ExplorerModelDecodingTest {
 
         assertEquals("h", block.hash)
         assertEquals(5L, block.height)
+    }
+
+    /**
+     * `GET /private/tx/:hash` returns the whole private body plus two fields the
+     * node computes against the chain (`get_private_tx_by_hash` and
+     * `con_estado_de_cadena` in `src/api/mod.rs`). Checked on 2026-10-14
+     * against the node at height 25,466: the private transaction of block 14,704
+     * came back "Confirmed" with `block_height` 14704, inside a ~350 KB body of
+     * proofs and ring members that the explorer skips.
+     */
+    @Test
+    fun a_confirmed_private_tx_reports_the_block_that_holds_it() {
+        val tx = codec.decodeFromString<PrivateTxLookup>(
+            """
+            {
+              "tx_hash": "452fb30432b8fb6eb088645529a57829",
+              "commitment": "c0ffee",
+              "ring_members": ["a", "b", "c"],
+              "ring_signature": [1, 2, 3],
+              "input_nullifiers": ["n1"],
+              "fee": 0,
+              "timestamp": 1785765348,
+              "status": "Confirmed",
+              "block_height": 14704
+            }
+            """.trimIndent()
+        )
+
+        assertEquals("452fb30432b8fb6eb088645529a57829", tx.txHash)
+        assertEquals("Confirmed", tx.status)
+        assertEquals(14704L, tx.blockHeight)
+        assertEquals(1785765348L, tx.timestamp)
+    }
+
+    /** Pending, Spent and Unknown carry no block: the model must say so, not 0. */
+    @Test
+    fun a_private_tx_without_a_block_keeps_the_height_null() {
+        val tx = codec.decodeFromString<PrivateTxLookup>(
+            """{"tx_hash":"6cbcf5fde38cc24d32408f385696e692","timestamp":1791989000,"status":"Pending"}"""
+        )
+
+        assertEquals("Pending", tx.status)
+        assertNull(tx.blockHeight)
     }
 }

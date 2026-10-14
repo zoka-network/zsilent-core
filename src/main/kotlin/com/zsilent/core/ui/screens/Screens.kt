@@ -48,6 +48,7 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -1207,6 +1208,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                 SendSuccessPanel(
                     result = ui.sendResult!!,
                     ui = ui,
+                    onOpenInExplorer = if (ui.explorerEnabled) appState::openInExplorer else null,
                     onNewTransfer = {
                         address = ""; amount = ""; password = ""; reviewOpen = false
                         appState.clearSendResult()
@@ -1220,7 +1222,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                         meta = "last ${ui.walletHistory.transactions.size.coerceAtMost(5)}"
                     ) {
                         ui.walletHistory.transactions.take(5).forEach { tx ->
-                            SendActivityRow(tx)
+                            SendActivityRow(tx, if (ui.explorerEnabled) appState::openInExplorer else null)
                         }
                     }
                 }
@@ -1396,7 +1398,9 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                         title = "Recent activity",
                         meta = "last ${ui.walletHistory.transactions.size.coerceAtMost(5)}"
                     ) {
-                        ui.walletHistory.transactions.take(5).forEach { tx -> SendActivityRow(tx) }
+                        ui.walletHistory.transactions.take(5).forEach { tx ->
+                            SendActivityRow(tx, if (ui.explorerEnabled) appState::openInExplorer else null)
+                        }
                     }
                 }
             }
@@ -1408,6 +1412,8 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
 private fun SendSuccessPanel(
     result: com.zsilent.core.models.SendResult,
     ui: ZSilentUiState,
+    // Nulo con el explorador apagado en Settings: entonces no hay botón.
+    onOpenInExplorer: ((String) -> Unit)?,
     onNewTransfer: () -> Unit
 ) {
     val checkScale = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -1458,16 +1464,20 @@ private fun SendSuccessPanel(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         CopyIconButton(hash)
-                        // Explorer link
-                        OutlinedButton(
-                            colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            onClick = {
-                                runCatching {
-                                    java.awt.Desktop.getDesktop().browse(java.net.URI("https://www.zokascan.cc/tx/$hash"))
-                                }
+                        // El explorador de la app, contra el nodo propio. Antes
+                        // abría zokascan.cc, que quedó sin datos al darse de baja
+                        // sus servidores en julio de 2026.
+                        if (onOpenInExplorer != null) {
+                            OutlinedButton(
+                                colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                onClick = { onOpenInExplorer(hash) }
+                            ) {
+                                Icon(Icons.Outlined.Explore, null, modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Explorer", fontSize = 11.sp)
                             }
-                        ) { Text("Explorer ↗", fontSize = 11.sp) }
+                        }
                     }
                 }
             }
@@ -1503,7 +1513,10 @@ private fun SendingPanel() {
 }
 
 @Composable
-private fun SendActivityRow(tx: com.zsilent.core.models.WalletHistoryEntry) {
+private fun SendActivityRow(
+    tx: com.zsilent.core.models.WalletHistoryEntry,
+    onOpenInExplorer: ((String) -> Unit)?
+) {
     val statusColor = when (tx.status.lowercase()) {
         "confirmed", "finalized" -> ZTheme.semantics.success
         "pending"                -> ZTheme.semantics.warning
@@ -1520,11 +1533,14 @@ private fun SendActivityRow(tx: com.zsilent.core.models.WalletHistoryEntry) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             CopyIconButton(tx.txHash, enabled = tx.txHash.isNotBlank())
-            OutlinedButton(
-                colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 3.dp),
-                onClick = { runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI("https://www.zokascan.cc/tx/${tx.txHash}")) } }
-            ) { Text("↗", fontSize = 11.sp) }
+            if (onOpenInExplorer != null) {
+                OutlinedButton(
+                    colors = zOutlinedButtonColors(), shape = MaterialTheme.shapes.small,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 3.dp),
+                    enabled = tx.txHash.isNotBlank(),
+                    onClick = { onOpenInExplorer(tx.txHash) }
+                ) { Icon(Icons.Outlined.Explore, "Open in explorer", modifier = Modifier.size(13.dp)) }
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.PeersResponse
+import com.zsilent.core.models.PrivateTxLookup
 import com.zsilent.core.models.TeamMiningControlRequest
 import com.zsilent.core.models.TeamMiningStatus
 import io.ktor.client.HttpClient
@@ -130,6 +131,16 @@ class ZokaRpcClient(val baseUrl: String) {
      */
     suspend fun mempoolTransaction(hash: String): MempoolTransaction? =
         getOrNull("/mempool/tx/$hash")
+
+    /**
+     * Where a private transaction stands on the chain: "Confirmed" with the
+     * block that holds it, "Pending", "Rejected"/"Spent" with the reason, or
+     * "Unknown". This is the only way to place an already-mined transaction,
+     * since the node indexes no confirmed tx hashes; it answers only for the
+     * private transactions whose body it keeps. 404 means it has no body.
+     */
+    suspend fun privateTransaction(hash: String): PrivateTxLookup? =
+        getOrNull("/private/tx/$hash")
 
     /**
      * Whether the chain knows this address. The node returns existence only —

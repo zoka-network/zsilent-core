@@ -1,12 +1,17 @@
 package com.zsilent.core.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -15,18 +20,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.MempoolTransaction
+import com.zsilent.core.models.PrivateTxLookup
 import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.ui.ZSilentAppState
 import com.zsilent.core.ui.ZSilentUiState
@@ -63,6 +73,7 @@ import java.time.format.DateTimeFormatter
  * The explorer can only see what that node already has, so it reports sync
  * state honestly instead of rendering a stale tip as if it were current.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     var query by remember { mutableStateOf("") }
@@ -71,13 +82,55 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     val localEndpoint = remember(appState) { appState.localRpc.isLocalEndpoint() }
     val hasTipReference = ui.localRpcOnline && ui.networkHeight > 0L
     val atObservedTip = hasTipReference && ui.syncRemainingBlocks <= 0L
+    // El resultado sale debajo del buscador, que en una ventana chica queda
+    // fuera de la vista: al abrir un bloque de la lista, o una transacción
+    // desde otra pantalla, la búsqueda terminaba sin que se viera nada.
+    val resultView = remember { BringIntoViewRequester() }
 
     fun runLookup(raw: String) {
         val term = raw.trim()
         if (term.isEmpty()) return
+        query = term
         result = ExplorerLookup.Loading
         scope.launch {
             result = withContext(Dispatchers.IO) { lookup(appState, term) }
+        }
+    }
+
+    // Un cuadro nuevo ya ubicado en la pantalla: recién ahí tiene sentido
+    // pedir que se vea.
+    LaunchedEffect(result) {
+        if (result == ExplorerLookup.Idle) return@LaunchedEffect
+        withFrameNanos { }
+        resultView.bringIntoView()
+    }
+
+    // Lo que otra pantalla mandó a buscar (el botón "Explorer" de una
+    // transacción). Se borra antes de correrlo para que no se repita al volver.
+    LaunchedEffect(ui.explorerRequest) {
+        val request = ui.explorerRequest ?: return@LaunchedEffect
+        appState.consumeExplorerRequest()
+        runLookup(request)
+    }
+
+    // Los últimos bloques que guarda el nodo, pedidos de nuevo solo cuando
+    // cambia la punta: LATEST_BLOCK_COUNT lecturas cada unos 3 minutos, lejos
+    // del límite de 1.200 por minuto con el que el nodo corta a un cliente.
+    // Si un pedido falla queda la lista anterior, con el error a la vista.
+    var latestBlocks by remember { mutableStateOf<List<BlockSummary>>(emptyList()) }
+    var latestError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(ui.chainHeight, ui.localRpcOnline) {
+        if (!ui.localRpcOnline || ui.chainHeight <= 0L) return@LaunchedEffect
+        val tip = ui.chainHeight
+        withContext(Dispatchers.IO) {
+            runCatching {
+                latestBlockNumbers(tip, LATEST_BLOCK_COUNT).mapNotNull { appState.localRpc.blockByHeight(it) }
+            }
+        }.onSuccess {
+            latestBlocks = it
+            latestError = null
+        }.onFailure {
+            latestError = it.message ?: it::class.simpleName ?: "Unknown error"
         }
     }
 
@@ -161,7 +214,7 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Height, block hash, address, or pending tx hash") },
+                    label = { Text("Height, block hash, address, or transaction hash") },
                     singleLine = true,
                     enabled = ui.localRpcOnline,
                     colors = zFieldColors(),
@@ -182,15 +235,29 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             }
             HintText(
                 "Digits are a block height. zka1... and zpriv:... are looked up as addresses. " +
-                    "Anything else is tried as a block hash, then as a pending transaction. " +
-                    "Confirmed transactions have no public index; use the view-key scan " +
-                    "below to find your own."
+                    "A hexadecimal hash is tried as a block, then as a private transaction " +
+                    "(found with its block when your node keeps its body, as it does for " +
+                    "the ones you sent), then as a pending transaction. To find payments " +
+                    "you received, use the view-key scan below."
             )
         }
 
-        LookupResult(result, localEndpoint)
+        // Sin búsqueda no se compone nada: un contenedor vacío sumaría un hueco.
+        if (result != ExplorerLookup.Idle) {
+            Column(
+                Modifier.bringIntoViewRequester(resultView),
+                verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
+            ) {
+                LookupResult(result, localEndpoint)
+            }
+        }
 
-        ExplorerChainOverview(ui)
+        ExplorerChainOverview(
+            ui = ui,
+            latestBlocks = latestBlocks,
+            latestError = latestError,
+            onOpenBlock = { runLookup(it.height.toString()) }
+        )
 
         ViewKeyScanPanel(ui, appState)
     }
@@ -344,32 +411,55 @@ private fun ExplorerHealthNotice(
     }
 }
 
-/** Organizes derived height references and the node's real private queue. */
+/**
+ * Los últimos bloques del nodo y su cola privada.
+ *
+ * El panel de bloques antes listaba alturas calculadas desde la punta ("height
+ * reference") sin pedirle nada al nodo: parecían bloques, no traían ningún dato
+ * y no se podían abrir, así que el explorador daba la impresión de no andar.
+ * Ahora cada fila es un bloque que el nodo devolvió, y se abre con un clic.
+ */
 @Composable
-private fun ExplorerChainOverview(ui: ZSilentUiState) {
+private fun ExplorerChainOverview(
+    ui: ZSilentUiState,
+    latestBlocks: List<BlockSummary>,
+    latestError: String?,
+    onOpenBlock: (BlockSummary) -> Unit
+) {
     Row(
         Modifier.fillMaxWidth().height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Panel(
-            title = "Recent height references",
-            meta = if (ui.localRpcOnline) "from node tip" else "last observed",
+            title = "Latest blocks",
+            meta = when {
+                !ui.localRpcOnline -> "node unavailable"
+                latestBlocks.isEmpty() -> "loading"
+                else -> "read from your node"
+            },
             modifier = Modifier.weight(1f)
         ) {
-            val latestBlocks = if (!ui.localRpcOnline && ui.chainHeight <= 0L) {
-                emptyList()
-            } else {
-                latestBlockNumbers(ui.chainHeight, count = 5)
-            }
-            HintText("These heights are derived from the current tip. Open one above to request its block data.")
-            if (latestBlocks.isEmpty()) {
-                EmptyState("No block height has been reported yet.")
-            } else {
-                latestBlocks.forEach { height ->
-                    KeyValueRow(
-                        "Height $height",
-                        if (height == ui.chainHeight) "current node tip" else "height reference"
-                    )
+            when {
+                latestBlocks.isEmpty() && !ui.localRpcOnline ->
+                    EmptyState("Start the node to list its latest blocks.")
+                latestBlocks.isEmpty() && latestError != null ->
+                    ErrorText("The node did not return its latest blocks: $latestError")
+                latestBlocks.isEmpty() ->
+                    EmptyState("Asking the node for its latest blocks…")
+                else -> {
+                    latestBlocks.forEach { block ->
+                        LatestBlockRow(block, isTip = block.height == ui.chainHeight) {
+                            onOpenBlock(block)
+                        }
+                    }
+                    when {
+                        !ui.localRpcOnline ->
+                            HintText("The node is not answering; these are the last blocks it returned.")
+                        latestError != null ->
+                            HintText("Could not refresh just now ($latestError); showing the last blocks received.")
+                        else ->
+                            HintText("Click a block to open it above.")
+                    }
                 }
             }
         }
@@ -593,6 +683,11 @@ private fun LookupResult(result: ExplorerLookup, localEndpoint: Boolean) {
 
         is ExplorerLookup.Found -> BlockDetail(result.block, result.transactions)
 
+        is ExplorerLookup.PrivateTx -> {
+            PrivateTxDetail(result.tx)
+            result.block?.let { BlockDetail(it, transactions = null) }
+        }
+
         is ExplorerLookup.PendingTx -> PendingTxDetail(result.tx)
 
         is ExplorerLookup.Account -> Panel(title = "Address", meta = "exists on chain") {
@@ -698,11 +793,80 @@ private fun PendingTxDetail(tx: MempoolTransaction) {
     }
 }
 
+/**
+ * Una transacción privada según la cadena, con lo que su cuerpo ya tiene de
+ * público: estado, bloque y hora. Emisor, receptor, monto y comisión no viajan
+ * en claro, así que no hay nada de eso para mostrar.
+ */
+@Composable
+private fun PrivateTxDetail(tx: PrivateTxLookup) {
+    val status = tx.status.ifBlank { "Unknown" }
+    val (tone, meaning) = when (status.lowercase()) {
+        "confirmed" -> ZTone.On to (tx.blockHeight?.let { "included in block #$it" } ?: "included in a block")
+        "pending" -> ZTone.Warn to "waiting to be mined"
+        "rejected" -> ZTone.Err to "its note was already spent by another transaction; no miner will include it"
+        "spent" -> ZTone.Warn to "its note no longer exists, and the node cannot tell which transaction spent it"
+        else -> ZTone.Off to "the node cannot place it on the chain"
+    }
+    Panel(title = "Private transaction", meta = status.lowercase()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill(status.lowercase(), tone)
+            Pill("amounts private", ZTone.Info)
+        }
+        CopyableKeyValueRow("Hash", tx.txHash)
+        KeyValueRow("Status", meaning)
+        tx.blockHeight?.let { KeyValueRow("Block", "#$it") }
+        KeyValueRow("Created", formatTimestamp(tx.timestamp))
+        HintText(
+            "Sender, receiver, amount and fee are private by protocol: no node " +
+                "stores them in clear."
+        )
+    }
+}
+
+/** Una fila de "Latest blocks": un bloque que devolvió el nodo; se abre con un clic. */
+@Composable
+private fun LatestBlockRow(block: BlockSummary, isTip: Boolean, onOpen: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 6.dp, vertical = ZTheme.spacing.row / 2),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("#${block.height}", style = ZTheme.text.mono, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            formatBlockTime(block.timestamp),
+            style = ZTheme.text.mono,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            shortBlockHash(block.hash),
+            style = ZTheme.text.mono,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            "${block.transactionsCount} tx · ${block.privateTxCount} private",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+        if (isTip) Pill("tip", ZTone.On)
+    }
+}
+
 /** What a single explorer search produced. */
 private sealed interface ExplorerLookup {
     data object Idle : ExplorerLookup
     data object Loading : ExplorerLookup
     data class Found(val block: BlockSummary, val transactions: BlockTransactions?) : ExplorerLookup
+    /** [block] es el bloque que la contiene, si está confirmada y el nodo lo devolvió. */
+    data class PrivateTx(val tx: PrivateTxLookup, val block: BlockSummary?) : ExplorerLookup
     data class PendingTx(val tx: MempoolTransaction) : ExplorerLookup
     data class Account(val address: String) : ExplorerLookup
     data class NotFound(val term: String, val hint: String) : ExplorerLookup
@@ -712,11 +876,13 @@ private sealed interface ExplorerLookup {
 /**
  * Resolves one search term against the configured node.
  *
- * All-digits is treated as a height; anything else is tried as a block hash and
- * then as a pending transaction. A confirmed transaction hash cannot be
- * resolved at all — the node indexes transactions only while they sit in the
- * mempool — so that case gets an explicit hint rather than a bare "not found",
- * which would wrongly suggest the transaction never existed.
+ * All-digits is treated as a height and address shapes go to the account
+ * check. Anything else must be hexadecimal, because it is pasted into the URL
+ * path; it is tried as a block hash, then as a private transaction and last as
+ * a pending one. The node keeps no index of confirmed transaction hashes: a
+ * private one is found only when the node keeps its body (it then reports the
+ * block that holds it), so a miss gets an explicit hint rather than a bare
+ * "not found", which would wrongly suggest the transaction never existed.
  */
 private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLookup = try {
     val rpc = appState.localRpc
@@ -747,6 +913,19 @@ private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLoo
                     "created it."
             )
         }
+    } else if (term.startsWith("zkq1")) {
+        ExplorerLookup.NotFound(
+            term,
+            "zkq1 addresses only receive private payments, which leave no public " +
+                "record to look up. To find payments you received, use the view-key " +
+                "scan below."
+        )
+    } else if (!HEX_TERM.matches(term)) {
+        ExplorerLookup.NotFound(
+            term,
+            "Not a height, an address or a hash. Hashes are hexadecimal: copy them " +
+                "with the copy button next to a block or a transaction."
+        )
     } else {
         val block = rpc.blockByHash(term)
         if (block != null) {
@@ -755,17 +934,26 @@ private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLoo
                 runCatching { rpc.blockTransactions(block.height) }.getOrNull()
             )
         } else {
-            val pending = rpc.mempoolTransaction(term)
-            if (pending != null) {
-                ExplorerLookup.PendingTx(pending)
+            val privateTx = rpc.privateTransaction(term)
+            if (privateTx != null) {
+                val holder = privateTx.blockHeight?.let { height ->
+                    runCatching { rpc.blockByHeight(height) }.getOrNull()
+                }
+                ExplorerLookup.PrivateTx(privateTx, holder)
             } else {
-                ExplorerLookup.NotFound(
-                    term,
-                    "Not a block hash on this node, and not a pending transaction. " +
-                        "Transactions already mined into a block cannot be looked up by " +
-                        "hash — the node keeps no index for them. Open the block instead. " +
-                        "To find your own private payments, use the view key scan below."
-                )
+                val pending = rpc.mempoolTransaction(term)
+                if (pending != null) {
+                    ExplorerLookup.PendingTx(pending)
+                } else {
+                    ExplorerLookup.NotFound(
+                        term,
+                        "Not a block hash on this node, nor a transaction it knows. The " +
+                            "node keeps no index of confirmed transaction hashes: it finds " +
+                            "a private one only when it keeps its body, as it does for the " +
+                            "ones sent from this node. To find payments you received, use " +
+                            "the view-key scan below."
+                    )
+                }
             }
         }
     }
@@ -787,6 +975,33 @@ private fun latestBlockNumbers(height: Long, count: Int): List<Long> {
     val first = (height - count + 1).coerceAtLeast(0)
     return (height downTo first).toList()
 }
+
+/** Filas del panel "Latest blocks". */
+private const val LATEST_BLOCK_COUNT = 8
+
+/**
+ * Lo único que se busca como hash. El término viaja pegado a la ruta de la URL,
+ * así que cualquier otra cosa (barras, signos) ni siquiera llega al nodo.
+ */
+private val HEX_TERM = Regex("^[0-9a-fA-F]{16,128}$")
+
+private val blockClockFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+
+private val blockDayFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
+
+/** La hora del bloque, con la fecha delante si no es de hoy. */
+private fun formatBlockTime(epochSeconds: Long): String {
+    if (epochSeconds <= 0) return "--:--:--"
+    val instant = Instant.ofEpochSecond(epochSeconds)
+    val zone = ZoneId.systemDefault()
+    val sameDay = instant.atZone(zone).toLocalDate() == java.time.LocalDate.now(zone)
+    return if (sameDay) blockClockFormatter.format(instant) else blockDayFormatter.format(instant)
+}
+
+private fun shortBlockHash(hash: String): String =
+    if (hash.length <= 16) hash else "${hash.take(8)}…${hash.takeLast(6)}"
 
 /**
  * ZKA en circulación: lo emitido, el techo y lo que falta.

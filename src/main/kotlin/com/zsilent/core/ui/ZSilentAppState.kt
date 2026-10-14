@@ -90,6 +90,12 @@ data class ZSilentUiState(
     // opt-in default is reserved for the sections that move funds; this one
     // is read-only and never leaves the local node.
     val explorerEnabled: Boolean = true,
+    /**
+     * Búsqueda que otra pantalla le encargó al explorador, por ejemplo el botón
+     * "Explorer" de una transacción. El explorador la corre una sola vez y la
+     * borra con [ZSilentAppState.consumeExplorerRequest].
+     */
+    val explorerRequest: String? = null,
     val teamMiningEnabled: Boolean = false,
     val manualPeers: List<String> = emptyList(),
     /** Dirección zkq1 de la wallet activa; nula mientras la red no la active. */
@@ -454,6 +460,26 @@ class ZSilentAppState(
 
     fun select(section: AppSection) {
         update { it.copy(selectedSection = section) }
+    }
+
+    /**
+     * Abre el explorador de la app con [term] ya buscado.
+     *
+     * Reemplaza los enlaces a zokascan.cc. Ese sitio leía de servidores que se
+     * dieron de baja en julio de 2026 y quedó sin datos, y además mandaba la
+     * consulta a un tercero; el explorador interno le pregunta solo al nodo
+     * propio. Con el explorador apagado en Settings no hace nada: los botones
+     * que llaman acá no se muestran en ese caso.
+     */
+    fun openInExplorer(term: String) {
+        val clean = term.trim()
+        if (clean.isEmpty() || !_uiState.value.explorerEnabled) return
+        update { it.copy(selectedSection = AppSection.Explorer, explorerRequest = clean) }
+    }
+
+    /** El explorador ya tomó el pedido; se borra para no repetir la búsqueda. */
+    fun consumeExplorerRequest() {
+        update { it.copy(explorerRequest = null) }
     }
 
     fun setWalletSetupMode(mode: WalletSetupMode) {
