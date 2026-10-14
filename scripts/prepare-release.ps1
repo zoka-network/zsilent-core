@@ -63,16 +63,24 @@ $gradleBuild = Join-Path $zsilentRoot "build.gradle.kts"
 $cargoToml = Join-Path $NodeRepoRoot "Cargo.toml"
 $appVersion = Read-VersionMatch -Path $gradleBuild -Pattern '^[\s]*val[\s]+releaseVersion[\s]*=[\s]*"([^"]+)"' -Label "ZSilent releaseVersion"
 $nodeSourceVersion = Read-VersionMatch -Path $cargoToml -Pattern '^[\s]*version[\s]*=[\s]*"([^"]+)"' -Label "Cargo package version"
-if ($appVersion -ne $nodeSourceVersion) {
-    throw "Version mismatch: ZSilent=$appVersion, node source=$nodeSourceVersion"
+# ZSilent puede sacar un arreglo propio sin nodo nuevo (2.1.3 con el nodo
+# 2.1.2): la app solo puede ir adelante en el ultimo numero. Lo que no se
+# relaja es lo que motivo este control, el incidente de la v1.5.0: los binarios
+# tienen que ser la version de la fuente del nodo, y sus hashes van al manifiesto.
+$appParts = $appVersion.Split(".")
+$nodeParts = $nodeSourceVersion.Split(".")
+$sameMinor = $appParts.Count -eq 3 -and $nodeParts.Count -eq 3 -and
+    $appParts[0] -eq $nodeParts[0] -and $appParts[1] -eq $nodeParts[1]
+if (-not $sameMinor -or [int]$appParts[2] -lt [int]$nodeParts[2]) {
+    throw "Version mismatch: ZSilent=$appVersion, node source=$nodeSourceVersion (the app may only be ahead in the patch number)"
 }
 
 $zokaExe = Join-Path $NodeRepoRoot "target\release\zoka.exe"
 $zokahdExe = Join-Path $NodeRepoRoot "target\release\zokahd.exe"
 $zokaVersion = Get-BinaryVersion -Path $zokaExe -CommandName "zoka"
 $zokahdVersion = Get-BinaryVersion -Path $zokahdExe -CommandName "zokahd"
-if ($zokaVersion -ne $appVersion -or $zokahdVersion -ne $appVersion) {
-    throw "Binary version mismatch: app=$appVersion, zoka=$zokaVersion, zokahd=$zokahdVersion. Rebuild both release binaries."
+if ($zokaVersion -ne $nodeSourceVersion -or $zokahdVersion -ne $nodeSourceVersion) {
+    throw "Binary version mismatch: node source=$nodeSourceVersion, zoka=$zokaVersion, zokahd=$zokahdVersion. Rebuild both release binaries."
 }
 
 $networkManifest = Join-Path $NodeRepoRoot "docs\mainnet-network.v1.json"
