@@ -1583,12 +1583,9 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
         ui.hybridReceiveAddress?.let { zkq1 ->
             Panel(title = "Quantic address (zkq1)", meta = "post-quantum") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    QrCode(
-                        zkq1,
-                        errorCorrection = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.L,
-                        boxSize = 420.dp,
-                        squareModules = true
-                    )
+                    // En un solo QR la zkq1 no se lee desde la pantalla: va en
+                    // partes que ZKAPriv junta (ver MultiPartQr).
+                    com.zsilent.core.ui.components.AnimatedQrCode(zkq1, boxSize = 360.dp)
                     Column(
                         modifier = Modifier.widthIn(max = 520.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1597,6 +1594,12 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
                             "Payments to this address stay private against a future quantum computer. " +
                                 "Wallets that do not support zkq1 yet can still pay the address above.",
                             style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "The code changes every half second: keep the phone's camera on it " +
+                                "until ZKAPriv has read every part.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         MonoText("${zkq1.take(24)}…${zkq1.takeLast(12)}", maxLines = 1)
                         CopyIconButton(zkq1)
