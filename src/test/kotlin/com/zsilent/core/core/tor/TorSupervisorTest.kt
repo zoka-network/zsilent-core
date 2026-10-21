@@ -26,8 +26,8 @@ class TorSupervisorTest {
         // Managed SOCKS port is 19050 to avoid clashing with Tor Browser's 9050.
         assertContains(torrc, "SocksPort 127.0.0.1:19050")
         assertContains(torrc, "HiddenServiceVersion 3")
-        // Virtual port 28080 maps to the local node listener.
-        assertContains(torrc, "HiddenServicePort 28080 127.0.0.1:28080")
+        // The virtual port is the node's P2P port on the Quantic testnet.
+        assertContains(torrc, "HiddenServicePort 28180 127.0.0.1:28180")
         assertContains(torrc, "DataDirectory ${dataDir.absolutePath.replace("\\", "/")}")
         assertContains(torrc, "HiddenServiceDir ${hsDir.absolutePath.replace("\\", "/")}")
         // No geoip bundle provided -> no GeoIP lines (still a valid torrc).

@@ -92,9 +92,9 @@ class MiningController(
             _logs.tryEmit(RuntimeLog("mining", "Zoka CLI binary not found. Build target/release/zoka first."))
             return
         }
-        if (!address.startsWith("zka1")) {
+        if (!ZokaNetworkConfig.isAddress(address)) {
             _status.value = ServiceStatus.Error
-            _logs.tryEmit(RuntimeLog("mining", "Mining requires a full zka1 reward address."))
+            _logs.tryEmit(RuntimeLog("mining", "Mining requires a full Zoka Quantic reward address."))
             return
         }
         if (password.isBlank()) {

@@ -66,16 +66,15 @@ object ZokaNetworkConfig {
     // pone en el manifiesto o en `ZSILENT_REMOTE_RPC_URL`.
     private const val DEFAULT_REMOTE_RPC_URL = ""
 
-    // La cadena Zenith es la testnet de Zoka Quantic desde octubre de 2026, y
-    // ZSilent se presenta como cliente de Zoka Quantic: lo que ve la persona es
-    // "Zoka Quantic · Testnet". El chain id lleva "mainnet" por historia y no
-    // se puede renombrar: de el sale el hash del genesis. Por eso `Network`
-    // sigue valiendo "mainnet" para esta cadena (es la palabra que se le pasa
-    // al nodo con --network, y los nodos viejos no conocen otra) y lo que se
-    // muestra sale de `DisplayName`/`ShortName`/`IsTestnet`, nunca de `Network`.
+    // Desde la 3.0 ZSilent es solo de Zoka Quantic (decisión del 21/10/2026):
+    // Zenith queda en las versiones anteriores y en la línea de comandos.
+    // `Network` es la palabra que se le pasa al nodo con --network.
     const val ZENITH_CHAIN_ID = "zoka-mainnet-zenith-v1"
-    private const val DEFAULT_CHAIN_ID = ZENITH_CHAIN_ID
-    private const val DEFAULT_NETWORK = "mainnet"
+    const val QUANTIC_TESTNET_CHAIN_ID = "zoka-quantic-testnet-v1"
+    const val QUANTIC_MAINNET_CHAIN_ID = "zoka-quantic-v1"
+    const val QUANTIC_REGTEST_CHAIN_ID = "zoka-quantic-regtest-v1"
+    private const val DEFAULT_CHAIN_ID = QUANTIC_TESTNET_CHAIN_ID
+    private const val DEFAULT_NETWORK = "quantic-testnet"
 
     /** App version, injected at build time via -Dzsilent.version (see build.gradle.kts). */
     val AppVersion: String = System.getProperty("zsilent.version")?.takeIf { it.isNotBlank() } ?: "dev"
@@ -155,11 +154,7 @@ object ZokaNetworkConfig {
             ?: manifest?.chainId?.takeIf { it.isNotBlank() }
             ?: DEFAULT_CHAIN_ID
         val network = envOrProperty("ZSILENT_NETWORK", "zsilent.network")
-            ?: when {
-                chainId.contains("testnet", ignoreCase = true) -> "testnet"
-                chainId.contains("mainnet", ignoreCase = true) -> "mainnet"
-                else -> DEFAULT_NETWORK
-            }
+            ?: networkForChain(chainId)
         val remoteRpc = envOrProperty("ZSILENT_REMOTE_RPC_URL", "zsilent.remoteRpcUrl")
             ?: activeRpc.takeIf { it.isNotBlank() }
             ?: DEFAULT_REMOTE_RPC_URL
@@ -182,29 +177,64 @@ object ZokaNetworkConfig {
         ).also(::configure)
     }
 
-    // Sin configurar todavia (chain id vacio) se asume la cadena por defecto,
-    // que es Zenith: mostrar "Mainnet" un instante seria justo el error que el
-    // titulo tiene que evitar.
+    /** La palabra de `--network` para una cadena de Quantic. */
+    fun networkForChain(chainId: String): String = when (chainId.ifBlank { DEFAULT_CHAIN_ID }) {
+        QUANTIC_MAINNET_CHAIN_ID -> "quantic-mainnet"
+        QUANTIC_REGTEST_CHAIN_ID -> "quantic-regtest"
+        else -> DEFAULT_NETWORK
+    }
+
+    /** El puerto P2P del nodo en esta red (el del servicio onion y de los pares). */
+    val P2pPort: Int
+        get() = p2pPort(current.network)
+
+    fun p2pPort(network: String): Int = when (network.ifBlank { DEFAULT_NETWORK }) {
+        "quantic-mainnet" -> 28380
+        "quantic-regtest" -> 28280
+        else -> 28180
+    }
+
+    /** Cómo empiezan las direcciones de la red configurada (`zqtest1…`). */
+    val AddressPrefix: String
+        get() = addressPrefix(current.network)
+
+    fun addressPrefix(network: String): String = when (network.ifBlank { DEFAULT_NETWORK }) {
+        "quantic-mainnet" -> "zq1"
+        "quantic-regtest" -> "zqregtest1"
+        else -> "zqtest1"
+    }
+
+    /**
+     * Si `text` parece una dirección de esta red. Es el filtro rápido de la
+     * interfaz; la que decide es la del nodo, que comprueba el checksum.
+     */
+    fun isAddress(text: String): Boolean {
+        val trimmed = text.trim()
+        return trimmed.length > AddressPrefix.length + 64 && trimmed.startsWith(AddressPrefix)
+    }
+
+    // Sin configurar todavía (chain id vacío) se asume la cadena por defecto,
+    // la testnet: mostrar "Mainnet" un instante sería justo el error que el
+    // título tiene que evitar.
     fun isTestnet(chainId: String, network: String): Boolean {
-        val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
-        return chain == ZENITH_CHAIN_ID || network.equals("testnet", ignoreCase = true)
+        return chainId.ifBlank { DEFAULT_CHAIN_ID } != QUANTIC_MAINNET_CHAIN_ID
     }
 
     fun displayName(chainId: String, network: String): String {
         val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
         return when {
-            chain == ZENITH_CHAIN_ID -> "Zoka Quantic · Testnet"
-            network.equals("testnet", ignoreCase = true) -> "Testnet"
-            else -> "Mainnet"
+            chain == QUANTIC_MAINNET_CHAIN_ID -> "Zoka Quantic"
+            chain == QUANTIC_REGTEST_CHAIN_ID -> "Zoka Quantic · Regtest"
+            else -> "Zoka Quantic · Testnet"
         }
     }
 
     fun shortName(chainId: String, network: String): String {
         val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
         return when {
-            chain == ZENITH_CHAIN_ID -> "quantic testnet"
-            network.equals("testnet", ignoreCase = true) -> "testnet"
-            else -> "mainnet"
+            chain == QUANTIC_MAINNET_CHAIN_ID -> "quantic"
+            chain == QUANTIC_REGTEST_CHAIN_ID -> "quantic regtest"
+            else -> "quantic testnet"
         }
     }
 
@@ -221,13 +251,15 @@ object ZokaNetworkConfig {
         if (!configured.isNullOrBlank()) {
             return File(configured).let { if (it.isAbsolute) it else File(projectRoot, configured) }
         }
+        val network = envOrProperty("ZSILENT_NETWORK", "zsilent.network") ?: DEFAULT_NETWORK
+        val name = "$network-network.v1.json"
         return listOfNotNull(
-            resourcesRoot?.let { File(it, "docs/mainnet-network.v1.json") },
-            resourcesRoot?.let { File(it, "config/mainnet-network.v1.json") },
-            resourcesRoot?.let { File(it, "mainnet-network.v1.json") },
-            File(projectRoot, "docs/mainnet-network.v1.json"),
-            File(projectRoot, "config/mainnet-network.v1.json"),
-            File(projectRoot, "mainnet-network.v1.json")
+            resourcesRoot?.let { File(it, "docs/$name") },
+            resourcesRoot?.let { File(it, "config/$name") },
+            resourcesRoot?.let { File(it, name) },
+            File(projectRoot, "docs/$name"),
+            File(projectRoot, "config/$name"),
+            File(projectRoot, name)
         ).firstOrNull { it.exists() }
     }
 

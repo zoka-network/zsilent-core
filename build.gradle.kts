@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "2.1.4"
+val releaseVersion = "3.0.0"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
@@ -21,11 +21,9 @@ val nodeRepoRoot = (findProperty("zoka.nodeRepoRoot") as String?)
 val binaryExt = if (hostOs.isWindows) ".exe" else ""
 val zokaExe = nodeRepoRoot.file("target/release/zoka$binaryExt")
 val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
-// Manifiesto de Zenith. El nombre de archivo conserva "mainnet" por historia:
-// Zenith es la testnet de Zoka Quantic desde octubre de 2026. El manifiesto de
-// `zoka-testnet-v1` ya no se empaqueta: esa red nunca estuvo operativa y el
-// nodo la retiro.
-val networkManifest = nodeRepoRoot.file("docs/mainnet-network.v1.json")
+// Desde la 3.0 ZSilent es solo de Zoka Quantic: se empaqueta el manifiesto de la
+// testnet de Quantic (el de Zenith queda en las versiones anteriores).
+val networkManifest = nodeRepoRoot.file("docs/quantic-testnet-network.v1.json")
 val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
 val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")
 val torBundleDir = (findProperty("zsilent.torBundleDir") as String?)
@@ -72,7 +70,7 @@ val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
         if (missing.isNotEmpty()) {
             throw GradleException(
                 "Missing ZSilent runtime file(s): ${missing.joinToString { it.path }}. " +
-                    "Build the Rust node first with: cargo build --release --features randomx --bins"
+                    "Build the Rust node first with: cargo build --release --features randomx,quantic --bins"
             )
         }
         val missingTrustedSetup = requiredTrustedSetupFiles

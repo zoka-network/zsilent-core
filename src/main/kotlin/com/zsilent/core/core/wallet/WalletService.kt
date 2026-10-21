@@ -1,18 +1,19 @@
 package com.zsilent.core.core.wallet
 
 import com.zsilent.core.config.ZokaNetworkConfig
-import com.zsilent.core.models.WalletBalance
 import com.zsilent.core.models.FeeEstimate
+import com.zsilent.core.models.LocalWallet
 import com.zsilent.core.models.SendResult
+import com.zsilent.core.models.WalletBalance
 import com.zsilent.core.models.WalletHistory
+import com.zsilent.core.models.WalletHistoryEntry
 import com.zsilent.core.models.WalletListResponse
 import com.zsilent.core.models.WalletReceiveInfo
 import com.zsilent.core.services.ZokaCli
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.file.Path
 
@@ -71,6 +72,15 @@ data class WalletSecretsResult(
     val spendPublicKeyHex: String = ""
 )
 
+/** Palabras de la frase de Zoka Quantic: 256 bits, 128 frente a Grover. */
+const val QUANTIC_SEED_WORDS = 24
+
+/**
+ * Las wallets de Zoka Quantic, por `zoka quantic-wallet` (ZSilent es solo de
+ * Quantic desde la 3.0). Las firmas son las de antes para que el resto de la
+ * app no cambie: la wallet se elige por su dirección (`--address`), la
+ * contraseña viaja por variable de entorno y la frase nunca como argumento.
+ */
 class WalletService(private val cli: ZokaCli) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -83,14 +93,12 @@ class WalletService(private val cli: ZokaCli) {
         password: CharArray? = null,
         network: String = ZokaNetworkConfig.Network
     ): WalletListResponse = withContext(Dispatchers.IO) {
-        runWalletJsonCommand(
-            // ZSilent always runs its own embedded fullnode against the same
-            // local chain DB, so a local-DB attempt here would just hit a
-            // RocksDB lock conflict and fall back to RPC anyway. Going
-            // straight to RPC skips that wasted round trip and gives a
-            // single deterministic full scan instead of a partial one.
-            args = listOf("wallet-list", "--network", network, "--json", "--rpc-only"),
-            password = password
+        val reply: QwList = runJson(quanticArgs("list", network), password)
+        WalletListResponse(
+            network = reply.network.ifBlank { network },
+            privateWallets = reply.details.map { wallet ->
+                LocalWallet(name = wallet.name, address = wallet.address, encrypted = true, unlocked = wallet.unlocked)
+            }
         )
     }
 
@@ -100,23 +108,33 @@ class WalletService(private val cli: ZokaCli) {
         network: String = ZokaNetworkConfig.Network
     ): WalletBalance = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
-        runWalletJsonCommand(
-            args = listOf("wallet-balance", "--address", wallet, "--network", network, "--json", "--rpc-only"),
-            password = password
+        val reply: QwBalance = runJson(quanticArgs("balance", network) + select(wallet), password)
+        val total = reply.spendableAtoms + reply.immatureAtoms
+        WalletBalance(
+            wallet = reply.name,
+            address = wallet.takeIf(ZokaNetworkConfig::isAddress).orEmpty(),
+            balanceAtoms = reply.spendableAtoms,
+            balance = formatZka(reply.spendableAtoms),
+            lockedBalanceAtoms = reply.immatureAtoms,
+            lockedBalance = formatZka(reply.immatureAtoms),
+            totalBalanceAtoms = total,
+            totalBalance = formatZka(total),
+            maxSendableAtoms = reply.maxSendableAtoms
         )
     }
 
-    /** Dirección zkq1 de la wallet y altura de activación de la red. */
+    /**
+     * En Quantic la dirección que se comparte es una sola (unos 1.730
+     * caracteres): no hay una segunda dirección híbrida que activar.
+     */
     suspend fun hybridReceive(
         wallet: String,
         password: CharArray,
         network: String = ZokaNetworkConfig.Network
     ): WalletReceiveInfo = withContext(Dispatchers.IO) {
+        password.fill('\u0000')
         require(wallet.isNotBlank()) { "wallet is required" }
-        runWalletJsonCommand(
-            args = listOf("wallet-receive", "--address", wallet, "--hybrid", "--network", network, "--json"),
-            password = password
-        )
+        WalletReceiveInfo(wallet = wallet, address = wallet)
     }
 
     suspend fun history(
@@ -126,39 +144,52 @@ class WalletService(private val cli: ZokaCli) {
         network: String = ZokaNetworkConfig.Network
     ): WalletHistory = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
-        runWalletJsonCommand(
-            args = listOf(
-                "wallet-history",
-                "--address", wallet,
-                "--network", network,
-                "--rpc-only",
-                "--limit", limit.coerceIn(1, 100).toString(),
-                "--json"
-            ),
-            password = password
+        val reply: QwHistory = runJson(
+            quanticArgs("history", network) + select(wallet) + listOf("--limit", limit.coerceIn(1, 100).toString()),
+            password
+        )
+        WalletHistory(
+            wallet = reply.name,
+            count = reply.count,
+            transactions = reply.transactions.map { tx ->
+                WalletHistoryEntry(
+                    txHash = tx.txid,
+                    status = "confirmed",
+                    timestamp = tx.timestamp ?: 0,
+                    amountHidden = false,
+                    feeHidden = false,
+                    height = tx.height,
+                    kind = tx.kind,
+                    amountAtoms = tx.amountAtoms,
+                    confirmations = tx.confirmations
+                )
+            }
         )
     }
 
+    /**
+     * La comisión de Quantic es fija por acción (0,0001 ZKA, mínimo 2): no hay
+     * prioridad que elegir. Lo que cambia con el envío es cuántas notas gasta,
+     * y eso lo sabe la wallet: por eso hace falta abrirla.
+     */
     suspend fun estimateFee(
+        wallet: String,
+        password: CharArray,
         amount: String,
-        priority: String = "normal",
         network: String = ZokaNetworkConfig.Network
     ): FeeEstimate = withContext(Dispatchers.IO) {
+        require(wallet.isNotBlank()) { "wallet is required" }
         require(amount.isNotBlank()) { "amount is required" }
-        require(priority in setOf("low", "normal", "high")) { "priority must be low, normal, or high" }
-        val output = runTextCommand(
-            args = listOf(
-                "estimate-fee",
-                "--amount", amount,
-                "--priority", priority,
-                "--network", network
-            ),
-            password = null
+        val reply: QwFee = runJson(
+            quanticArgs("estimate-fee", network) + select(wallet) + listOf("--amount", amount.trim()),
+            password
         )
         FeeEstimate(
-            amount = output.lineValue("Amount") ?: amount,
-            priority = output.lineValue("Priority") ?: priority,
-            fee = output.lineValue("Estimated fee") ?: "0 ZKA"
+            amount = amount.trim(),
+            priority = "fixed",
+            fee = "${formatZka(reply.feeAtoms ?: MIN_FEE_ATOMS)} ZKA",
+            maxSendableAtoms = reply.maxSendableAtoms,
+            problem = reply.reason.takeIf { !reply.enough }
         )
     }
 
@@ -168,41 +199,18 @@ class WalletService(private val cli: ZokaCli) {
         amount: String,
         fee: String,
         password: CharArray,
+        memo: String = "",
         network: String = ZokaNetworkConfig.Network
     ): SendResult = withContext(Dispatchers.IO) {
         require(from.isNotBlank()) { "sender address is required" }
         require(to.isNotBlank()) { "recipient address is required" }
         require(amount.isNotBlank()) { "amount is required" }
-        val normalizedFee = fee.removeSuffix(" ZKA").trim().ifBlank { "0" }
-        val output = runTextCommand(
-            args = listOf(
-                "tx-send",
-                "--from", from,
-                "--to", to,
-                "--amount", amount,
-                "--fee", normalizedFee,
-                "--network", network,
-                "--yes",
-                "--password-env", "ZSILENT_WALLET_PASSWORD"
-            ),
-            password = password
-        )
-        val splitHashes = output.lineSequence()
-            .mapNotNull { line ->
-                line.substringAfter("hash=", missingDelimiterValue = "")
-                    .substringBefore(" |")
-                    .trim()
-                    .takeIf { it.isNotBlank() }
-            }
-            .toList()
-        val primaryHash = output.lineValue("Hash") ?: splitHashes.firstOrNull().orEmpty()
-        SendResult(
-            hash = primaryHash,
-            transactionHashes = splitHashes.ifEmpty { listOf(primaryHash).filter { it.isNotBlank() } },
-            from = output.lineValue("From") ?: from,
-            to = output.lineValue("To") ?: to,
-            queuedDb = output.lineValue("Queued for local node DB")
-        )
+        // `fee` se ignora: la comisión la fija el protocolo y la calcula la wallet.
+        val args = quanticArgs("send", network) + select(from) +
+            listOf("--to", to.trim(), "--amount", amount.trim()) +
+            (memo.takeIf { it.isNotBlank() }?.let { listOf("--memo", it) } ?: emptyList())
+        val reply: QwSend = runJson(args, password)
+        SendResult(hash = reply.txid, from = from, to = to, queuedDb = null)
     }
 
     suspend fun createWallet(
@@ -212,55 +220,17 @@ class WalletService(private val cli: ZokaCli) {
         network: String = ZokaNetworkConfig.Network
     ): WalletCreationResult = withContext(Dispatchers.IO) {
         require(name.isNotBlank()) { "wallet name is required" }
-        require(seedWords == 12 || seedWords == 24) { "seed words must be 12 or 24" }
-        val zoka = requireNotNull(cli.zoka) { "zoka binary not found" }
-        try {
-            val output = cli.withZokaCommandLock {
-                cli.processBuilder(
-                    zoka,
-                    listOf(
-                        "wallet-create",
-                        "--name", name,
-                        "--network", network,
-                        "--seed-words", seedWords.toString(),
-                        "--password-env", "ZSILENT_WALLET_PASSWORD"
-                    )
-                )
-                    .redirectErrorStream(true)
-                    .apply {
-                        environment()["ZSILENT_WALLET_PASSWORD"] = String(password)
-                    }
-                    .start()
-                    .readTextAndWait()
-            }
-
-            WalletCreationResult(
-                name = output.lineValue("Name") ?: name,
-                address = output.lineValue("Address") ?: "",
-                recoveryPhrase = output.lineValue("Recovery phrase")
-            )
-        } finally {
-            password.fill('\u0000')
-        }
+        val reply: QwCreated = runJson(quanticArgs("new", network) + listOf("--name", name), password)
+        WalletCreationResult(name = reply.name, address = reply.address, recoveryPhrase = reply.recoveryPhrase)
     }
 
+    /** Siempre 24 palabras en Quantic, se pida lo que se pida. */
     suspend fun generateRecoveryPhrase(
         seedWords: Int,
         network: String = ZokaNetworkConfig.Network
     ): RecoveryPhraseResult = withContext(Dispatchers.IO) {
-        require(seedWords == 12 || seedWords == 24) { "seed words must be 12 or 24" }
-        val output = runTextCommand(
-            args = listOf(
-                "wallet-generate-seed",
-                "--seed-words", seedWords.toString(),
-                "--network", network
-            ),
-            password = null
-        )
-        RecoveryPhraseResult(
-            words = output.lineValue("Seed words")?.toIntOrNull() ?: seedWords,
-            phrase = output.lineValue("Recovery phrase") ?: error("Recovery phrase not returned by zoka")
-        )
+        val reply: QwPhrase = runJson(quanticArgs("generate-phrase", network), null)
+        RecoveryPhraseResult(words = reply.words, phrase = reply.recoveryPhrase)
     }
 
     suspend fun importFromSeed(
@@ -269,41 +239,21 @@ class WalletService(private val cli: ZokaCli) {
         password: CharArray,
         network: String = ZokaNetworkConfig.Network
     ): WalletCreationResult = withContext(Dispatchers.IO) {
-        val zoka = requireNotNull(cli.zoka) { "zoka binary not found" }
         try {
             require(name.isNotBlank()) { "wallet name is required" }
             require(seed.isNotEmpty()) { "seed is required" }
-            val output = cli.withZokaCommandLock {
-                cli.processBuilder(
-                    zoka,
-                    listOf(
-                        "wallet-restore-from-seed",
-                        "--name", name,
-                        "--network", network,
-                        "--password-env", "ZSILENT_WALLET_PASSWORD",
-                        "--seed-env", "ZSILENT_RECOVERY_PHRASE"
-                    )
-                )
-                    .redirectErrorStream(true)
-                    .apply {
-                        environment()["ZSILENT_WALLET_PASSWORD"] = String(password)
-                        environment()["ZSILENT_RECOVERY_PHRASE"] = String(seed)
-                    }
-                    .start()
-                    .readTextAndWait()
-            }
-
-            WalletCreationResult(
-                name = output.lineValue("Name") ?: name,
-                address = output.lineValue("Address") ?: "",
-                recoveryPhrase = null
+            val reply: QwCreated = runJson(
+                quanticArgs("restore", network) + listOf("--name", name, "--phrase-env", PHRASE_ENV),
+                password,
+                extraEnv = mapOf(PHRASE_ENV to String(seed))
             )
+            WalletCreationResult(name = reply.name, address = reply.address, recoveryPhrase = null)
         } finally {
             seed.fill('\u0000')
-            password.fill('\u0000')
         }
     }
 
+    /** Copia la wallet tal como está guardada (cifrada con su contraseña). */
     suspend fun exportEncryptedBackup(
         wallet: String,
         outPath: String,
@@ -313,21 +263,8 @@ class WalletService(private val cli: ZokaCli) {
         require(wallet.isNotBlank()) { "wallet is required" }
         require(outPath.isNotBlank()) { "backup path is required" }
         val normalizedPath = Path.of(outPath).toAbsolutePath().normalize().toString()
-        val output = runTextCommand(
-            args = listOf(
-                "wallet-backup",
-                "--address", wallet,
-                "--out", normalizedPath,
-                "--network", network,
-                "--password-env", "ZSILENT_WALLET_PASSWORD"
-            ),
-            password = password
-        )
-        WalletBackupResult(
-            name = output.lineValue("Name") ?: wallet,
-            address = output.lineValue("Address") ?: wallet,
-            path = output.lineValue("Backup created at") ?: normalizedPath
-        )
+        val reply: QwBackup = runJson(quanticArgs("backup", network) + select(wallet) + listOf("--out", normalizedPath), password)
+        WalletBackupResult(name = reply.name, address = wallet, path = reply.backup.ifBlank { normalizedPath })
     }
 
     suspend fun restoreEncryptedBackup(
@@ -338,45 +275,31 @@ class WalletService(private val cli: ZokaCli) {
     ): WalletImportResult = withContext(Dispatchers.IO) {
         require(inPath.isNotBlank()) { "backup path is required" }
         val normalizedPath = Path.of(inPath).toAbsolutePath().normalize().toString()
-        val command = buildList {
-            add("wallet-restore-from-backup")
-            add("--in")
-            add(normalizedPath)
-            importName?.trim()?.takeIf { it.isNotBlank() }?.let { name ->
-                add("--name")
-                add(name)
-            }
-            add("--network")
-            add(network)
-            add("--password-env")
-            add("ZSILENT_WALLET_PASSWORD")
-        }
-        val output = runTextCommand(
-            args = command,
-            password = password
+        val name = importName?.trim()?.takeIf { it.isNotBlank() } ?: "restored"
+        val reply: QwCreated = runJson(
+            quanticArgs("import-backup", network) + listOf("--name", name, "--file", normalizedPath),
+            password
         )
-        WalletImportResult(
-            name = output.lineValue("Name") ?: importName?.trim().orEmpty(),
-            address = output.lineValue("Address") ?: "",
-            path = normalizedPath
-        )
+        WalletImportResult(name = reply.name, address = reply.address, path = normalizedPath)
     }
 
+    /**
+     * Lo único secreto que hay que respaldar en Quantic es la frase: las claves
+     * salen de ella. Los campos de Zenith (claves de escaneo y gasto) van vacíos.
+     */
     suspend fun exportSecrets(
         wallet: String,
         password: CharArray,
         network: String = ZokaNetworkConfig.Network
     ): WalletSecretsResult = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
-        runWalletJsonCommand(
-            args = listOf(
-                "wallet-export-secrets",
-                "--address", wallet,
-                "--network", network,
-                "--json",
-                "--password-env", "ZSILENT_WALLET_PASSWORD"
-            ),
-            password = password
+        val reply: QwShownPhrase = runJson(quanticArgs("show-phrase", network) + select(wallet), password)
+        WalletSecretsResult(
+            walletName = reply.name,
+            walletType = "zoka-quantic",
+            address = wallet,
+            userAddress = wallet,
+            mnemonic = reply.recoveryPhrase
         )
     }
 
@@ -387,35 +310,64 @@ class WalletService(private val cli: ZokaCli) {
         network: String = ZokaNetworkConfig.Network
     ): WalletPassphraseChangeResult = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
-        val zoka = requireNotNull(cli.zoka) { "zoka binary not found" }
         try {
-            val output = cli.withZokaCommandLock {
-                cli.processBuilder(
-                    zoka,
-                    listOf(
-                        "wallet-change-passphrase",
-                        "--address", wallet,
-                        "--network", network,
-                        "--old-password-env", "ZSILENT_OLD_WALLET_PASSWORD",
-                        "--new-password-env", "ZSILENT_NEW_WALLET_PASSWORD"
-                    )
-                )
+            val reply: QwChanged = runJson(
+                quanticArgs("change-password", network) + select(wallet) + listOf("--new-password-env", NEW_PASSWORD_ENV),
+                oldPassword,
+                extraEnv = mapOf(NEW_PASSWORD_ENV to String(newPassword))
+            )
+            WalletPassphraseChangeResult(name = reply.name, address = wallet)
+        } finally {
+            newPassword.fill('\u0000')
+        }
+    }
+
+    private fun quanticArgs(action: String, network: String): List<String> = buildList {
+        add("quantic-wallet")
+        add(action)
+        add("--network")
+        add(network.ifBlank { ZokaNetworkConfig.Network })
+        ZokaNetworkConfig.LocalRpcUrl.takeIf { it.isNotBlank() }?.let {
+            add("--rpc")
+            add(it)
+        }
+        add("--json")
+    }
+
+    /** La wallet por su dirección; si no parece una, por su nombre. */
+    private fun select(wallet: String): List<String> {
+        val trimmed = wallet.trim()
+        return if (ZokaNetworkConfig.isAddress(trimmed)) listOf("--address", trimmed) else listOf("--name", trimmed)
+    }
+
+    private inline fun <reified T> runJson(
+        args: List<String>,
+        password: CharArray?,
+        extraEnv: Map<String, String> = emptyMap()
+    ): T {
+        val output = runCommand(args, password, extraEnv)
+        // La respuesta es la última línea con JSON: el nodo no escribe nada más
+        // en estos comandos, pero así un aviso suelto no rompe el desbloqueo.
+        val line = output.lineSequence().map { it.trim() }.lastOrNull { it.startsWith("{") } ?: output.trim()
+        return json.decodeFromString(line)
+    }
+
+    private fun runCommand(args: List<String>, password: CharArray?, extraEnv: Map<String, String>): String {
+        val zoka = requireNotNull(cli.zoka) { "zoka binary not found" }
+        val command = if (password != null) args + listOf("--password-env", PASSWORD_ENV) else args
+        try {
+            return cli.withZokaCommandLock {
+                cli.processBuilder(zoka, command)
                     .redirectErrorStream(true)
                     .apply {
-                        environment()["ZSILENT_OLD_WALLET_PASSWORD"] = String(oldPassword)
-                        environment()["ZSILENT_NEW_WALLET_PASSWORD"] = String(newPassword)
+                        if (password != null) environment()[PASSWORD_ENV] = String(password)
+                        extraEnv.forEach { (key, value) -> environment()[key] = value }
                     }
                     .start()
                     .readTextAndWait()
             }
-
-            WalletPassphraseChangeResult(
-                name = output.lineValue("Name") ?: wallet,
-                address = output.lineValue("Address") ?: wallet
-            )
         } finally {
-            oldPassword.fill('\u0000')
-            newPassword.fill('\u0000')
+            password?.fill('\u0000')
         }
     }
 
@@ -428,50 +380,6 @@ class WalletService(private val cli: ZokaCli) {
         return output
     }
 
-    private fun String.lineValue(label: String): String? {
-        return lineSequence()
-            .firstOrNull { it.startsWith("$label:") }
-            ?.substringAfter(":")
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-    }
-
-    private inline fun <reified T> runWalletJsonCommand(
-        args: List<String>,
-        password: CharArray?
-    ): T {
-        val output = runTextCommand(args, password)
-        return json.decodeFromString(output)
-    }
-
-    private fun runTextCommand(
-        args: List<String>,
-        password: CharArray?
-    ): String {
-        val zoka = requireNotNull(cli.zoka) { "zoka binary not found" }
-        val command = if (password != null && args.none { it == "--password-env" }) {
-            args + listOf("--password-env", "ZSILENT_WALLET_PASSWORD")
-        } else {
-            args
-        }
-        try {
-            val output = cli.withZokaCommandLock {
-                cli.processBuilder(zoka, command)
-                    .redirectErrorStream(true)
-                    .apply {
-                        if (password != null) {
-                            environment()["ZSILENT_WALLET_PASSWORD"] = String(password)
-                        }
-                    }
-                    .start()
-                    .readTextAndWait()
-            }
-            return output
-        } finally {
-            password?.fill('\u0000')
-        }
-    }
-
     private fun commandFailureMessage(output: String, exit: Int): String {
         val clean = output.trim()
         if (clean.isNotBlank()) return clean
@@ -481,4 +389,81 @@ class WalletService(private val cli: ZokaCli) {
             "zoka command failed with exit code $exit"
         }
     }
+
+    private companion object {
+        const val PASSWORD_ENV = "ZSILENT_WALLET_PASSWORD"
+        const val NEW_PASSWORD_ENV = "ZSILENT_NEW_WALLET_PASSWORD"
+        const val PHRASE_ENV = "ZSILENT_RECOVERY_PHRASE"
+        /** 2 acciones a 0,0001 ZKA: lo mínimo que paga un envío. */
+        const val MIN_FEE_ATOMS = 200L
+    }
 }
+
+private const val ATOMS_PER_ZKA = 1_000_000L
+
+/** "12", "12.5", "0.0002": como el nodo, sin ceros de más. */
+internal fun formatZka(atoms: Long): String {
+    val whole = atoms / ATOMS_PER_ZKA
+    val fraction = atoms % ATOMS_PER_ZKA
+    if (fraction == 0L) return whole.toString()
+    return "$whole." + fraction.toString().padStart(6, '0').trimEnd('0')
+}
+
+@Serializable
+private data class QwListEntry(val name: String = "", val address: String = "", val unlocked: Boolean = false)
+
+@Serializable
+private data class QwList(val network: String = "", val details: List<QwListEntry> = emptyList())
+
+@Serializable
+private data class QwBalance(
+    val name: String = "",
+    val height: Long = 0,
+    @SerialName("spendable_atoms") val spendableAtoms: Long = 0,
+    @SerialName("immature_atoms") val immatureAtoms: Long = 0,
+    @SerialName("max_sendable_atoms") val maxSendableAtoms: Long = 0,
+    @SerialName("node_behind") val nodeBehind: Boolean = false
+)
+
+@Serializable
+private data class QwTx(
+    val txid: String = "",
+    val height: Long = 0,
+    val kind: String = "",
+    @SerialName("amount_atoms") val amountAtoms: Long = 0,
+    val timestamp: Long? = null,
+    val confirmations: Long = 0
+)
+
+@Serializable
+private data class QwHistory(val name: String = "", val count: Int = 0, val transactions: List<QwTx> = emptyList())
+
+@Serializable
+private data class QwFee(
+    val enough: Boolean = false,
+    @SerialName("fee_atoms") val feeAtoms: Long? = null,
+    @SerialName("max_sendable_atoms") val maxSendableAtoms: Long = 0,
+    val reason: String? = null
+)
+
+@Serializable
+private data class QwSend(val txid: String = "", @SerialName("fee_atoms") val feeAtoms: Long? = null)
+
+@Serializable
+private data class QwCreated(
+    val name: String = "",
+    val address: String = "",
+    @SerialName("recovery_phrase") val recoveryPhrase: String? = null
+)
+
+@Serializable
+private data class QwPhrase(val words: Int = QUANTIC_SEED_WORDS, @SerialName("recovery_phrase") val recoveryPhrase: String = "")
+
+@Serializable
+private data class QwShownPhrase(val name: String = "", @SerialName("recovery_phrase") val recoveryPhrase: String = "")
+
+@Serializable
+private data class QwBackup(val name: String = "", val backup: String = "")
+
+@Serializable
+private data class QwChanged(val name: String = "", val changed: Boolean = false)

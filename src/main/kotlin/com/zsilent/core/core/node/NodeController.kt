@@ -280,12 +280,12 @@ class NodeController(private val cli: ZokaCli) {
         // at RUNTIME via the node's /mining RPC, so the node stays online + synced
         // while mining is turned on/off without a restart. The miner params are
         // still passed so the runtime-enabled miner uses them.
-        // La contrasena solo viaja cuando hay una wallet que abrir. En modo
-        // solo-sincronizar no se pasa: el nodo no la necesita y asi no hay
-        // ninguna credencial en juego mientras el usuario no inicio sesion.
-        if (!syncOnly) {
-            command += listOf("--password-env", "ZSILENT_NODE_PASSWORD")
-        } else {
+        //
+        // Zoka Quantic: el nodo no abre ninguna wallet (las abre `quantic-wallet`
+        // en cada consulta), así que nunca recibe la contraseña. Mina a la
+        // dirección de `--quantic-mine-to`, que es pública; antes del login
+        // (solo-sincronizar) no hay dirección y no mina.
+        if (syncOnly) {
             command += "--sync-only"
         }
         command += "--no-mine"
@@ -299,8 +299,8 @@ class NodeController(private val cli: ZokaCli) {
         // node-side: it never blocks startup. Fresh-node auto-fetch is on by
         // default in the binary, so the whole flow needs no user action.
         command += "--serve-iroh-snapshot"
-        if (address.isNotBlank()) {
-            command += listOf("--address", address)
+        if (!syncOnly && ZokaNetworkConfig.isAddress(address)) {
+            command += listOf("--quantic-mine-to", address.trim())
         }
         if (torProxy.isNotBlank()) {
             command += listOf("--tor-proxy", torProxy)
@@ -312,12 +312,8 @@ class NodeController(private val cli: ZokaCli) {
             command += listOf("--external-addr", addr)
         }
         val builder = cli.processBuilder(binary, command)
-        // Sin wallet que abrir no se exporta ninguna credencial al proceso
-        // hijo. Esto es lo que hace que el arranque previo al login no tenga
-        // secretos en juego, ni siquiera en el entorno del proceso.
-        if (!syncOnly) {
-            builder.environment()["ZSILENT_NODE_PASSWORD"] = password
-        }
+        // Ninguna credencial viaja al proceso del nodo, ni por argumento ni por
+        // entorno: en Quantic no la usa.
         // Enable the runtime mining-control RPC (/mining/start|stop) so mining can
         // be toggled in-process without restarting the node.
         builder.environment()["ZOKA_API_ENABLE_MINING_CONTROL"] = "true"

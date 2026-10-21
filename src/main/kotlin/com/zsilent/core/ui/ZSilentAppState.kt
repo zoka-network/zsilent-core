@@ -302,7 +302,9 @@ class ZSilentAppState(
                     compactDensity = setup.compactDensity,
                     animationsEnabled = setup.animationsEnabled,
                     explorerEnabled = setup.explorerEnabled,
-                    teamMiningEnabled = setup.teamMiningEnabled,
+                    // Zoka Quantic no tiene minado en equipo: una preferencia de
+                    // Zenith que lo encendía no se aplica.
+                    teamMiningEnabled = false,
                     manualPeers = setup.manualPeers,
                     torEnabled = setup.torEnabled,
                     torOnly = setup.torOnly,
@@ -1303,7 +1305,22 @@ class ZSilentAppState(
                 walletService.listWallets(password)
             }.onSuccess { result ->
                 val current = _uiState.value
-                val visibleWallets = visibleManagedWallets(result.privateWallets, current)
+                // La lista de Quantic no trae saldos: se conservan los que ya se
+                // calcularon para cada dirección.
+                val known = current.wallets.associateBy { it.address }
+                val visibleWallets = visibleManagedWallets(result.privateWallets, current).map { wallet ->
+                    known[wallet.address]?.let { old ->
+                        wallet.copy(
+                            balanceAtoms = old.balanceAtoms,
+                            balance = old.balance,
+                            lockedBalanceAtoms = old.lockedBalanceAtoms,
+                            lockedBalance = old.lockedBalance,
+                            totalBalanceAtoms = old.totalBalanceAtoms,
+                            totalBalance = old.totalBalance,
+                            txCount = old.txCount
+                        )
+                    } ?: wallet
+                }
                 val selected = visibleWallets.firstOrNull { it.address == current.activeWalletAddress }
                     ?: visibleWallets.firstOrNull { it.name == current.activeWalletName }
                     ?: visibleWallets.firstOrNull()
@@ -1691,8 +1708,25 @@ class ZSilentAppState(
         }
     }
 
-    fun estimateSendFee(amount: String, priority: String = "normal") {
+    /**
+     * Zoka Quantic: la comisión es fija por acción, pero cuántas acciones tiene
+     * un envío depende de las notas que gasta, y eso lo sabe la wallet. Por eso
+     * la estimación usa la wallet activa y la contraseña de la sesión. `priority`
+     * queda por compatibilidad: no hay prioridad que elegir.
+     */
+    fun estimateSendFee(amount: String, @Suppress("UNUSED_PARAMETER") priority: String = "fixed") {
         if (_uiState.value.sendBusy) return
+        val snapshot = _uiState.value
+        val wallet = resolveWalletAddress(
+            snapshot.activeWalletAddress.ifBlank { snapshot.activeWalletName.ifBlank { snapshot.walletName } },
+            snapshot
+        )
+        val password = copySessionPassword()
+        if (wallet.isBlank() || password == null) {
+            password?.fill('\u0000')
+            update { it.copy(sendError = "Unlock the wallet to calculate the fee.") }
+            return
+        }
         update {
             it.copy(
                 sendBusy = true,
@@ -1703,14 +1737,14 @@ class ZSilentAppState(
         }
         scope.launch {
             runCatching {
-                walletService.estimateFee(amount, priority)
+                walletService.estimateFee(wallet, password, amount)
             }.onSuccess { estimate ->
-                appendLog(RuntimeLog("send", "Fee estimate ready (${estimate.priority}): ${estimate.fee}"))
+                appendLog(RuntimeLog("send", "Fee calculated: ${estimate.fee}"))
                 update {
                     it.copy(
                         sendBusy = false,
                         sendFeeEstimate = estimate,
-                        sendError = null
+                        sendError = estimate.problem
                     )
                 }
             }.onFailure { error ->
@@ -1725,7 +1759,14 @@ class ZSilentAppState(
         }
     }
 
-    fun sendPrivateFunds(fromWallet: String, to: String, amount: String, password: CharArray, fee: String? = null) {
+    fun sendPrivateFunds(
+        fromWallet: String,
+        to: String,
+        amount: String,
+        password: CharArray,
+        fee: String? = null,
+        memo: String = ""
+    ) {
         if (_uiState.value.sendBusy) {
             password.fill('\u0000')
             return
@@ -1755,7 +1796,8 @@ class ZSilentAppState(
                     to = to,
                     amount = amount,
                     fee = selectedFee,
-                    password = sendPassword
+                    password = sendPassword,
+                    memo = memo
                 )
             }.onSuccess { result ->
                 appendLog(RuntimeLog("send", "Private transfer queued: ${result.splitCount} tx(s), ${result.hash.ifBlank { "hash unavailable" }}"))
@@ -2340,10 +2382,10 @@ class ZSilentAppState(
 
     private fun resolveActiveWalletAddress(snapshot: ZSilentUiState): String {
         val direct = snapshot.activeWalletAddress.trim()
-        if (direct.startsWith("zka1")) return direct
-        return snapshot.wallets.firstOrNull { it.name == snapshot.activeWalletName }?.address?.takeIf { it.startsWith("zka1") }
-            ?: snapshot.wallets.firstOrNull { it.name == snapshot.walletName }?.address?.takeIf { it.startsWith("zka1") }
-            ?: snapshot.wallets.firstOrNull { it.address.startsWith("zka1") }?.address
+        if (direct.isZokaAddress()) return direct
+        return snapshot.wallets.firstOrNull { it.name == snapshot.activeWalletName }?.address?.takeIf { it.isZokaAddress() }
+            ?: snapshot.wallets.firstOrNull { it.name == snapshot.walletName }?.address?.takeIf { it.isZokaAddress() }
+            ?: snapshot.wallets.firstOrNull { it.address.isZokaAddress() }?.address
             ?: direct
     }
 
@@ -3046,6 +3088,19 @@ class ZSilentAppState(
                         activeWalletName = displayName,
                         activeWalletAddress = address,
                         managedWalletAddresses = managedAddressesFor(it, listOf(address)),
+                        // En Quantic la lista de wallets no trae saldos: la
+                        // tarjeta de la activa toma el que acaba de calcular.
+                        wallets = it.wallets.map { wallet ->
+                            if (wallet.address != address) wallet else wallet.copy(
+                                balanceAtoms = balance.balanceAtoms,
+                                balance = balance.balance,
+                                lockedBalanceAtoms = balance.lockedBalanceAtoms,
+                                lockedBalance = balance.lockedBalance,
+                                totalBalanceAtoms = balance.totalBalanceAtoms,
+                                totalBalance = balance.totalBalance,
+                                txCount = history.count
+                            )
+                        },
                         walletBalance = balance,
                         walletHistory = history,
                         walletError = null
@@ -3411,7 +3466,8 @@ class ZSilentAppState(
     }
 }
 
-private fun String.isZokaAddress(): Boolean = trim().startsWith("zka1")
+/** Si parece una dirección de la red configurada (Zoka Quantic). */
+private fun String.isZokaAddress(): Boolean = ZokaNetworkConfig.isAddress(this)
 
 private fun OnboardingStep.next(): OnboardingStep = when (this) {
     OnboardingStep.Welcome -> OnboardingStep.SelfCustody
@@ -3462,7 +3518,7 @@ internal fun normalizeManualPeer(entrada: String): String? {
     val sinEsquema = texto.removePrefix("http://").removePrefix("https://")
     val partes = sinEsquema.split(":")
     val host = partes[0].removeSuffix(".onion")
-    val puerto = partes.getOrNull(1)?.toIntOrNull() ?: 28080
+    val puerto = partes.getOrNull(1)?.toIntOrNull() ?: ZokaNetworkConfig.P2pPort
     // Una direccion onion v3 son exactamente 56 caracteres en base32.
     if (host.length != 56 || !host.all { it.isLetterOrDigit() }) return null
     return "/onion3/${host.lowercase()}:$puerto"

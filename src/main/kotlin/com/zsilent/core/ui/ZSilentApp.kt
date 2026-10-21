@@ -322,7 +322,8 @@ private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
     AppSection.entries.filter { section ->
         when (section) {
             AppSection.Explorer -> uiState.explorerEnabled
-            AppSection.MiningPool -> uiState.teamMiningEnabled
+            // El minado en equipo es de Zenith: Zoka Quantic no lo tiene.
+            AppSection.MiningPool -> false
             else -> true
         }
     }

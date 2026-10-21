@@ -24,16 +24,17 @@ class ManualPeerNormalizationTest {
     @Test
     fun `acepta la direccion cruda con y sin sufijo onion`() {
         val host = "b".repeat(56)
-        val esperado = "/onion3/$host:28080"
-        assertEquals(esperado, normalizar("$host.onion:28080"))
-        assertEquals(esperado, normalizar("$host:28080"))
+        // Sin puerto, el P2P de la testnet de Quantic.
+        val esperado = "/onion3/$host:28180"
+        assertEquals(esperado, normalizar("$host.onion:28180"))
+        assertEquals(esperado, normalizar("$host:28180"))
         assertEquals(esperado, normalizar(host))
     }
 
     @Test
     fun `normaliza mayusculas y espacios`() {
         val host = "c".repeat(56)
-        assertEquals("/onion3/$host:28080", normalizar("  ${host.uppercase()}.onion  "))
+        assertEquals("/onion3/$host:28180", normalizar("  ${host.uppercase()}.onion  "))
     }
 
     @Test

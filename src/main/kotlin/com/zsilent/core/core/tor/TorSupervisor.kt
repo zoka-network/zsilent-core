@@ -19,12 +19,14 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.TimeUnit
 
+// El servicio onion publica el puerto P2P del nodo de la red que sigue ZSilent
+// (28180 en la testnet de Quantic; Zenith usaba 28080).
 data class TorLaunchConfig(
     val socksHost: String = "127.0.0.1",
     val socksPort: Int = 19050,
-    val hiddenServiceVirtualPort: Int = 28080,
+    val hiddenServiceVirtualPort: Int = com.zsilent.core.config.ZokaNetworkConfig.P2pPort,
     val hiddenServiceTargetHost: String = "127.0.0.1",
-    val hiddenServiceTargetPort: Int = 28080
+    val hiddenServiceTargetPort: Int = com.zsilent.core.config.ZokaNetworkConfig.P2pPort
 )
 
 data class TorLaunchResult(

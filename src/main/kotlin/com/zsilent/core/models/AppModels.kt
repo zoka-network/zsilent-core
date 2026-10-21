@@ -345,7 +345,10 @@ data class WalletBalance(
     @SerialName("total_balance")
     val totalBalance: String = "0",
     @SerialName("view_only")
-    val viewOnly: Boolean = false
+    val viewOnly: Boolean = false,
+    /** Zoka Quantic: lo más que sale en un envío ahora (saldo menos comisión). */
+    @SerialName("max_sendable_atoms")
+    val maxSendableAtoms: Long = 0
 )
 
 @Serializable
@@ -365,13 +368,25 @@ data class WalletHistoryEntry(
     @SerialName("amount_hidden")
     val amountHidden: Boolean = true,
     @SerialName("fee_hidden")
-    val feeHidden: Boolean = true
+    val feeHidden: Boolean = true,
+    // Zoka Quantic: la wallet conoce sus propios montos (para todos los demás
+    // siguen ocultos en la cadena).
+    val height: Long = 0,
+    /** "received", "sent" o "coinbase". */
+    val kind: String = "",
+    @SerialName("amount_atoms")
+    val amountAtoms: Long = 0,
+    val confirmations: Long = 0
 )
 
 data class FeeEstimate(
     val amount: String,
     val priority: String,
-    val fee: String
+    val fee: String,
+    /** Zoka Quantic: lo más que se puede enviar ahora, en átomos. */
+    val maxSendableAtoms: Long = 0,
+    /** Por qué no alcanza, si no alcanza. */
+    val problem: String? = null
 )
 
 data class SendResult(

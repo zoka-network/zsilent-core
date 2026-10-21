@@ -860,19 +860,21 @@ private fun BlackIconButton(icon: androidx.compose.ui.graphics.vector.ImageVecto
 }
 
 
+/** "+12 ZKA", "-1000.0002 ZKA" (el envío con su comisión) o "private". */
+internal fun historyAmountLabel(tx: com.zsilent.core.models.WalletHistoryEntry): String {
+    if (tx.amountHidden || tx.kind.isBlank()) return "private"
+    val sign = if (tx.kind == "sent") "-" else "+"
+    return "$sign${com.zsilent.core.core.wallet.formatZka(tx.amountAtoms)} ZKA"
+}
+
 /**
  * Historial como tabla, siguiendo el prototipo.
  *
- * **Las columnas no son las del prototipo, y es a proposito.** Alli la tabla
- * muestra KIND, COUNTERPARTY y AMOUNT, pero esas tres no existen en
- * `WalletHistoryEntry`: solo hay hash, estado, hora, salidas y las banderas
- * `amountHidden` / `feeHidden`. El prototipo puede mostrarlas porque son datos
- * inventados.
- *
- * Reproducirlas aca significaria fabricar valores o exponer justo lo que el
- * protocolo oculta — la contraparte es precisamente lo que protege la
- * inenlazabilidad. Asi que la columna de monto dice "private" en vez de un
- * numero: es la verdad, y ademas es la promesa del producto.
+ * En Zoka Quantic la wallet conoce sus propios montos (los descifra ella; en
+ * la cadena siguen ocultos para todos los demás), así que la tabla muestra el
+ * tipo y el monto. La contraparte no se muestra: no la conoce nadie, y es justo
+ * lo que protege la inenlazabilidad. Una entrada sin monto conocido dice
+ * "private".
  */
 @Composable
 private fun WalletHistoryTable(ui: ZSilentUiState) {
@@ -904,7 +906,7 @@ private fun WalletHistoryTable(ui: ZSilentUiState) {
                         .padding(horizontal = ZTheme.spacing.panel, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    listOf("HASH" to 3f, "OUTPUTS" to 1f, "AMOUNT" to 1.4f, "STATUS" to 1.4f, "TIME" to 1.4f)
+                    listOf("HASH" to 3f, "KIND" to 1.2f, "AMOUNT" to 1.8f, "STATUS" to 1.4f, "TIME" to 1.4f)
                         .forEach { (label, w) ->
                             Text(
                                 label,
@@ -928,16 +930,16 @@ private fun WalletHistoryTable(ui: ZSilentUiState) {
                             color = scheme.onSurface
                         )
                         Text(
-                            tx.outputs.toString(),
-                            modifier = Modifier.weight(1f),
+                            tx.kind.ifBlank { "—" },
+                            modifier = Modifier.weight(1.2f),
                             style = ZTheme.text.mono,
                             color = scheme.onSurfaceVariant
                         )
                         Text(
-                            if (tx.amountHidden) "private" else "visible",
-                            modifier = Modifier.weight(1.4f),
+                            historyAmountLabel(tx),
+                            modifier = Modifier.weight(1.8f),
                             style = ZTheme.text.mono,
-                            color = scheme.onSurfaceVariant
+                            color = scheme.onSurface
                         )
                         Box(Modifier.weight(1.4f)) {
                             Pill(
@@ -1182,11 +1184,13 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
     var address     by remember { mutableStateOf("") }
     var amount      by remember { mutableStateOf("") }
     var password    by remember { mutableStateOf("") }
+    var memo        by remember { mutableStateOf("") }
     var reviewOpen  by remember { mutableStateOf(false) }
-    // La zkq1 se acepta solo con la activación informada por el nodo; el CLI
-    // la vuelve a validar entera al enviar.
-    val recipientLooksValid = address.startsWith("zka1") ||
-        (ui.hybridActivationHeight != null && address.startsWith("zkq1") && address.length in 1600..1800)
+    // El filtro rápido; el nodo valida la dirección entera (checksum y red) al enviar.
+    val recipientLooksValid = com.zsilent.core.config.ZokaNetworkConfig.isAddress(address)
+    // El memo viaja cifrado con la nota: solo lo lee quien recibe. Hasta 512 bytes.
+    val memoBytes = memo.toByteArray(Charsets.UTF_8).size
+    val memoLooksValid = memoBytes <= 512
     val amountLooksValid    = amount.toDoubleOrNull()?.let { it > 0.0 } == true
     val selectedWallet      = ui.wallets.firstOrNull { it.address == fromWallet }
     val fromLooksValid      = ui.wallets.any { it.address == fromWallet }
@@ -1210,7 +1214,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                     ui = ui,
                     onOpenInExplorer = if (ui.explorerEnabled) appState::openInExplorer else null,
                     onNewTransfer = {
-                        address = ""; amount = ""; password = ""; reviewOpen = false
+                        address = ""; amount = ""; memo = ""; password = ""; reviewOpen = false
                         appState.clearSendResult()
                     }
                 )
@@ -1241,7 +1245,8 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                     com.zsilent.core.ui.onboarding.NoirKeyValue("Amount", fee?.amount ?: "$amount ZKA", mono = true)
                     com.zsilent.core.ui.onboarding.NoirKeyValue("Fee", fee?.fee ?: "estimated on sign", mono = true)
                     com.zsilent.core.ui.onboarding.NoirKeyValue("Recipient", "${address.take(16)}…${address.takeLast(8)}", mono = true)
-                    com.zsilent.core.ui.onboarding.NoirKeyValue("Privacy", "zero-knowledge · keys never leave device")
+                    if (memo.isNotBlank()) com.zsilent.core.ui.onboarding.NoirKeyValue("Memo", memo.take(60) + if (memo.length > 60) "…" else "")
+                    com.zsilent.core.ui.onboarding.NoirKeyValue("Privacy", "zero-knowledge · post-quantum envelopes · keys never leave device")
                 }
                 ui.sendError?.let { ErrorText(it) }
                 PasswordField(password, { password = it }, "Wallet password to sign", Modifier.fillMaxWidth())
@@ -1253,7 +1258,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                     ) { Text("Back") }
                     Button(
                         onClick = {
-                            appState.sendPrivateFunds(fromWallet, address, amount, password.toCharArray(), fee?.fee)
+                            appState.sendPrivateFunds(fromWallet, address, amount, password.toCharArray(), fee?.fee, memo)
                             password = ""
                         },
                         enabled = password.isNotBlank() && fee != null && !ui.sendBusy,
@@ -1313,7 +1318,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                     OutlinedTextField(
                         value = address, onValueChange = { address = it.trim() },
                         label = { Text("Recipient address") },
-                        placeholder = { Text("zka1…", color = com.zsilent.core.ui.onboarding.NoirTextSubtle) },
+                        placeholder = { Text("${com.zsilent.core.config.ZokaNetworkConfig.AddressPrefix}…", color = com.zsilent.core.ui.onboarding.NoirTextSubtle) },
                         isError = address.isNotBlank() && !recipientLooksValid,
                         colors = zFieldColors(), shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth(),
@@ -1339,8 +1344,14 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                             }
                         }
                     )
-                    // Amount with MAX button + currency icon
-                    val maxBalance = selectedWallet?.balance ?: "0"
+                    // Amount with MAX button + currency icon. En Quantic MAX es el
+                    // saldo menos la comisión de gastar todas las notas.
+                    val maxSendableAtoms = ui.walletBalance
+                        ?.takeIf { fromWallet == ui.activeWalletAddress }
+                        ?.maxSendableAtoms
+                        ?.takeIf { it > 0 }
+                    val maxBalance = maxSendableAtoms?.let { com.zsilent.core.core.wallet.formatZka(it) }
+                        ?: selectedWallet?.balance ?: "0"
                     OutlinedTextField(
                         value = amount, onValueChange = { amount = it.trim() },
                         label = { Text("Amount ZKA") },
@@ -1364,10 +1375,19 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                             }
                         }
                     )
+                    OutlinedTextField(
+                        value = memo, onValueChange = { memo = it },
+                        label = { Text("Memo (optional)") },
+                        supportingText = { Text("Only the recipient can read it · $memoBytes / 512 bytes", fontSize = 11.sp) },
+                        isError = !memoLooksValid,
+                        colors = zFieldColors(), shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
                     ui.sendFeeEstimate?.let { fee ->
                         Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(10.dp)).padding(12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Estimated fee", color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
+                            Text("Fee (0.0001 ZKA per action)", color = com.zsilent.core.ui.onboarding.NoirTextMuted, fontSize = 12.sp)
                             Text(fee.fee, color = com.zsilent.core.ui.onboarding.NoirText, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
@@ -1378,10 +1398,10 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                             contentPadding = SettingsButtonPadding,
                             onClick = { appState.estimateSendFee(amount) },
                             enabled = amountLooksValid && !ui.sendBusy
-                        ) { Text("Estimate fee") }
+                        ) { Text("Calculate fee") }
                         Button(
                             onClick = { reviewOpen = true; appState.estimateSendFee(amount) },
-                            enabled = recipientLooksValid && amountLooksValid && fromLooksValid && !ui.sendBusy,
+                            enabled = recipientLooksValid && amountLooksValid && memoLooksValid && fromLooksValid && !ui.sendBusy,
                             colors = zButtonColors(), shape = MaterialTheme.shapes.small,
                             contentPadding = SettingsButtonPadding
                         ) {
@@ -1558,55 +1578,39 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
                 OutlinedButton(colors = zOutlinedButtonColors(), onClick = { appState.refreshWallets() }, enabled = !ui.walletBusy) { Text("Rescan") }
             }
         }
-        Panel(title = "Receive address", meta = "qr") {
+        Panel(title = "Receive address", meta = "post-quantum") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                QrCode(ui.activeWalletAddress)
+                // Una dirección de Zoka Quantic tiene unos 1.730 caracteres (lleva
+                // la clave X-Wing): en un solo QR no se lee desde la pantalla, va
+                // en partes que el teléfono junta (ver MultiPartQr).
+                if (ui.activeWalletAddress.isNotBlank()) {
+                    com.zsilent.core.ui.components.AnimatedQrCode(ui.activeWalletAddress, boxSize = 360.dp)
+                }
                 Column(
-                    modifier = Modifier.widthIn(max = 680.dp),
+                    modifier = Modifier.widthIn(max = 560.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(ui.activeWalletName.ifBlank { "No wallet selected" }, style = MaterialTheme.typography.titleLarge)
-                    SelectionContainer {
-                        MonoText(
-                            ui.activeWalletAddress.ifBlank { "Create or select a wallet to receive ZKA." },
-                            maxLines = 4
-                        )
+                    Text(
+                        "Payments to this address stay private, also against a future quantum computer: " +
+                            "only this wallet can read them.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "The code changes every half second: keep the phone's camera on it " +
+                            "until it has read every part. Or copy the address.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (ui.activeWalletAddress.isBlank()) {
+                        MonoText("Create or select a wallet to receive ZKA.", maxLines = 2)
+                    } else {
+                        MonoText("${ui.activeWalletAddress.take(24)}…${ui.activeWalletAddress.takeLast(12)}", maxLines = 1)
                     }
                     CopyIconButton(ui.activeWalletAddress)
                     ThinDivider()
-                    KeyValueRow("Privacy", "receive address only")
+                    KeyValueRow("Length", "${ui.activeWalletAddress.length} characters")
                     KeyValueRow("Keys", "never exported")
-                }
-            }
-        }
-        LaunchedEffect(ui.activeWalletAddress) { appState.refreshHybridReceiveAddress() }
-        ui.hybridReceiveAddress?.let { zkq1 ->
-            Panel(title = "Quantic address (zkq1)", meta = "post-quantum") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    // En un solo QR la zkq1 no se lee desde la pantalla: va en
-                    // partes que ZKAPriv junta (ver MultiPartQr).
-                    com.zsilent.core.ui.components.AnimatedQrCode(zkq1, boxSize = 360.dp)
-                    Column(
-                        modifier = Modifier.widthIn(max = 520.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            "Payments to this address stay private against a future quantum computer. " +
-                                "Wallets that do not support zkq1 yet can still pay the address above.",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            "The code changes every half second: keep the phone's camera on it " +
-                                "until ZKAPriv has read every part.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        MonoText("${zkq1.take(24)}…${zkq1.takeLast(12)}", maxLines = 1)
-                        CopyIconButton(zkq1)
-                        ThinDivider()
-                        KeyValueRow("Length", "${zkq1.length} characters")
-                        KeyValueRow("Active since block", "${ui.hybridActivationHeight ?: "-"}")
-                    }
                 }
             }
         }
@@ -1948,7 +1952,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     val activeWallet = activeLocalWallet(ui)
     val parsedThreads = threads.toIntOrNull()?.coerceAtLeast(1)
     val rewardAddress = activeWallet?.address ?: ui.activeWalletAddress
-    val localMiningWallets = ui.wallets.filter { it.address.startsWith("zka1") }
+    val localMiningWallets = ui.wallets.filter { com.zsilent.core.config.ZokaNetworkConfig.isAddress(it.address) }
     val effectiveHashrate = maxOf(ui.mining.hashrateHps, ui.stats.reportedHashrateHps)
     val miningFaulted = !ui.miningDiagnostic.isNullOrBlank() || ui.miningStatus == ServiceStatus.Error
     val nodeChangingState = ui.nodeStatus == ServiceStatus.Starting || ui.nodeStatus == ServiceStatus.Stopping
@@ -1960,7 +1964,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         ui.miningStatus == ServiceStatus.Starting ||
         (ui.mining.running && effectiveHashrate <= 0L && !miningFaulted)
     val canStart = ui.zokaReady &&
-        rewardAddress.startsWith("zka1") &&
+        com.zsilent.core.config.ZokaNetworkConfig.isAddress(rewardAddress) &&
         ui.sessionUnlocked &&
         parsedThreads != null &&
         ui.miningSyncReady &&
@@ -2076,7 +2080,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     !ui.sessionUnlocked -> "Unlock the wallet session first."
                     ui.nodeStatus != ServiceStatus.Online -> "Start the node before mining."
                     !ui.miningSyncReady -> "Chain is still syncing. Mining unlocks once the node reaches the network head."
-                    !rewardAddress.startsWith("zka1") -> "Select a wallet with a full zka1 address before mining."
+                    !com.zsilent.core.config.ZokaNetworkConfig.isAddress(rewardAddress) -> "Select a wallet with a full Zoka Quantic address before mining."
                     else -> "Starting the miner runs it alongside the node."
                 },
                 blockReason = ui.miningBlockReason,
@@ -2091,7 +2095,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             sessionUnlocked = ui.sessionUnlocked,
             nodeOnline = ui.nodeStatus == ServiceStatus.Online,
             syncReady = ui.miningSyncReady,
-            rewardAddressOk = rewardAddress.startsWith("zka1"),
+            rewardAddressOk = com.zsilent.core.config.ZokaNetworkConfig.isAddress(rewardAddress),
             threadsOk = (parsedThreads ?: 0) >= 1,
             binariesOk = ui.zokaReady,
         )
@@ -2109,8 +2113,8 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 KeyValueRow("Mode", ui.mining.mode.ifBlank { "pow-${ZokaNetworkConfig.Network}" })
                 KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
                 KeyValueRow("Reported network hashrate", formatHashrate(maxOf(ui.stats.reportedHashrateHps, effectiveHashrate)))
-                if (!rewardAddress.startsWith("zka1")) {
-                    ErrorText("Select a wallet with a full zka1 address before mining.")
+                if (!com.zsilent.core.config.ZokaNetworkConfig.isAddress(rewardAddress)) {
+                    ErrorText("Select a wallet with a full Zoka Quantic address before mining.")
                 }
                 if (ui.mining.legacyPowSimDetected) {
                     ErrorText("Legacy mining state detected. Reset the old pow-sim state before mining.")
@@ -4126,20 +4130,14 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
 
 @Composable
 private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppState) {
-    Panel(title = "Team Mining", meta = "experimental opt-in") {
-        ToggleRow("Enable Team Mining", ui.teamMiningEnabled) {
-            appState.setTeamMiningEnabled(it)
-        }
+    // El minado en equipo era de Zenith; Zoka Quantic no lo tiene (no hay
+    // interruptor que mostrar: no habría nada que encender).
+    Panel(title = "Team Mining", meta = "not on Zoka Quantic") {
         Text(
-            "This section coordinates mining with people you know. It stays out of the " +
-                "sidebar until you opt in. There is no team wallet and no coordinator fee.",
+            "Team Mining was a feature of the previous network (Zenith). Zoka Quantic " +
+                "does not have it: each node mines its own blocks.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
-        )
-        HintText(
-            "Whole block rewards rotate by contributed work. Short-term payouts are uneven, " +
-                "and a member can hijack a block; the team can detect and expel them but cannot " +
-                "make that otherwise-valid block impossible."
         )
     }
 }
