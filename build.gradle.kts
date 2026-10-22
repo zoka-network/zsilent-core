@@ -149,11 +149,10 @@ compose.desktop {
     application {
         mainClass = "com.zsilent.core.MainKt"
         jvmArgs += listOf(
-            "-Dzsilent.version=$releaseVersion",
-            // DNS seed, not a hardcoded IP -- the old DigitalOcean seed IP was
-            // decommissioned 2026-07-09; DNS lets the seed host rotate without
-            // a rebuild.
-            "-Dzsilent.bootstrapMultiaddr=/dns4/seed1.zoka.network/tcp/28080"
+            "-Dzsilent.version=$releaseVersion"
+            // Sin -Dzsilent.bootstrapMultiaddr: la propiedad le gana al
+            // manifiesto, y el seed de cada red de Quantic sale de su
+            // manifiesto (el de Zenith, seed1.zoka.network:28080, ni existe).
         )
 
         nativeDistributions {
