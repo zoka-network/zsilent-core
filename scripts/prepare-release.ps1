@@ -83,7 +83,24 @@ if ($zokaVersion -ne $nodeSourceVersion -or $zokahdVersion -ne $nodeSourceVersio
     throw "Binary version mismatch: node source=$nodeSourceVersion, zoka=$zokaVersion, zokahd=$zokahdVersion. Rebuild both release binaries."
 }
 
-$networkManifest = Join-Path $NodeRepoRoot "docs\mainnet-network.v1.json"
+# ZSilent 3.0 es solo de Zoka Quantic: el binario tiene que traer la feature
+# `quantic` (si no, no hay wallet ni red que usar). Se prueba en una carpeta
+# propia, sin tocar las wallets de quien arma el release.
+$probeHome = Join-Path ([System.IO.Path]::GetTempPath()) ("zsilent-quantic-probe-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $probeHome | Out-Null
+$previousZokaHome = $env:ZOKA_HOME
+$env:ZOKA_HOME = $probeHome
+try {
+    $probe = (& $zokaExe quantic-wallet list --network quantic-testnet --json 2>&1 | Out-String)
+    $probeExit = $LASTEXITCODE
+} finally {
+    $env:ZOKA_HOME = $previousZokaHome
+}
+if ($probeExit -ne 0 -or $probe -notmatch '"wallets"') {
+    throw "zoka.exe was built without Zoka Quantic. Rebuild with: cargo build --release --features randomx,quantic --bins"
+}
+
+$networkManifest = Join-Path $NodeRepoRoot "docs\quantic-testnet-network.v1.json"
 $trustedSetupDir = Join-Path $NodeRepoRoot "trusted-setup"
 $requiredSetup = @("DIGEST", "balance.params", "merkle.params", "nullifier.params", "private_tx.params")
 foreach ($name in $requiredSetup) {
