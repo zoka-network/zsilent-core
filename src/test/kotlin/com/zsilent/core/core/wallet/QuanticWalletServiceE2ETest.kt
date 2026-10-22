@@ -64,9 +64,16 @@ class QuanticWalletServiceE2ETest {
             val alice = wallets.importFromSeed("alice", phrase.phrase.toCharArray(), "a1-segura".toCharArray())
             assertTrue(ZokaNetworkConfig.isAddress(alice.address), alice.address)
 
+            // Dirección corta: la lista la trae, se publica en el nodo y el
+            // equipo le paga a la corta (la resuelve el nodo).
+            val aliceShort = wallets.listWallets().privateWallets.first { it.address == alice.address }.shortAddress
+            assertTrue(ZokaNetworkConfig.isShortAddress(aliceShort), aliceShort)
+            assertEquals(aliceShort, wallets.publishAddress(alice.address))
+            assertEquals(alice.address, com.zsilent.core.rpc.ZokaRpcClient(rpc).shortAddress(aliceShort)?.address)
+
             val sent = wallets.sendPrivate(
                 from = teamAddress,
-                to = alice.address,
+                to = aliceShort,
                 amount = "25",
                 fee = "ignored",
                 password = "e1".toCharArray(),

@@ -97,9 +97,30 @@ class WalletService(private val cli: ZokaCli) {
         WalletListResponse(
             network = reply.network.ifBlank { network },
             privateWallets = reply.details.map { wallet ->
-                LocalWallet(name = wallet.name, address = wallet.address, encrypted = true, unlocked = wallet.unlocked)
+                LocalWallet(
+                    name = wallet.name,
+                    address = wallet.address,
+                    shortAddress = wallet.shortAddress,
+                    encrypted = true,
+                    unlocked = wallet.unlocked
+                )
             }
         )
+    }
+
+    /**
+     * Publica la dirección completa de `wallet` en el directorio del nodo local,
+     * para que le puedan pagar con la corta. La dirección es pública: no pide
+     * contraseña. El sello de trabajo lo busca `quantic-wallet` (unos segundos).
+     * Devuelve la dirección corta.
+     */
+    suspend fun publishAddress(
+        wallet: String,
+        network: String = ZokaNetworkConfig.Network
+    ): String = withContext(Dispatchers.IO) {
+        require(wallet.isNotBlank()) { "wallet is required" }
+        val reply: QwPublished = runJson(quanticArgs("publish-address", network) + select(wallet), null)
+        reply.shortAddress
     }
 
     suspend fun balance(
@@ -410,7 +431,15 @@ internal fun formatZka(atoms: Long): String {
 }
 
 @Serializable
-private data class QwListEntry(val name: String = "", val address: String = "", val unlocked: Boolean = false)
+private data class QwListEntry(
+    val name: String = "",
+    val address: String = "",
+    @SerialName("short_address") val shortAddress: String = "",
+    val unlocked: Boolean = false
+)
+
+@Serializable
+private data class QwPublished(@SerialName("short_address") val shortAddress: String = "")
 
 @Serializable
 private data class QwList(val network: String = "", val details: List<QwListEntry> = emptyList())

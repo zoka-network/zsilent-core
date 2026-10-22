@@ -1,6 +1,7 @@
 package com.zsilent.core.rpc
 
 import com.zsilent.core.models.AccountCheck
+import com.zsilent.core.models.ShortAddressLookup
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.ChainHeightResponse
@@ -149,6 +150,14 @@ class ZokaRpcClient(val baseUrl: String) {
      */
     suspend fun accountExists(address: String): AccountCheck? =
         getOrNull("/accounts/$address")
+
+    /**
+     * La dirección completa de una corta en el directorio del nodo
+     * (`GET /quantic/address/<corta>`), o null si el nodo no la tiene. Para
+     * ZSilent, que la tenga el nodo local quiere decir que ya está publicada.
+     */
+    suspend fun shortAddress(short: String): ShortAddressLookup? =
+        getOrNull("/quantic/address/$short")
 
     /**
      * True when this client points at a node on this machine.

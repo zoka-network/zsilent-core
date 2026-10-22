@@ -131,6 +131,12 @@ data class ZSilentUiState(
     val wallets: List<LocalWallet> = emptyList(),
     val activeWalletName: String = "",
     val activeWalletAddress: String = "",
+    /**
+     * Si el nodo local ya tiene la dirección corta de la wallet activa en su
+     * directorio (o sea, si está publicada). Null mientras no se sabe.
+     */
+    val activeShortAddressPublished: Boolean? = null,
+    val addressPublishBusy: Boolean = false,
     val walletBalance: WalletBalance? = null,
     val walletHistory: WalletHistory = WalletHistory(),
     val walletBusy: Boolean = false,
@@ -3188,6 +3194,46 @@ class ZSilentAppState(
         if (lower.contains("batch error") || lower.contains("task join error")) {
             val message = line.substringAfter(":", line).trim().ifBlank { line }
             update { it.copy(miningDiagnostic = message) }
+        }
+    }
+
+    private fun activeShortAddress(snapshot: ZSilentUiState = _uiState.value): String? =
+        snapshot.wallets.firstOrNull { it.address == snapshot.activeWalletAddress }
+            ?.shortAddress
+            ?.takeIf { it.isNotBlank() }
+
+    /**
+     * Publica la dirección completa de la wallet activa en el directorio del
+     * nodo local, para que le puedan pagar con la corta. Después el nodo la
+     * vuelve a difundir solo cada 6 horas.
+     */
+    fun publishActiveAddress() {
+        val snapshot = _uiState.value
+        val wallet = snapshot.activeWalletAddress.ifBlank { snapshot.activeWalletName }
+        if (wallet.isBlank() || snapshot.addressPublishBusy) return
+        update { it.copy(addressPublishBusy = true) }
+        scope.launch {
+            val result = runCatching { walletService.publishAddress(wallet) }
+            update {
+                it.copy(
+                    addressPublishBusy = false,
+                    activeShortAddressPublished = if (result.isSuccess) true else it.activeShortAddressPublished
+                )
+            }
+            result
+                .onSuccess { short -> appendLog(RuntimeLog("wallet", "Short address published: $short")) }
+                .onFailure { error ->
+                    appendLog(RuntimeLog("wallet", "Could not publish the short address: ${safeLogMessage(error)}"))
+                }
+        }
+    }
+
+    /** Pregunta al nodo local si ya tiene la dirección corta de la wallet activa. */
+    fun refreshShortAddressPublished() {
+        val short = activeShortAddress() ?: return
+        scope.launch {
+            val known = runCatching { localRpc.shortAddress(short) != null }.getOrNull()
+            update { if (activeShortAddress(it) == short) it.copy(activeShortAddressPublished = known) else it }
         }
     }
 

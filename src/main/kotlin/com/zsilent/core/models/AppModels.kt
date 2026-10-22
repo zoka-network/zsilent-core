@@ -220,6 +220,14 @@ data class AccountCheck(
     val valid: Boolean = false
 )
 
+/** `GET /quantic/address/<corta>`: la completa que el nodo tiene para una corta. */
+@Serializable
+data class ShortAddressLookup(
+    @SerialName("short_address")
+    val shortAddress: String = "",
+    val address: String = ""
+)
+
 // POST /private/view-scan-key. Finds the private outputs belonging to a scan
 // key. The key itself is a secret that reveals every incoming private payment
 // to its owner, so it is only ever sent to a node running on this machine.
@@ -312,6 +320,9 @@ data class WalletListResponse(
 data class LocalWallet(
     val name: String = "",
     val address: String = "",
+    /** La dirección corta (unos 57 caracteres): la que se comparte y va en el QR. */
+    @SerialName("short_address")
+    val shortAddress: String = "",
     @SerialName("balance_atoms")
     val balanceAtoms: Long = 0,
     val balance: String = "0",

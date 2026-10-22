@@ -213,6 +213,22 @@ object ZokaNetworkConfig {
         return trimmed.length > AddressPrefix.length + 64 && trimmed.startsWith(AddressPrefix)
     }
 
+    /**
+     * Si `text` parece una dirección corta de esta red: el resumen de una
+     * completa, unos 57 caracteres en la testnet (docs/QUANTIC-DIRECCIONES-CORTAS.md
+     * del nodo). No sirve para elegir una wallet: para eso va la completa.
+     */
+    fun isShortAddress(text: String): Boolean {
+        val trimmed = text.trim()
+        val body = trimmed.removePrefix(AddressPrefix)
+        return trimmed.startsWith(AddressPrefix) && body.length in 49..51 && body.all { it in BASE58 }
+    }
+
+    /** A quién se le puede mandar: una completa, o una corta que resuelve el nodo. */
+    fun isRecipient(text: String): Boolean = isAddress(text) || isShortAddress(text)
+
+    private const val BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
     // Sin configurar todavía (chain id vacío) se asume la cadena por defecto,
     // la testnet: mostrar "Mainnet" un instante sería justo el error que el
     // título tiene que evitar.

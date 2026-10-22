@@ -69,6 +69,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1186,8 +1187,9 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
     var password    by remember { mutableStateOf("") }
     var memo        by remember { mutableStateOf("") }
     var reviewOpen  by remember { mutableStateOf(false) }
-    // El filtro rápido; el nodo valida la dirección entera (checksum y red) al enviar.
-    val recipientLooksValid = com.zsilent.core.config.ZokaNetworkConfig.isAddress(address)
+    // El filtro rápido; el nodo valida la dirección entera (checksum y red) al
+    // enviar. Una corta la resuelve el nodo y la comprueba contra su resumen.
+    val recipientLooksValid = com.zsilent.core.config.ZokaNetworkConfig.isRecipient(address)
     // El memo viaja cifrado con la nota: solo lo lee quien recibe. Hasta 512 bytes.
     val memoBytes = memo.toByteArray(Charsets.UTF_8).size
     val memoLooksValid = memoBytes <= 512
@@ -1588,11 +1590,22 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
             }
         }
         Panel(title = "Receive address", meta = "post-quantum") {
+            // Lo que se comparte es la dirección corta (unos 57 caracteres): entra
+            // en un QR normal que cualquier cámara lee. Quien paga busca la
+            // completa en la red y la comprueba contra la corta; para eso se
+            // publica una vez. La completa (1.734 caracteres, lleva la clave
+            // X-Wing) queda a mano, por si alguien la pide.
+            val activeWallet = ui.wallets.firstOrNull { it.address == ui.activeWalletAddress }
+            val shortAddress = activeWallet?.shortAddress.orEmpty()
+            var showFull by remember(ui.activeWalletAddress) { mutableStateOf(false) }
+            LaunchedEffect(shortAddress, ui.localRpcOnline) {
+                if (shortAddress.isNotBlank() && ui.localRpcOnline) appState.refreshShortAddressPublished()
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                // Una dirección de Zoka Quantic tiene unos 1.730 caracteres (lleva
-                // la clave X-Wing): en un solo QR no se lee desde la pantalla, va
-                // en partes que el teléfono junta (ver MultiPartQr).
-                if (ui.activeWalletAddress.isNotBlank()) {
+                if (shortAddress.isNotBlank()) {
+                    QrCode(shortAddress, boxSize = 300.dp)
+                } else if (ui.activeWalletAddress.isNotBlank()) {
+                    // Un nodo sin direcciones cortas: la completa en partes (ver MultiPartQr).
                     com.zsilent.core.ui.components.AnimatedQrCode(ui.activeWalletAddress, boxSize = 360.dp)
                 }
                 Column(
@@ -1605,20 +1618,46 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
                             "only this wallet can read them.",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Text(
-                        "The code changes every half second: keep the phone's camera on it " +
-                            "until it has read every part. Or copy the address.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     if (ui.activeWalletAddress.isBlank()) {
                         MonoText("Create or select a wallet to receive ZKA.", maxLines = 2)
                     } else {
-                        MonoText("${ui.activeWalletAddress.take(24)}…${ui.activeWalletAddress.takeLast(12)}", maxLines = 1)
+                        if (shortAddress.isNotBlank()) {
+                            Text("Short address", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            MonoText(shortAddress, maxLines = 2)
+                            CopyIconButton(shortAddress)
+                            when (ui.activeShortAddressPublished) {
+                                true -> Text(
+                                    "Published: other wallets can pay this short address. Your node announces it again every 6 hours.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                else -> {
+                                    Text(
+                                        "Publish it once so other wallets can find the full address behind it. " +
+                                            "It only says that this address exists; it reveals no balance or payment.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedButton(
+                                        colors = zOutlinedButtonColors(),
+                                        onClick = { appState.publishActiveAddress() },
+                                        enabled = !ui.addressPublishBusy && ui.localRpcOnline
+                                    ) {
+                                        Text(if (ui.addressPublishBusy) "Publishing…" else "Publish short address")
+                                    }
+                                }
+                            }
+                        }
+                        ThinDivider()
+                        TextButton(onClick = { showFull = !showFull }) {
+                            Text(if (showFull) "Hide full address" else "Show full address")
+                        }
+                        if (showFull || shortAddress.isBlank()) {
+                            MonoText("${ui.activeWalletAddress.take(24)}…${ui.activeWalletAddress.takeLast(12)}", maxLines = 1)
+                            CopyIconButton(ui.activeWalletAddress)
+                            KeyValueRow("Full length", "${ui.activeWalletAddress.length} characters")
+                        }
                     }
-                    CopyIconButton(ui.activeWalletAddress)
-                    ThinDivider()
-                    KeyValueRow("Length", "${ui.activeWalletAddress.length} characters")
                     KeyValueRow("Keys", "never exported")
                 }
             }
