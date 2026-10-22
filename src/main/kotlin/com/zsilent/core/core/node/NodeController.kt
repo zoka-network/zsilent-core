@@ -93,6 +93,22 @@ private val OPERATIONAL_ROW_SUFFIX = Regex(
 private fun stripNodeTerminalCodes(line: String): String =
     line.replace(NODE_ANSI_OSC, "").replace(NODE_ANSI_CSI, "")
 
+/**
+ * Los pares manuales que le corresponden al nodo de [network]: los que están
+ * en su puerto P2P. Los guardados con el puerto de otra red quedan afuera; los
+ * de Zenith (28080), que venían del setup de la 2.1, se le pasaban al nodo de
+ * la testnet de Quantic, que no habla su protocolo.
+ */
+internal fun manualPeersForNetwork(peers: List<String>, network: String): List<String> {
+    val port = ZokaNetworkConfig.p2pPort(network)
+    return peers.map { it.trim() }.filter { it.isNotEmpty() && multiaddrPort(it) == port }
+}
+
+private val MULTIADDR_PORT = Regex("""(?:/tcp/|:)(\d+)(?=/|$)""")
+
+private fun multiaddrPort(multiaddr: String): Int? =
+    MULTIADDR_PORT.findAll(multiaddr).lastOrNull()?.groupValues?.get(1)?.toIntOrNull()
+
 /** Visible-stream policy kept internal so its narrow matching can be tested. */
 internal fun shouldDropNodePanelLine(line: String): Boolean {
     if (line.isBlank()) return true
@@ -269,12 +285,20 @@ class NodeController(private val cli: ZokaCli) {
         }
         // Los pares manuales van después de la semilla del manifiesto y antes
         // de cualquier otra cosa: el nodo los trata igual que a una semilla,
-        // así que quedan en el peerstore y sobreviven a los reinicios.
-        for (peer in manualPeers) {
-            val limpio = peer.trim()
-            if (limpio.isNotEmpty()) {
-                command += listOf("--seed", limpio)
-            }
+        // así que quedan en el peerstore y sobreviven a los reinicios. Solo los
+        // de esta red (ver `manualPeersForNetwork`).
+        val peersForNetwork = manualPeersForNetwork(manualPeers, network)
+        val skippedPeers = manualPeers.count { it.isNotBlank() } - peersForNetwork.size
+        if (skippedPeers > 0) {
+            _logs.tryEmit(
+                RuntimeLog(
+                    "node",
+                    "Skipping $skippedPeers saved peer(s) on another network's port; this network uses ${ZokaNetworkConfig.p2pPort(network)}."
+                )
+            )
+        }
+        for (peer in peersForNetwork) {
+            command += listOf("--seed", peer)
         }
         // Always launch the node in node-only mode (--no-mine). Mining is toggled
         // at RUNTIME via the node's /mining RPC, so the node stays online + synced
