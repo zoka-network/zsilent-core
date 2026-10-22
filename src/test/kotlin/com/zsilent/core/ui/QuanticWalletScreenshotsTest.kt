@@ -62,8 +62,13 @@ class QuanticWalletScreenshotsTest {
             walletName = "main",
             activeWalletName = "main",
             activeWalletAddress = main,
+            activeShortAddressPublished = false,
             wallets = listOf(
-                LocalWallet(name = "main", address = main, balanceAtoms = 1_084_000_200, balance = "1084.0002", unlocked = true),
+                LocalWallet(
+                    name = "main", address = main, balanceAtoms = 1_084_000_200, balance = "1084.0002", unlocked = true,
+                    // El vector fijo del nodo: una corta de verdad, para que el QR sea el real.
+                    shortAddress = "zqtest14v4DLNV3HyMWaCir6w4Hv4kG3G98eLZBU2HPk5tffYnmqgQwcj"
+                ),
                 LocalWallet(name = "savings", address = savings, balanceAtoms = 25_000_000, balance = "25", unlocked = true)
             ),
             walletBalance = WalletBalance(
