@@ -223,7 +223,7 @@ object ZokaNetworkConfig {
     fun displayName(chainId: String, network: String): String {
         val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
         return when {
-            chain == QUANTIC_MAINNET_CHAIN_ID -> "Zoka Quantic"
+            chain == QUANTIC_MAINNET_CHAIN_ID -> "Zoka Quantic · Mainnet"
             chain == QUANTIC_REGTEST_CHAIN_ID -> "Zoka Quantic · Regtest"
             else -> "Zoka Quantic · Testnet"
         }
@@ -232,7 +232,7 @@ object ZokaNetworkConfig {
     fun shortName(chainId: String, network: String): String {
         val chain = chainId.ifBlank { DEFAULT_CHAIN_ID }
         return when {
-            chain == QUANTIC_MAINNET_CHAIN_ID -> "quantic"
+            chain == QUANTIC_MAINNET_CHAIN_ID -> "quantic mainnet"
             chain == QUANTIC_REGTEST_CHAIN_ID -> "quantic regtest"
             else -> "quantic testnet"
         }

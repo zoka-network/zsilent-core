@@ -35,8 +35,8 @@ class ZokaNetworkConfigDisplayTest {
     @Test
     fun only_the_mainnet_chain_is_not_a_testnet() {
         val mainnet = ZokaNetworkConfig.QUANTIC_MAINNET_CHAIN_ID
-        assertEquals("Zoka Quantic", ZokaNetworkConfig.displayName(mainnet, "quantic-mainnet"))
-        assertEquals("quantic", ZokaNetworkConfig.shortName(mainnet, "quantic-mainnet"))
+        assertEquals("Zoka Quantic · Mainnet", ZokaNetworkConfig.displayName(mainnet, "quantic-mainnet"))
+        assertEquals("quantic mainnet", ZokaNetworkConfig.shortName(mainnet, "quantic-mainnet"))
         assertFalse(ZokaNetworkConfig.isTestnet(mainnet, "quantic-mainnet"))
         assertEquals("quantic-mainnet", ZokaNetworkConfig.networkForChain(mainnet))
         assertEquals("zq1", ZokaNetworkConfig.addressPrefix("quantic-mainnet"))
