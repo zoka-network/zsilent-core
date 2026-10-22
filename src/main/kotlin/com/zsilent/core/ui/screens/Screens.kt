@@ -1172,7 +1172,7 @@ private fun formatZkaCompact(atoms: Long): String {
     return if (trimmed.isEmpty()) "$whole ZKA" else "$whole.$trimmed ZKA"
 }
 
-/** "zka1Dv...mWhu" — keeps first 8 + last 6 chars. */
+/** "zqtest1D...mWhu" — keeps first 8 + last 6 chars. */
 private fun truncateAddressForHero(addr: String): String {
     if (addr.length <= 18) return addr
     return "${addr.take(8)}...${addr.takeLast(6)}"
@@ -1551,7 +1551,16 @@ private fun SendActivityRow(
                 Text(tx.status, color = statusColor, fontSize = 10.sp, letterSpacing = 0.8.sp)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!tx.amountHidden && tx.kind.isNotBlank()) {
+                Text(
+                    "${tx.kind} · ${historyAmountLabel(tx)}",
+                    color = com.zsilent.core.ui.onboarding.NoirText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
             CopyIconButton(tx.txHash, enabled = tx.txHash.isNotBlank())
             if (onOpenInExplorer != null) {
                 OutlinedButton(

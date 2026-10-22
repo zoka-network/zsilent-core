@@ -234,11 +234,9 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 }
             }
             HintText(
-                "Digits are a block height. zka1... and zpriv:... are looked up as addresses. " +
-                    "A hexadecimal hash is tried as a block, then as a private transaction " +
-                    "(found with its block when your node keeps its body, as it does for " +
-                    "the ones you sent), then as a pending transaction. To find payments " +
-                    "you received, use the view-key scan below."
+                "Digits are a block height. A hexadecimal hash is tried as a block. " +
+                    "Zoka Quantic addresses, amounts and parties leave no public trace: " +
+                    "the payments you received are in your wallet's history."
             )
         }
 
@@ -259,7 +257,8 @@ fun ExplorerScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             onOpenBlock = { runLookup(it.height.toString()) }
         )
 
-        ViewKeyScanPanel(ui, appState)
+        // Zoka Quantic: cada wallet escanea la cadena sola y muestra lo suyo en
+        // su historial; el escaneo con clave de vista era de Zenith.
     }
 }
 
@@ -899,26 +898,11 @@ private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLoo
         } else {
             ExplorerLookup.Found(block, runCatching { rpc.blockTransactions(height) }.getOrNull())
         }
-    } else if (term.startsWith("zka1") || term.startsWith("zpriv:")) {
-        // Address shapes go straight to the account check; trying them as a
-        // block hash first would just waste a round trip.
-        val account = rpc.accountExists(term)
-        if (account != null && account.valid) {
-            ExplorerLookup.Account(account.address)
-        } else {
-            ExplorerLookup.NotFound(
-                term,
-                "This node has no account with that address. It may simply never have " +
-                    "received funds, or your node may not have synced the block that " +
-                    "created it."
-            )
-        }
-    } else if (term.startsWith("zkq1")) {
+    } else if (com.zsilent.core.config.ZokaNetworkConfig.isAddress(term)) {
         ExplorerLookup.NotFound(
             term,
-            "zkq1 addresses only receive private payments, which leave no public " +
-                "record to look up. To find payments you received, use the view-key " +
-                "scan below."
+            "Zoka Quantic addresses never appear on the chain: payments to them are " +
+                "shielded notes. The ones you received are in your wallet's history."
         )
     } else if (!HEX_TERM.matches(term)) {
         ExplorerLookup.NotFound(
@@ -950,8 +934,8 @@ private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLoo
                         "Not a block hash on this node, nor a transaction it knows. The " +
                             "node keeps no index of confirmed transaction hashes: it finds " +
                             "a private one only when it keeps its body, as it does for the " +
-                            "ones sent from this node. To find payments you received, use " +
-                            "the view-key scan below."
+                            "ones sent from this node. The payments you received are in " +
+                            "your wallet's history."
                     )
                 }
             }

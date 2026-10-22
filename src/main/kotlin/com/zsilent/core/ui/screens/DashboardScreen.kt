@@ -1116,7 +1116,11 @@ private fun DashboardRecentActivity(ui: ZSilentUiState, nowMillis: Long) {
                         Text(
                             buildString {
                                 append(if (tx.timestamp > 0L) com.zsilent.core.ui.onboarding.formatTimeAgo(tx.timestamp, nowMillis) else "time not reported")
-                                append(" · ${tx.outputs} output(s) · amount private")
+                                if (tx.amountHidden || tx.kind.isBlank()) {
+                                    append(" · ${tx.outputs} output(s) · amount private")
+                                } else {
+                                    append(" · ${tx.kind} · ${historyAmountLabel(tx)}")
+                                }
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

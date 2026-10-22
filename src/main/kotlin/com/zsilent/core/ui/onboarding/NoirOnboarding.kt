@@ -835,7 +835,7 @@ fun WelcomeStepNoir() {
             FeatureBlock(
                 Icons.Outlined.ShieldMoon,
                 "Privacy first",
-                "Stealth addresses, ring signatures, zk-SNARKs.",
+                "Hidden amounts and parties (Halo 2), notes sealed with post-quantum X-Wing.",
                 Modifier.weight(1f)
             )
             FeatureBlock(
@@ -924,7 +924,7 @@ fun WalletChoiceStepNoir(ui: ZSilentUiState, appState: ZSilentAppState) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             ChoiceCard(
                 title = "Create new wallet",
-                detail = "Generate a fresh recovery phrase. Recommended for new users.",
+                detail = "Generate a fresh 24-word recovery phrase (256 bits, quantum-resistant strength). Recommended for new users.",
                 selected = ui.walletSetupMode == WalletSetupMode.CreateNew,
                 modifier = Modifier.weight(1f),
                 onClick = { appState.setWalletSetupMode(WalletSetupMode.CreateNew) }
@@ -938,12 +938,13 @@ fun WalletChoiceStepNoir(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SeedCountPill("12 words", ui.seedWordCount == SeedWordCount.Twelve) { appState.setSeedWordCount(SeedWordCount.Twelve) }
-            SeedCountPill("24 words", ui.seedWordCount == SeedWordCount.TwentyFour) { appState.setSeedWordCount(SeedWordCount.TwentyFour) }
-        }
-
+        // Zoka Quantic crea siempre frases de 24 palabras (12 son 128 bits: 64
+        // frente a una búsqueda con Grover). Restaurar acepta las dos.
         if (ui.walletSetupMode == WalletSetupMode.ImportSeed) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SeedCountPill("12 words", ui.seedWordCount == SeedWordCount.Twelve) { appState.setSeedWordCount(SeedWordCount.Twelve) }
+                SeedCountPill("24 words", ui.seedWordCount == SeedWordCount.TwentyFour) { appState.setSeedWordCount(SeedWordCount.TwentyFour) }
+            }
             RestoreSeedGrid(ui, appState)
         }
     }
@@ -1317,7 +1318,7 @@ fun AccountStepNoir(ui: ZSilentUiState) {
         ScreenEyebrow("Account ready")
         if (ui.onboardingBusy || ui.onboardingWalletAddress.isBlank()) {
             ScreenTitle("Creating wallet...")
-            ScreenBody("Encrypting keys, deriving stealth addresses, registering in local storage.")
+            ScreenBody("Encrypting the recovery phrase and deriving your Zoka Quantic address.")
             return
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

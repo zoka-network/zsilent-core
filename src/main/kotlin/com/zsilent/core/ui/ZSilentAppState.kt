@@ -3311,6 +3311,10 @@ class ZSilentAppState(
                 update {
                     it.copy(
                         onboardingBusy = false,
+                        // La cantidad la fija el nodo (24 en Quantic): la grilla y
+                        // la verificación siguen a la frase, no a lo que se eligió.
+                        seedWordCount = SeedWordCount.entries.firstOrNull { count -> count.words == result.words }
+                            ?: it.seedWordCount,
                         onboardingRecoveryPhrase = result.phrase,
                         onboardingSeedPhrase = result.phrase,
                         onboardingRecoveryConfirmed = false,
