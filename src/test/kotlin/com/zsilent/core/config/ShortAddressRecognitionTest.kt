@@ -33,22 +33,25 @@ class ShortAddressRecognitionTest {
 }
 
 class ShortAddressQrSizeTest {
-    // Con la corta, el QR de recibir es uno normal: unos 33 módulos por lado con
-    // corrección Q, que cualquier cámara lee. La completa daba 141 y no se leía
+    // Con la corta, el QR de recibir es uno normal: 33 módulos por lado con
+    // corrección M (versión 4), que cualquier cámara lee, más los 4 de margen
+    // blanco de cada lado que dibuja QrCode. La completa daba 141 y no se leía
     // desde la pantalla (15/10/2026).
     @Test
     fun the_receive_qr_of_a_short_address_is_a_small_normal_qr() {
         val short = "zqtest14v4DLNV3HyMWaCir6w4Hv4kG3G98eLZBU2HPk5tffYnmqgQwcj"
+        val margin = com.zsilent.core.ui.components.QR_QUIET_ZONE_MODULES
         val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(
             short,
             com.google.zxing.BarcodeFormat.QR_CODE,
             0,
             0,
             mapOf(
-                com.google.zxing.EncodeHintType.ERROR_CORRECTION to com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.Q,
-                com.google.zxing.EncodeHintType.MARGIN to 0,
+                com.google.zxing.EncodeHintType.ERROR_CORRECTION to com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M,
+                com.google.zxing.EncodeHintType.MARGIN to margin,
             )
         )
-        assertTrue(matrix.width <= 37, "${matrix.width} modules")
+        assertTrue(margin >= 4, "the standard asks for 4 modules of quiet zone")
+        assertTrue(matrix.width - 2 * margin <= 33, "${matrix.width - 2 * margin} modules")
     }
 }

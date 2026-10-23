@@ -61,9 +61,8 @@ object MultiPartQr {
  * Un texto largo como QR animado: sus partes ([MultiPartQr]) se alternan cada
  * [frameMillis]. Un texto corto queda como un QR común y quieto.
  *
- * Las partes van con módulos cuadrados y corrección M: son chicas, así que el
- * margen extra de lectura no cuesta tamaño, y una cámara mediocre apuntando a
- * un monitor lo necesita.
+ * Las partes van como cualquier QR de la app (estándar, corrección M): una
+ * cámara mediocre apuntando a un monitor necesita cuadrados grandes.
  */
 @Composable
 fun AnimatedQrCode(
@@ -91,7 +90,6 @@ fun AnimatedQrCode(
             parts[frame.coerceIn(0, parts.lastIndex)],
             errorCorrection = ErrorCorrectionLevel.M,
             boxSize = boxSize,
-            squareModules = true
         )
         if (parts.size > 1) {
             Text(

@@ -58,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import kotlin.math.floor
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -76,8 +77,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.drawscope.Stroke
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.BarcodeFormat
@@ -963,21 +962,49 @@ fun CopyableKeyValueRow(label: String, value: String) {
 
 // ── Estados y varios ─────────────────────────────────────────────────────────
 
+/** Margen blanco alrededor del QR, en módulos: el que pide la norma. */
+const val QR_QUIET_ZONE_MODULES = 4
+
+/** Una corrida de módulos oscuros seguidos en la fila [y], de [from] a [to] (sin incluirlo). */
+data class QrRun(val y: Int, val from: Int, val to: Int)
+
+/** Lo que dibuja [QrCode]: un rectángulo por corrida de módulos oscuros de cada fila. */
+fun qrDarkRuns(qr: com.google.zxing.common.BitMatrix): List<QrRun> {
+    val runs = ArrayList<QrRun>()
+    for (y in 0 until qr.height) {
+        var x = 0
+        while (x < qr.width) {
+            if (!qr[x, y]) {
+                x++
+                continue
+            }
+            val start = x
+            while (x < qr.width && qr[x, y]) x++
+            runs.add(QrRun(y, start, x))
+        }
+    }
+    return runs
+}
+
+/**
+ * Un QR estándar, sin estilo: módulos cuadrados llenos, las tres esquinas como
+ * manda la norma y 4 módulos de margen blanco.
+ *
+ * Antes los módulos eran puntos redondos y las esquinas, marcos redondeados,
+ * con un módulo de margen: se veía lindo, pero a muchos teléfonos les costaba
+ * leerlo desde una pantalla (lo marcó el usuario el 23/10/2026). Un código de
+ * cobro tiene que leerse con cualquier cámara.
+ */
 @Composable
 fun QrCode(
     value: String,
     modifier: Modifier = Modifier,
-    // Una zkq1 tiene unos 1.715 caracteres: con Q no entra en ningun QR (el
-    // maximo es 1.273 bytes), asi que esa usa L, mas tamaño y modulos
-    // cuadrados, que se leen mejor cuando el codigo es denso.
-    errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.Q,
+    // M (15 %): con módulos cuadrados alcanza, y deja el código más chico que
+    // Q: una dirección corta entra en 33 módulos en vez de 37, o sea cuadrados
+    // más grandes para la cámara.
+    errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.M,
     boxSize: Dp = 224.dp,
-    squareModules: Boolean = false,
 ) {
-    // Nivel de correccion Q (25%): al estilizar los modulos se pierde algo de
-    // margen de lectura, y Q lo compensa de sobra. Con el nivel por defecto (L)
-    // un QR con puntos redondeados puede volverse dificil de escanear con
-    // camaras malas o poca luz.
     val matrix = remember(value, errorCorrection) {
         runCatching {
             QRCodeWriter().encode(
@@ -986,11 +1013,12 @@ fun QrCode(
                 0, 0,
                 mapOf(
                     EncodeHintType.ERROR_CORRECTION to errorCorrection,
-                    EncodeHintType.MARGIN to 1,
+                    EncodeHintType.MARGIN to QR_QUIET_ZONE_MODULES,
                 )
             )
         }.getOrNull()
     }
+    val runs = remember(matrix) { matrix?.let(::qrDarkRuns).orEmpty() }
     // El QR va SIEMPRE oscuro sobre claro, en los dos temas.
     //
     // Antes usaba onSurface sobre surfaceContainerHigh, o sea que en tema
@@ -1000,7 +1028,7 @@ fun QrCode(
     //
     // El marco sigue el tema; solo la zona del codigo queda fija.
     val quiet = Color(0xFFFFFFFF)
-    val foreground = Color(0xFF101010)
+    val foreground = Color(0xFF000000)
     val shape = MaterialTheme.shapes.medium
 
     Box(
@@ -1010,56 +1038,20 @@ fun QrCode(
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape)
             .padding(12.dp)
             .background(quiet, MaterialTheme.shapes.small)
-            .padding(12.dp)
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val qr = matrix ?: return@Canvas
-            val cell = minOf(size.width / qr.width, size.height / qr.height)
-            val originX = (size.width - cell * qr.width) / 2f
-            val originY = (size.height - cell * qr.height) / 2f
-
-            // Los tres patrones de deteccion (esquinas) se dibujan aparte como
-            // marcos redondeados. Si se dibujaran con puntos sueltos como el
-            // resto, los lectores tardan mas en encontrarlos o directamente
-            // fallan: son la referencia geometrica que usa el decodificador.
-            fun isFinder(x: Int, y: Int): Boolean {
-                val n = qr.width
-                return (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7)
-            }
-
-            // Modulos de datos como puntos redondeados (o cuadrados llenos).
-            val dot = if (squareModules) cell else cell * 0.86f
-            val inset = (cell - dot) / 2f
-            for (x in 0 until qr.width) {
-                for (y in 0 until qr.height) {
-                    if (!qr[x, y] || isFinder(x, y)) continue
-                    drawRoundRect(
-                        color = foreground,
-                        topLeft = Offset(originX + x * cell + inset, originY + y * cell + inset),
-                        size = Size(dot, dot),
-                        cornerRadius = if (squareModules) CornerRadius.Zero else CornerRadius(dot / 2f, dot / 2f),
-                    )
-                }
-            }
-
-            // Esquinas: anillo exterior 7x7 redondeado + nucleo 3x3 redondeado.
-            val n = qr.width
-            listOf(0 to 0, n - 7 to 0, 0 to n - 7).forEach { (fx, fy) ->
-                val left = originX + fx * cell
-                val top = originY + fy * cell
-                val outer = cell * 7f
-                drawRoundRect(
+            // Cada módulo en píxeles enteros: con medidas fraccionarias, entre dos
+            // cuadrados vecinos queda una línea clara finita que confunde al
+            // lector. Las corridas de una fila van en un solo rectángulo.
+            val cell = floor(minOf(size.width / qr.width, size.height / qr.height)).coerceAtLeast(1f)
+            val originX = floor((size.width - cell * qr.width) / 2f)
+            val originY = floor((size.height - cell * qr.height) / 2f)
+            for (run in runs) {
+                drawRect(
                     color = foreground,
-                    topLeft = Offset(left, top),
-                    size = Size(outer, outer),
-                    cornerRadius = CornerRadius(cell * 2f, cell * 2f),
-                    style = Stroke(width = cell),
-                )
-                drawRoundRect(
-                    color = foreground,
-                    topLeft = Offset(left + cell * 2f, top + cell * 2f),
-                    size = Size(cell * 3f, cell * 3f),
-                    cornerRadius = CornerRadius(cell * 1f, cell * 1f),
+                    topLeft = Offset(originX + run.from * cell, originY + run.y * cell),
+                    size = Size((run.to - run.from) * cell, cell),
                 )
             }
         }

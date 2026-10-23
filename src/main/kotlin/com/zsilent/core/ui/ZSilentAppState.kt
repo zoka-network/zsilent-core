@@ -269,6 +269,9 @@ class ZSilentAppState(
      */
     private var syncOnlyNodeRunning = false
     private var lastMiningThreads = 0
+    /** Cortas que el nodo de esta sesión ya conoce (ver [autoPublishShortAddresses]). */
+    private val autoPublishedShorts: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val autoPublishRunning = java.util.concurrent.atomic.AtomicBoolean(false)
     private var lastLocalHeightReadMillis = 0L
     // Guards the one-shot iroh EndpointId fetch so a transient failure doesn't
     // spawn a fresh `zoka iroh-id` subprocess on every poll tick.
@@ -2716,6 +2719,53 @@ class ZSilentAppState(
                 update { it.copy(lastBalanceRefreshedAt = balRefNow) }
                 refreshUnlockedWalletData(addr, balRefSnap.activeWalletName, balRefPwd.copyOf(), balRefPwd.copyOf())
                 balRefPwd.fill(0.toChar())
+            }
+        }
+        autoPublishShortAddresses(_uiState.value)
+    }
+
+    /**
+     * Publica sola la dirección corta de cada wallet que el nodo local todavía
+     * no conoce: sin publicar, una corta no se puede pagar. Decisión del
+     * usuario del 23/10/2026: «sola y siempre». Lo único que revela es que la
+     * dirección existe, ningún saldo ni pago.
+     *
+     * Cada corta se revisa una vez por sesión con el nodo en línea (después el
+     * nodo la vuelve a anunciar cada 6 horas); si falla, se reintenta en la
+     * vuelta siguiente. Publicar no abre la wallet: no usa la contraseña.
+     */
+    private fun autoPublishShortAddresses(snapshot: ZSilentUiState) {
+        if (!snapshot.localRpcOnline) return
+        val pending = snapshot.wallets.filter {
+            it.shortAddress.isNotBlank() && it.shortAddress !in autoPublishedShorts
+        }
+        if (pending.isEmpty() || !autoPublishRunning.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                for (wallet in pending) {
+                    val known = runCatching { localRpc.shortAddress(wallet.shortAddress) != null }.getOrNull()
+                        ?: continue
+                    if (!known) {
+                        val result = runCatching { walletService.publishAddress(wallet.name.ifBlank { wallet.address }) }
+                        val error = result.exceptionOrNull()
+                        if (error != null) {
+                            appendLog(
+                                RuntimeLog(
+                                    "wallet",
+                                    "Could not publish the short address of ${wallet.name}: ${safeLogMessage(error)}"
+                                )
+                            )
+                            continue
+                        }
+                        appendLog(RuntimeLog("wallet", "Short address of ${wallet.name} published: ${wallet.shortAddress}"))
+                    }
+                    autoPublishedShorts.add(wallet.shortAddress)
+                    update {
+                        if (it.activeWalletAddress == wallet.address) it.copy(activeShortAddressPublished = true) else it
+                    }
+                }
+            } finally {
+                autoPublishRunning.set(false)
             }
         }
     }

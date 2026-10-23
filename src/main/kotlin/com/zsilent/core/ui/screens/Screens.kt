@@ -107,6 +107,7 @@ import androidx.compose.material.icons.outlined.Palette
 import com.zsilent.core.models.LogLevel
 import com.zsilent.core.models.RuntimeLog
 import com.zsilent.core.ui.components.Truncate
+import com.zsilent.core.ui.components.CopyButton
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.material.icons.outlined.QrCode
 import com.zsilent.core.ui.theme.ZTheme
@@ -1603,14 +1604,14 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
             }
         }
         Panel(title = "Receive address", meta = "post-quantum") {
-            // Lo que se comparte es la dirección corta (unos 57 caracteres): entra
-            // en un QR normal que cualquier cámara lee. Quien paga busca la
-            // completa en la red y la comprueba contra la corta; para eso se
-            // publica una vez. La completa (1.734 caracteres, lleva la clave
-            // X-Wing) queda a mano, por si alguien la pide.
+            // Lo único que se muestra y se comparte es la dirección corta (57
+            // caracteres): entra en un QR normal que cualquier cámara lee. Quien
+            // paga busca la completa en la red y la comprueba contra la corta;
+            // ZSilent la publica sola. La completa (1.734 caracteres, lleva la
+            // clave X-Wing) queda adentro: si alguna wallet la pide, se copia en
+            // Ajustes > Wallets (decisión del usuario del 23/10/2026).
             val activeWallet = ui.wallets.firstOrNull { it.address == ui.activeWalletAddress }
             val shortAddress = activeWallet?.shortAddress.orEmpty()
-            var showFull by remember(ui.activeWalletAddress) { mutableStateOf(false) }
             LaunchedEffect(shortAddress, ui.localRpcOnline) {
                 if (shortAddress.isNotBlank() && ui.localRpcOnline) appState.refreshShortAddressPublished()
             }
@@ -1638,37 +1639,27 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
                             Text("Short address", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             MonoText(shortAddress, maxLines = 2)
                             CopyIconButton(shortAddress)
-                            when (ui.activeShortAddressPublished) {
-                                true -> Text(
-                                    "Published: other wallets can pay this short address. Your node announces it again every 6 hours.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                else -> {
-                                    Text(
-                                        "Publish it once so other wallets can find the full address behind it. " +
-                                            "It only says that this address exists; it reveals no balance or payment.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    OutlinedButton(
-                                        colors = zOutlinedButtonColors(),
-                                        onClick = { appState.publishActiveAddress() },
-                                        enabled = !ui.addressPublishBusy && ui.localRpcOnline
-                                    ) {
-                                        Text(if (ui.addressPublishBusy) "Publishing…" else "Publish short address")
+                            Text(
+                                when (ui.activeShortAddressPublished) {
+                                    true -> "Published: other wallets can pay this address."
+                                    else -> if (ui.localRpcOnline) {
+                                        "Publishing… ZSilent publishes it by itself so others can pay it."
+                                    } else {
+                                        "ZSilent publishes it by itself as soon as your node is online."
                                     }
-                                }
-                            }
-                        }
-                        ThinDivider()
-                        TextButton(onClick = { showFull = !showFull }) {
-                            Text(if (showFull) "Hide full address" else "Show full address")
-                        }
-                        if (showFull || shortAddress.isBlank()) {
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "Publishing only says that this address exists; it reveals no balance or payment.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            // Un nodo sin direcciones cortas: la completa, que es la única que hay.
                             MonoText("${ui.activeWalletAddress.take(24)}…${ui.activeWalletAddress.takeLast(12)}", maxLines = 1)
                             CopyIconButton(ui.activeWalletAddress)
-                            KeyValueRow("Full length", "${ui.activeWalletAddress.length} characters")
                         }
                     }
                     KeyValueRow("Keys", "never exported")
@@ -4195,6 +4186,9 @@ private fun SettingsWalletsPage(ui: ZSilentUiState, appState: ZSilentAppState) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    // La completa solo acá, por si alguna wallet la pide: lleva las
+                    // claves (1.734 caracteres) y nadie tiene que verla.
+                    CopyButton(wallet.address, label = "Full address")
                     if (active) {
                         Pill("default", ZTone.On)
                     } else {
