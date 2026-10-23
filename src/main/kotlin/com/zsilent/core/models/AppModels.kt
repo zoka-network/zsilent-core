@@ -494,11 +494,14 @@ data class PendingPrivateTransfers(
     val pendingPrivateTxHashes: List<String> = emptyList()
 )
 
-// GET /quantic/stratum: el servidor Stratum del nodo (`--stratum`). Sin
-// `listening`, el nodo corre sin él.
+// GET /quantic/stratum: el servidor Stratum del nodo (`--stratum`). Con
+// `configured` y sin `listening` ni `error`, está arrancando (se abre al final
+// del arranque del nodo). Un nodo 3.0.2 no manda `configured` ni `error`.
 @Serializable
 data class StratumStatus(
+    val configured: String? = null,
     val listening: String? = null,
+    val error: String? = null,
     val miners: Int = 0,
     @SerialName("accepted_shares")
     val acceptedShares: Long = 0,

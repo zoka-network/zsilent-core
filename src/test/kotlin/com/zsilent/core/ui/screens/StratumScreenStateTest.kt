@@ -27,6 +27,17 @@ class StratumScreenStateTest {
             StratumScreenState.NotListening,
             stratumScreenState(online.copy(stratum = StratumStatus(listening = null)))
         )
+        // Pedido pero todavía sin abrir: arranca, no falló.
+        assertEquals(
+            StratumScreenState.Starting,
+            stratumScreenState(online.copy(stratum = StratumStatus(configured = "0.0.0.0:3333")))
+        )
+        assertEquals(
+            StratumScreenState.NotListening,
+            stratumScreenState(
+                online.copy(stratum = StratumStatus(configured = "0.0.0.0:3333", error = "port in use"))
+            )
+        )
         assertEquals(
             StratumScreenState.Ready,
             stratumScreenState(online.copy(stratum = StratumStatus(listening = "127.0.0.1:3333")))

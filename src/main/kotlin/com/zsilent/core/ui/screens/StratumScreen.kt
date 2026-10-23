@@ -118,6 +118,7 @@ fun StratumScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 internal enum class StratumScreenState(val label: String) {
     Off("OFF"),
     Waiting("WAITING"),
+    Starting("STARTING"),
     NotListening("NOT LISTENING"),
     Ready("READY"),
     Mining("MINING"),
@@ -129,9 +130,12 @@ internal fun stratumScreenState(ui: ZSilentUiState): StratumScreenState {
     return when {
         !ui.stratumEnabled -> StratumScreenState.Off
         !nodeOnline || status == null -> StratumScreenState.Waiting
-        status.listening.isNullOrBlank() -> StratumScreenState.NotListening
-        status.miners > 0 -> StratumScreenState.Mining
-        else -> StratumScreenState.Ready
+        !status.listening.isNullOrBlank() ->
+            if (status.miners > 0) StratumScreenState.Mining else StratumScreenState.Ready
+        // El nodo lo abre al final de su arranque, cerca de un minuto después:
+        // hasta entonces no es una falla, y un cartel rojo mandaba a buscarla.
+        !status.configured.isNullOrBlank() && status.error.isNullOrBlank() -> StratumScreenState.Starting
+        else -> StratumScreenState.NotListening
     }
 }
 
@@ -139,7 +143,7 @@ internal fun stratumScreenState(ui: ZSilentUiState): StratumScreenState {
 private fun StratumStateBanner(ui: ZSilentUiState, state: StratumScreenState, appState: ZSilentAppState) {
     val tint = when (state) {
         StratumScreenState.Mining -> ZTheme.semantics.success
-        StratumScreenState.Waiting, StratumScreenState.Ready -> ZTheme.semantics.warning
+        StratumScreenState.Waiting, StratumScreenState.Starting, StratumScreenState.Ready -> ZTheme.semantics.warning
         StratumScreenState.NotListening -> ZTheme.semantics.danger
         StratumScreenState.Off -> MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -159,8 +163,16 @@ private fun StratumStateBanner(ui: ZSilentUiState, state: StratumScreenState, ap
                         if (ui.localRpcOnline) ZTone.On else ZTone.Off
                     )
                     Pill(
-                        ui.stratum?.listening?.let { "listening $it" } ?: "not listening",
-                        if (ui.stratum?.listening.isNullOrBlank()) ZTone.Off else ZTone.On
+                        when {
+                            !ui.stratum?.listening.isNullOrBlank() -> "listening ${ui.stratum?.listening}"
+                            state == StratumScreenState.Starting -> "starting"
+                            else -> "not listening"
+                        },
+                        when {
+                            !ui.stratum?.listening.isNullOrBlank() -> ZTone.On
+                            state == StratumScreenState.Starting -> ZTone.Warn
+                            else -> ZTone.Off
+                        }
                     )
                     Pill("rx/0", ZTone.Info)
                 }
@@ -181,9 +193,13 @@ private fun StratumStateBanner(ui: ZSilentUiState, state: StratumScreenState, ap
                     "Off. Turning it on restarts the node with the Stratum open on port " +
                         "${ZokaNetworkConfig.StratumPort}; solo mining comes back on if it was on."
                 StratumScreenState.Waiting -> "On. The Stratum opens when the node is online."
-                StratumScreenState.NotListening ->
-                    "The node did not open port ${ZokaNetworkConfig.StratumPort}. Another program may be " +
-                        "using it, or the node is older than 3.0.2. Check Logs."
+                StratumScreenState.Starting ->
+                    "The node is finishing its startup. The Stratum opens on port " +
+                        "${ZokaNetworkConfig.StratumPort} in about a minute."
+                StratumScreenState.NotListening -> ui.stratum?.error?.takeIf { it.isNotBlank() }
+                    ?.let { "The node could not open the Stratum: $it" }
+                    ?: ("The node is running without the Stratum: it is older than 3.0.2, or it " +
+                        "did not get the option. Check Logs.")
                 StratumScreenState.Ready -> "Listening. Start XMRig with the line below."
                 StratumScreenState.Mining -> "XMRig is connected and mining against your node."
             }
