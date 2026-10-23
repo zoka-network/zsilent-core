@@ -10,6 +10,7 @@ enum class AppSection {
     Wallet,
     Node,
     Mining,
+    Stratum,
     Explorer,
     Privacy,
     Logs,
@@ -493,6 +494,20 @@ data class PendingPrivateTransfers(
     val pendingPrivateTxHashes: List<String> = emptyList()
 )
 
+// GET /quantic/stratum: el servidor Stratum del nodo (`--stratum`). Sin
+// `listening`, el nodo corre sin él.
+@Serializable
+data class StratumStatus(
+    val listening: String? = null,
+    val miners: Int = 0,
+    @SerialName("accepted_shares")
+    val acceptedShares: Long = 0,
+    @SerialName("rejected_shares")
+    val rejectedShares: Long = 0,
+    @SerialName("blocks_found")
+    val blocksFound: Long = 0
+)
+
 @Serializable
 data class PersistedSetup(
     val onboardingComplete: Boolean = false,
@@ -522,6 +537,11 @@ data class PersistedSetup(
     // saw an Explorer entry in 1.9.1, so defaulting to true keeps it where
     // they expect rather than making the section disappear on upgrade.
     val explorerEnabled: Boolean = true,
+    // El servidor Stratum del nodo para XMRig (3.0.2). Apagado hasta que el
+    // usuario lo encienda, y solo para esta PC: abrirlo a la red local es otra
+    // decisión, aparte.
+    val stratumEnabled: Boolean = false,
+    val stratumAllowLan: Boolean = false,
     /**
      * Direcciones onion que el usuario agregó a mano en Peers Tor.
      *

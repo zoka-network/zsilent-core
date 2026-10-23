@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Security
@@ -84,6 +85,7 @@ import com.zsilent.core.ui.screens.NodeScreen
 import com.zsilent.core.ui.screens.OnboardingScreen
 import com.zsilent.core.ui.screens.PrivacyScreen
 import com.zsilent.core.ui.screens.SettingsScreen
+import com.zsilent.core.ui.screens.StratumScreen
 import com.zsilent.core.ui.screens.WalletScreen
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,7 +107,7 @@ private enum class NavGroup(val label: String) {
 private val AppSection.group: NavGroup
     get() = when (this) {
         AppSection.Dashboard, AppSection.Wallet -> NavGroup.Core
-        AppSection.Node, AppSection.Mining -> NavGroup.Network
+        AppSection.Node, AppSection.Mining, AppSection.Stratum -> NavGroup.Network
         AppSection.Explorer, AppSection.Privacy, AppSection.Logs -> NavGroup.Insight
         AppSection.Settings -> NavGroup.System
     }
@@ -140,6 +142,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
             activeWalletAddress = uiState.activeWalletAddress,
             nodeRunning = uiState.nodeStatus == ServiceStatus.Online,
             miningRunning = uiState.miningStatus == ServiceStatus.Online,
+            stratumMining = (uiState.stratum?.miners ?: 0) > 0,
             modifier = Modifier.width(sidebarWidth)
         )
         Box(Modifier.width(1.dp).fillMaxHeight().background(scheme.outlineVariant))
@@ -165,6 +168,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
                         AppSection.Wallet    -> WalletScreen(uiState, appState)
                         AppSection.Node      -> NodeScreen(uiState, appState)
                         AppSection.Mining    -> MiningScreen(uiState, appState)
+                        AppSection.Stratum   -> StratumScreen(uiState, appState)
                         // Explorer es opt-in. Si el interruptor se apaga desde
                         // otra superficie, el router no puede seguir
                         // renderizando una sección que la sidebar ya no lista.
@@ -223,7 +227,7 @@ private fun TopBar(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 // Etiquetas cortas a proposito. Son seis: con "node · online"
-                // y "pool · hashing" completos no entran ni en 1360 px, y el
+                // y "stratum · listening" completos no entran ni en 1360 px, y el
                 // color ya dice el estado. La palabra queda para lo que el
                 // color no distingue.
                 Pill("node ${ui.nodeStatus.shortLabel()}", ui.nodeStatus.tone())
@@ -232,6 +236,19 @@ private fun TopBar(
                     if (ui.torEnabled) ZTone.On else ZTone.Off
                 )
                 Pill("solo ${ui.miningStatus.shortLabel()}", ui.miningStatus.tone())
+                // Encendido no es minando: "on" escucha, "live" tiene mineros.
+                Pill(
+                    "stratum " + when {
+                        !ui.stratumEnabled -> "off"
+                        (ui.stratum?.miners ?: 0) > 0 -> "live"
+                        else -> "on"
+                    },
+                    when {
+                        !ui.stratumEnabled -> ZTone.Off
+                        (ui.stratum?.miners ?: 0) > 0 -> ZTone.On
+                        else -> ZTone.Warn
+                    }
+                )
                 Pill(
                     "expl ${if (ui.explorerEnabled) "on" else "off"}",
                     if (ui.explorerEnabled) ZTone.On else ZTone.Off
@@ -312,6 +329,7 @@ private fun CollapsibleSidebar(
     activeWalletAddress: String,
     nodeRunning: Boolean,
     miningRunning: Boolean,
+    stratumMining: Boolean,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -391,6 +409,7 @@ private fun CollapsibleSidebar(
                         live = when (section) {
                             AppSection.Node -> nodeRunning
                             AppSection.Mining -> miningRunning
+                            AppSection.Stratum -> stratumMining
                             // Explorer no lleva punto: estar
                             // habilitada no es estar haciendo algo, y un verde
                             // permanente no informa nada.
@@ -571,6 +590,7 @@ private fun AppSection.navItem(): NavItem = when (this) {
     AppSection.Wallet    -> NavItem("Wallet",    Icons.Outlined.AccountBalanceWallet)
     AppSection.Node      -> NavItem("Node",      Icons.Outlined.Memory)
     AppSection.Mining    -> NavItem("Mining",    Icons.Outlined.Bolt)
+    AppSection.Stratum   -> NavItem("Stratum",   Icons.Outlined.Hub)
     AppSection.Explorer    -> NavItem("Explorer",     Icons.Outlined.Explore)
     AppSection.Privacy   -> NavItem("Privacy",   Icons.Outlined.Security)
     AppSection.Logs      -> NavItem("Logs",      Icons.Outlined.Terminal)

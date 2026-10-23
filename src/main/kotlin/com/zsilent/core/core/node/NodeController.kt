@@ -185,7 +185,9 @@ class NodeController(private val cli: ZokaCli) {
          * login se reiniciaria pidiendo una contrasena que todavia no existe,
          * y se quedaria abajo hasta que el usuario iniciara sesion.
          */
-        val syncOnly: Boolean
+        val syncOnly: Boolean,
+        /** Donde escucha el Stratum para XMRig, o vacio sin el. */
+        val stratumBind: String
     )
 
     private val _status = MutableStateFlow(ServiceStatus.Offline)
@@ -213,7 +215,13 @@ class NodeController(private val cli: ZokaCli) {
          * no escribe ninguna wallet: solo descarga y valida bloques. Cuando se
          * inicia sesion, ZSilent reinicia el nodo en modo completo.
          */
-        syncOnly: Boolean = false
+        syncOnly: Boolean = false,
+        /**
+         * Donde escucha el Stratum del nodo para XMRig (`--stratum host:puerto`),
+         * o vacio para no abrirlo. En modo solo-sincronizar no se abre: un nodo
+         * que todavia baja bloques no tiene trabajo que darle a un minero.
+         */
+        stratumBind: String = ""
     ) {
         val binary = cli.zoka
         if (process?.isAlive == true) {
@@ -245,6 +253,20 @@ class NodeController(private val cli: ZokaCli) {
             return
         }
 
+        // Sin el Stratum el nodo igual arranca: es un agregado, y un binario
+        // viejo no puede dejar a nadie sin nodo.
+        var cleanStratumBind = if (syncOnly) "" else stratumBind.trim()
+        if (cleanStratumBind.isNotBlank() && !supportsStratumFlag(binary)) {
+            _logs.tryEmit(
+                RuntimeLog(
+                    "node",
+                    "This zoka binary does not support --stratum. Starting the node without the Stratum server.",
+                    level = LogLevel.Warning
+                )
+            )
+            cleanStratumBind = ""
+        }
+
         stopRequested = false
         lastStartParams = StartParams(
             password,
@@ -257,7 +279,8 @@ class NodeController(private val cli: ZokaCli) {
             torOnly,
             cleanExternalAddrs,
             manualPeers,
-            syncOnly
+            syncOnly,
+            stratumBind
         )
         _status.value = ServiceStatus.Starting
         readyFile.parentFile?.mkdirs()
@@ -334,6 +357,11 @@ class NodeController(private val cli: ZokaCli) {
         }
         cleanExternalAddrs.forEach { addr ->
             command += listOf("--external-addr", addr)
+        }
+        // XMRig mina contra este nodo; cada bloque le paga a la direccion con la
+        // que entra el minero, o a la de `--quantic-mine-to`.
+        if (cleanStratumBind.isNotBlank()) {
+            command += listOf("--stratum", cleanStratumBind)
         }
         val builder = cli.processBuilder(binary, command)
         // Ninguna credencial viaja al proceso del nodo, ni por argumento ni por
@@ -435,9 +463,13 @@ class NodeController(private val cli: ZokaCli) {
             torOnly = params.torOnly,
             externalAddrs = params.externalAddrs,
             manualPeers = params.manualPeers,
-            syncOnly = params.syncOnly
+            syncOnly = params.syncOnly,
+            stratumBind = params.stratumBind
         )
     }
+
+    /** Hay un nodo lanzado por este controlador y sigue vivo. */
+    fun ownsRunningProcess(): Boolean = process?.isAlive == true
 
     fun stop() {
         _status.value = ServiceStatus.Stopping
@@ -559,6 +591,19 @@ class NodeController(private val cli: ZokaCli) {
                 val output = child.inputStream.bufferedReader().readText()
                 child.waitFor()
                 output.contains("--external-addr")
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun supportsStratumFlag(binary: File): Boolean {
+        return runCatching {
+            cli.withZokaCommandLock {
+                val child = cli.processBuilder(binary, listOf("--help"))
+                    .redirectErrorStream(true)
+                    .start()
+                val output = child.inputStream.bufferedReader().readText()
+                child.waitFor()
+                output.contains("--stratum")
             }
         }.getOrDefault(false)
     }

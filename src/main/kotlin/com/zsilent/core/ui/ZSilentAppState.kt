@@ -30,6 +30,7 @@ import com.zsilent.core.models.RuntimeLog
 import com.zsilent.core.models.SeedWordCount
 import com.zsilent.core.models.SendResult
 import com.zsilent.core.models.ServiceStatus
+import com.zsilent.core.models.StratumStatus
 import com.zsilent.core.models.WalletBalance
 import com.zsilent.core.models.WalletHistory
 import com.zsilent.core.models.WalletSetupMode
@@ -96,6 +97,11 @@ data class ZSilentUiState(
      * borra con [ZSilentAppState.consumeExplorerRequest].
      */
     val explorerRequest: String? = null,
+    /** El Stratum del nodo para XMRig; se aplica al arrancar el nodo. */
+    val stratumEnabled: Boolean = false,
+    val stratumAllowLan: Boolean = false,
+    /** Lo que dice el nodo de su Stratum; nulo con el nodo fuera de línea. */
+    val stratum: StratumStatus? = null,
     val manualPeers: List<String> = emptyList(),
     /** Dirección zkq1 de la wallet activa; nula mientras la red no la active. */
     val hybridReceiveAddress: String? = null,
@@ -297,6 +303,8 @@ class ZSilentAppState(
                     compactDensity = setup.compactDensity,
                     animationsEnabled = setup.animationsEnabled,
                     explorerEnabled = setup.explorerEnabled,
+                    stratumEnabled = setup.stratumEnabled,
+                    stratumAllowLan = setup.stratumAllowLan,
                     manualPeers = setup.manualPeers,
                     torEnabled = setup.torEnabled,
                     torOnly = setup.torOnly,
@@ -553,6 +561,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
+                    stratumEnabled = snapshot.stratumEnabled,
+                    stratumAllowLan = snapshot.stratumAllowLan,
                 manualPeers = snapshot.manualPeers,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
@@ -646,6 +656,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
+                stratumEnabled = snapshot.stratumEnabled,
+                stratumAllowLan = snapshot.stratumAllowLan,
                 manualPeers = snapshot.manualPeers,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
@@ -723,6 +735,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
+                    stratumEnabled = snapshot.stratumEnabled,
+                    stratumAllowLan = snapshot.stratumAllowLan,
                 manualPeers = snapshot.manualPeers,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
@@ -773,6 +787,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = enabled,
+                    stratumEnabled = snapshot.stratumEnabled,
+                    stratumAllowLan = snapshot.stratumAllowLan,
                 manualPeers = snapshot.manualPeers,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
@@ -801,6 +817,55 @@ class ZSilentAppState(
         if (_uiState.value.darkTheme == enabled) return
         update { it.copy(darkTheme = enabled) }
         persistCurrentSetup()
+    }
+
+    /**
+     * Enciende o apaga el Stratum del nodo para XMRig. Es un flag de arranque
+     * del nodo, así que con el nodo andando ZSilent lo reinicia.
+     */
+    fun setStratumEnabled(enabled: Boolean) {
+        if (_uiState.value.stratumEnabled == enabled) return
+        update { it.copy(stratumEnabled = enabled, stratum = null, lastActivityMillis = System.currentTimeMillis()) }
+        persistCurrentSetup()
+        appendLog(RuntimeLog("stratum", if (enabled) "Stratum server for XMRig enabled." else "Stratum server disabled."))
+        restartNodeToApply(if (enabled) "Stratum enabled" else "Stratum disabled")
+    }
+
+    /** Abre el Stratum a la red local (0.0.0.0) o lo deja solo para esta PC. */
+    fun setStratumAllowLan(allow: Boolean) {
+        val snapshot = _uiState.value
+        if (snapshot.stratumAllowLan == allow) return
+        update { it.copy(stratumAllowLan = allow, lastActivityMillis = System.currentTimeMillis()) }
+        persistCurrentSetup()
+        appendLog(
+            RuntimeLog(
+                "stratum",
+                if (allow) "Stratum open to miners on the local network." else "Stratum limited to this PC."
+            )
+        )
+        if (snapshot.stratumEnabled) restartNodeToApply("Stratum address changed")
+    }
+
+    /**
+     * Reinicia el nodo para aplicar un flag de arranque. Solo el que lanzó
+     * ZSilent con la sesión abierta: el de solo-sincronizar se reinicia igual
+     * al iniciar sesión, uno ajeno no es de ZSilent, y uno apagado toma el
+     * cambio cuando arranque. Si minaba solo, vuelve a minar con los mismos
+     * hilos.
+     */
+    private fun restartNodeToApply(reason: String) {
+        val snapshot = _uiState.value
+        if (!nodeController.ownsRunningProcess() || syncOnlyNodeRunning) return
+        val wasMining = snapshot.localMiningEnabled || integratedMiningRequested
+        val threads = lastMiningThreads.takeIf { it > 0 }
+        appendLog(RuntimeLog("node", "$reason: restarting the node to apply it."))
+        scope.launch {
+            runCatching { stopNode() }
+            // El mismo margen que el reinicio al iniciar sesión: que el proceso
+            // suelte el puerto RPC y la base antes de levantar el siguiente.
+            delay(3_000)
+            startNode(autoMine = wasMining, threads = threads)
+        }
     }
 
     /**
@@ -1226,6 +1291,8 @@ class ZSilentAppState(
                     autoLockMinutes = current.onboardingAutoLockMinutes,
                     darkTheme = current.darkTheme,
                     explorerEnabled = current.explorerEnabled,
+                    stratumEnabled = current.stratumEnabled,
+                    stratumAllowLan = current.stratumAllowLan,
                     torEnabled = current.torEnabled,
                     torOnly = current.torOnly,
                     torSocksHost = current.torSocksHost,
@@ -1377,6 +1444,8 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
+                        stratumEnabled = current.stratumEnabled,
+                        stratumAllowLan = current.stratumAllowLan,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -1525,6 +1594,8 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
+                        stratumEnabled = current.stratumEnabled,
+                        stratumAllowLan = current.stratumAllowLan,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -2150,6 +2221,11 @@ class ZSilentAppState(
                 torOnly = snapshot.torOnly,
                 externalAddrs = externalAddrs,
                 manualPeers = snapshot.manualPeers,
+                stratumBind = if (snapshot.stratumEnabled) {
+                    ZokaNetworkConfig.stratumBind(snapshot.stratumAllowLan)
+                } else {
+                    ""
+                },
             )
             if (externalAddrs.isNotEmpty()) {
                 watchNodeReadySeedAddress()
@@ -2396,6 +2472,14 @@ class ZSilentAppState(
         } else {
             null
         }
+        // El Stratum solo se consulta si el usuario lo encendio: apagado no hay
+        // nada que mostrar y es una lectura menos por ciclo.
+        val stratumWanted = localRpcOnline && snapshot.stratumEnabled
+        val localStratum = if (stratumWanted) {
+            runCatching { localRpc.stratumStatus() }.getOrNull()
+        } else {
+            null
+        }
         val telemetryPollAtMillis = System.currentTimeMillis()
         // This node's iroh snapshot-seed EndpointId is derived from a persistent
         // key, so it never changes — fetch it once (a short zoka subprocess),
@@ -2470,6 +2554,7 @@ class ZSilentAppState(
                     localMiningEnabled = localRpcMining,
                     localConnectedPeers = localStats?.connectedPeers ?: it.localConnectedPeers,
                     peers = localPeers?.peers ?: it.peers,
+                    stratum = if (stratumWanted) localStratum ?: it.stratum else null,
                     peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,
                     peerDirectCount = localPeers?.byTransport?.direct ?: it.peerDirectCount,
                     chainHeight = localHeight,
@@ -2568,6 +2653,7 @@ class ZSilentAppState(
                     localMiningEnabled = localRpcMining,
                     localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
                     peers = localPeers?.peers ?: it.peers,
+                    stratum = if (stratumWanted) localStratum ?: it.stratum else null,
                     peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,
                     peerDirectCount = localPeers?.byTransport?.direct ?: it.peerDirectCount,
                     chainHeight = localHeight,
@@ -3217,6 +3303,8 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
+                stratumEnabled = snapshot.stratumEnabled,
+                stratumAllowLan = snapshot.stratumAllowLan,
                 manualPeers = snapshot.manualPeers,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,

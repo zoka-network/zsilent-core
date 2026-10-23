@@ -194,6 +194,17 @@ object ZokaNetworkConfig {
         else -> 28180
     }
 
+    /**
+     * El puerto del Stratum del nodo, el mismo en las dos redes: un minero que
+     * entra con una dirección de la otra red recibe un error del nodo, no
+     * mina para nadie.
+     */
+    const val StratumPort: Int = 3333
+
+    /** Dónde escucha el Stratum: solo esta PC, o también la red local. */
+    fun stratumBind(allowLan: Boolean): String =
+        if (allowLan) "0.0.0.0:$StratumPort" else "127.0.0.1:$StratumPort"
+
     /** Cómo empiezan las direcciones de la red configurada (`zqtest1…`). */
     val AddressPrefix: String
         get() = addressPrefix(current.network)

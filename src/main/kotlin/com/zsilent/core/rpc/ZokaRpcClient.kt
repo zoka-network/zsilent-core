@@ -13,6 +13,7 @@ import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.PeersResponse
 import com.zsilent.core.models.PrivateTxLookup
+import com.zsilent.core.models.StratumStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
@@ -155,6 +156,10 @@ class ZokaRpcClient(val baseUrl: String) {
      */
     suspend fun shortAddress(short: String): ShortAddressLookup? =
         getOrNull("/quantic/address/$short")
+
+    /** El servidor Stratum del nodo; nulo si el nodo no tiene la ruta. */
+    suspend fun stratumStatus(): StratumStatus? =
+        getOrNull("/quantic/stratum")
 
     /**
      * True when this client points at a node on this machine.
