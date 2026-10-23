@@ -33,7 +33,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.CurrencyExchange
-import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Add
@@ -2018,12 +2017,6 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         ui.miningSyncReady &&
         ui.miningStatus != ServiceStatus.Starting &&
         !ui.mining.running &&
-        // Excluyentes: el nodo no corre las dos a la vez, asi que la interfaz no
-        // ofrece arrancar esta mientras la otra manda. Se bloquea en vez de
-        // apagar el equipo por su cuenta: parar el worker deja de aportar
-        // trabajo a gente que cuenta con vos, y esa no es una decision que
-        // deba tomar un boton de otra seccion.
-        !ui.teamMiningActive &&
         !nodeChangingState
     val canStopMining = ui.miningControlledByApp || integratedMining || ui.localMiningEnabled
     LaunchedEffect(ui.mining.running, ui.miningStatus, ui.nodeStatus, ui.miningBlockReason, ui.miningDiagnostic) {
@@ -2044,11 +2037,8 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     ) {
         // El panel "Mining controls" se fundio en el de hashrate en vivo.
 
-        // Mismo cartel que Node y Mining Pool: una palabra grande que dice de
-        // una si esto esta trabajando o no. PAUSED es su propio estado y no un
-        // OFFLINE: la seccion esta apagada porque el usuario eligio el equipo,
-        // no porque algo haya fallado, y mezclar las dos cosas manda a buscar
-        // un problema que no existe.
+        // Mismo cartel que Node: una palabra grande que dice de una si esto
+        // esta trabajando o no.
         SoloMiningStateBanner(
             ui = ui,
             hashrate = effectiveHashrate,
@@ -2084,12 +2074,8 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard(
                 "Status",
-                // Con el equipo activo esta seccion esta apagada por decision del
-                // usuario, no por un fallo. Decir OFFLINE a secas invitaria a
-                // buscar un problema donde no lo hay.
-                if (ui.teamMiningActive) "Paused" else ui.miningStatus.name,
+                ui.miningStatus.name,
                 when {
-                    ui.teamMiningActive -> "team mining is on"
                     !ui.miningSyncReady -> "sync locked"
                     miningFaulted -> "check logs"
                     ui.miningControlledByApp -> "ZSilent miner"
@@ -2117,11 +2103,6 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 onStart = { parsedThreads?.let { t -> miningRequestActive = true; appState.startMining(t) } },
                 onStop = { appState.stopMining() },
                 hint = when {
-                    // Primero que todo lo demas: si el equipo manda, cualquier
-                    // otro motivo es secundario y confunde.
-                    ui.teamMiningActive ->
-                        "Team mining is active in Mining Pool. Solo and team mining cannot run at " +
-                            "once on this node — stop the team worker there to mine solo."
                     externalMining -> "Mining is running outside ZSilent."
                     ui.mining.running && effectiveHashrate <= 0L -> "Mining is running. Measuring hashrate; the first sample lands after the first PoW solve."
                     ui.mining.running -> "Mining is running alongside the node."
@@ -2219,7 +2200,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
  * hilos son decisiones que se toman mirando el grafico.
  */
 /**
- * Cartel de estado del minado solo, hermano del de Node y del de Mining Pool.
+ * Cartel de estado del minado solo, hermano del de Node.
  *
  * `MINING` sale del hashrate real, no de que el usuario haya pulsado el boton:
  * el nodo puede aceptar la orden y tardar en dar la primera muestra, y decir
@@ -2239,7 +2220,6 @@ private fun SoloMiningStateBanner(
     val running = ui.mining.running || ui.localMiningEnabled
     val label = when {
         faulted || ui.miningStatus == ServiceStatus.Error -> "ERROR"
-        ui.teamMiningActive -> "PAUSED"
         running && hashrate > 0L -> "MINING"
         running || ui.miningStatus == ServiceStatus.Starting -> "WARMING"
         else -> "OFFLINE"
@@ -2268,10 +2248,6 @@ private fun SoloMiningStateBanner(
                         "session ${if (ui.sessionUnlocked) "unlocked" else "locked"}",
                         if (ui.sessionUnlocked) ZTone.On else ZTone.Warn
                     )
-                    Pill(
-                        if (ui.teamMiningActive) "team mining on" else "team mining off",
-                        if (ui.teamMiningActive) ZTone.Warn else ZTone.Off
-                    )
                 }
             }
             Row(
@@ -2294,9 +2270,6 @@ private fun SoloMiningStateBanner(
         HintText(
             when (label) {
                 "ERROR" -> "The miner reported a problem. Check Logs for the reason."
-                "PAUSED" ->
-                    "Team mining is running in Mining Pool. Solo and team mining cannot run at " +
-                        "once on this node — stop the team worker there to mine solo."
                 "MINING" -> "Mining with ${threads ?: 1} thread(s). Rewards land in your local wallet."
                 "WARMING" -> "The miner is up; the first hashrate sample lands after the first PoW solve."
                 else -> "Idle. Starting the miner runs it alongside the node."
@@ -3579,9 +3552,6 @@ private fun ComingSoonScreen(
     }
 }
 
-// MiningPoolScreen lives in its own file. It takes (ui, appState) and reads
-// real state, so no Coming Soon placeholder remains.
-
 // ExplorerScreen lives in ExplorerScreen.kt — it reads real chain state and is
 // wired into the router. No Coming Soon placeholder for this section.
 
@@ -3625,7 +3595,6 @@ fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     SettingsPage.Home -> SettingsHome(ui) { page = it }
                     SettingsPage.Security -> SettingsSecurityPage(ui, appState)
                     SettingsPage.Network -> SettingsNetworkPage(ui)
-                    SettingsPage.Experimental -> SettingsExperimentalPage(ui, appState)
                     SettingsPage.Wallets -> SettingsWalletsPage(ui, appState)
             SettingsPage.Appearance -> SettingsAppearancePage(ui, appState)
             SettingsPage.About -> SettingsAboutPage(ui)
@@ -3654,7 +3623,6 @@ private enum class SettingsPage(
     Network("Network", "RPC endpoint and connection status."),
     Appearance("Appearance", "Theme, density and motion."),
     Wallets("Wallets", "Accounts on this device."),
-    Experimental("Experimental", "Opt in to features that can move funds."),
     About("About", "ZSilent Core details and runtime status."),
     Danger("Danger zone", "Reset app setup deliberately.")
 }
@@ -3698,7 +3666,6 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
         SettingsStateBanner(ui)
         val torLive = ui.torEnabled && ui.torStatus == ServiceStatus.Online
         val hasWallet = ui.activeWalletAddress.isNotBlank()
-        val experimentalOn = ui.teamMiningEnabled
 
         // Rejilla pareja de tres columnas. Antes dos tarjetas no llevaban
         // weight y se dimensionaban por su texto, asi que la fila quedaba
@@ -3781,18 +3748,6 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
         }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsMenuCard(
-                title = "Experimental",
-                detail = if (ui.teamMiningEnabled) "On: Team Mining. It can move funds."
-                else "Off. Nothing experimental can touch your balance.",
-                icon = Icons.Outlined.Groups,
-                // Ambar cuando esta encendido, no verde: funciona, pero mueve
-                // dinero y conviene que se note que esta activo.
-                meta = if (experimentalOn) "active" else "off",
-                health = if (experimentalOn) SettingHealth.Warn else SettingHealth.Neutral,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                onClick = { onOpen(SettingsPage.Experimental) }
-            )
-            SettingsMenuCard(
                 title = "Danger zone",
                 detail = "Clear app setup and return to onboarding",
                 icon = Icons.Outlined.WarningAmber,
@@ -3800,6 +3755,10 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Danger) }
             )
+            // Sola en su fila, pero con el ancho de una columna: dos huecos con
+            // peso dejan la rejilla de tres alineada con las filas de arriba.
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
         }
     }
 }
@@ -4173,20 +4132,6 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
         CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
         KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
         KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
-    }
-}
-
-@Composable
-private fun SettingsExperimentalPage(ui: ZSilentUiState, appState: ZSilentAppState) {
-    // El minado en equipo era de Zenith; Zoka Quantic no lo tiene (no hay
-    // interruptor que mostrar: no habría nada que encender).
-    Panel(title = "Team Mining", meta = "not on Zoka Quantic") {
-        Text(
-            "Team Mining was a feature of the previous network (Zenith). Zoka Quantic " +
-                "does not have it: each node mines its own blocks.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall
-        )
     }
 }
 

@@ -512,7 +512,7 @@ private fun DataSection() {
                     fraction = 0.5f,
                 )
                 MetricTile(
-                    label = "Team hashrate",
+                    label = "Network hashrate",
                     value = "— H/s",
                     caption = "todavía no medido",
                     accent = MetricAccent.Neutral,

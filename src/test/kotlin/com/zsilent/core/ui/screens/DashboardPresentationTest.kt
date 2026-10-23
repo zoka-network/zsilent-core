@@ -244,10 +244,6 @@ class DashboardPresentationTest {
         val base = healthyState(now).copy(miningSyncReady = true)
         assertTrue(dashboardActionPolicy(base).miningEnabled)
 
-        val team = dashboardActionPolicy(base.copy(teamMiningActive = true, teamMiningHashing = true))
-        assertFalse(team.miningEnabled)
-        assertEquals("team mining active · solo miner unavailable", team.miningReason)
-
         val minerStarting = dashboardActionPolicy(base.copy(miningStatus = ServiceStatus.Starting))
         assertFalse(minerStarting.miningEnabled)
         assertEquals("Starting miner", minerStarting.miningLabel)

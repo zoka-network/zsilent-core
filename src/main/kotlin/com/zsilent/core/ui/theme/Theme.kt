@@ -185,15 +185,6 @@ data class ZMetricPalette(
      * claro, holgado en ambos.
      */
     val live: Color = Color(0xFF4A7BA7),
-    /**
-     * Igual que `live` pero para el hashrate de equipo del Mining Pool.
-     *
-     * Verde marino apagado. NO es `semantics.success`: ese esta reservado para
-     * estado, y una barra de datos con el verde de "todo bien" se lee como un
-     * indicador de salud y no como una medicion. Contraste verificado: 4.95:1
-     * sobre el fondo oscuro y 4.14:1 sobre el claro.
-     */
-    val liveTeam: Color = Color(0xFF2E8B57),
 ) {
     /** Tono por posición. Nunca cicla: si se piden más, repite el último. */
     fun at(index: Int): Color = series[index.coerceIn(0, series.lastIndex)]

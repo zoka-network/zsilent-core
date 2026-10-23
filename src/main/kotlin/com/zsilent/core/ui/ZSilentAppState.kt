@@ -96,7 +96,6 @@ data class ZSilentUiState(
      * borra con [ZSilentAppState.consumeExplorerRequest].
      */
     val explorerRequest: String? = null,
-    val teamMiningEnabled: Boolean = false,
     val manualPeers: List<String> = emptyList(),
     /** Dirección zkq1 de la wallet activa; nula mientras la red no la active. */
     val hybridReceiveAddress: String? = null,
@@ -178,16 +177,6 @@ data class ZSilentUiState(
     val miningBlockReason: String? = null,
     val miningDiagnostic: String? = null,
     val localMiningEnabled: Boolean = false,
-    /**
-     * El worker de equipo está encendido en este nodo.
-     *
-     * Solo y equipo son excluyentes: el nodo no los corre a la vez (la tarea de
-     * equipo se cancela en cuanto hay una de minado solo), así que la interfaz
-     * los presenta como excluyentes en vez de dejar que el usuario los pelee.
-     */
-    val teamMiningActive: Boolean = false,
-    /** El worker de equipo está entregando shares ahora mismo. */
-    val teamMiningHashing: Boolean = false,
     val syncBusy: Boolean = false,
     val localRpcOnline: Boolean = false,
     // Peers of THIS node (from the local node's /stats), distinct from
@@ -308,9 +297,6 @@ class ZSilentAppState(
                     compactDensity = setup.compactDensity,
                     animationsEnabled = setup.animationsEnabled,
                     explorerEnabled = setup.explorerEnabled,
-                    // Zoka Quantic no tiene minado en equipo: una preferencia de
-                    // Zenith que lo encendía no se aplica.
-                    teamMiningEnabled = false,
                     manualPeers = setup.manualPeers,
                     torEnabled = setup.torEnabled,
                     torOnly = setup.torOnly,
@@ -567,7 +553,6 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
-                    teamMiningEnabled = snapshot.teamMiningEnabled,
                 manualPeers = snapshot.manualPeers,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
@@ -661,7 +646,6 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
-                teamMiningEnabled = snapshot.teamMiningEnabled,
                 manualPeers = snapshot.manualPeers,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,
@@ -739,7 +723,6 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = snapshot.explorerEnabled,
-                    teamMiningEnabled = snapshot.teamMiningEnabled,
                 manualPeers = snapshot.manualPeers,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
@@ -790,7 +773,6 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                     explorerEnabled = enabled,
-                    teamMiningEnabled = snapshot.teamMiningEnabled,
                 manualPeers = snapshot.manualPeers,
                     torEnabled = snapshot.torEnabled,
                     torOnly = snapshot.torOnly,
@@ -819,30 +801,6 @@ class ZSilentAppState(
         if (_uiState.value.darkTheme == enabled) return
         update { it.copy(darkTheme = enabled) }
         persistCurrentSetup()
-    }
-
-    fun setTeamMiningEnabled(enabled: Boolean) {
-        val snapshot = _uiState.value
-        if (snapshot.teamMiningEnabled == enabled) return
-        update {
-            it.copy(
-                teamMiningEnabled = enabled,
-                selectedSection = if (!enabled && it.selectedSection == AppSection.MiningPool) {
-                    AppSection.Dashboard
-                } else {
-                    it.selectedSection
-                },
-                lastActivityMillis = System.currentTimeMillis()
-            )
-        }
-        persistCurrentSetup()
-        appendLog(
-            RuntimeLog(
-                "team-mining",
-                if (enabled) "Experimental Team Mining enabled."
-                else "Experimental Team Mining disabled."
-            )
-        )
     }
 
     /**
@@ -1268,7 +1226,6 @@ class ZSilentAppState(
                     autoLockMinutes = current.onboardingAutoLockMinutes,
                     darkTheme = current.darkTheme,
                     explorerEnabled = current.explorerEnabled,
-                    teamMiningEnabled = current.teamMiningEnabled,
                     torEnabled = current.torEnabled,
                     torOnly = current.torOnly,
                     torSocksHost = current.torSocksHost,
@@ -1420,7 +1377,6 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
-                        teamMiningEnabled = current.teamMiningEnabled,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -1569,7 +1525,6 @@ class ZSilentAppState(
                         autoLockMinutes = current.onboardingAutoLockMinutes,
                         darkTheme = current.darkTheme,
                         explorerEnabled = current.explorerEnabled,
-                        teamMiningEnabled = current.teamMiningEnabled,
                         torEnabled = current.torEnabled,
                         torOnly = current.torOnly,
                         torSocksHost = current.torSocksHost,
@@ -2414,22 +2369,6 @@ class ZSilentAppState(
         }
         val localHeight = maxOf(localDbHeight, localRpcHeight ?: 0L, snapshot.mining.chainHeight)
         val localRpcOnline = localRpcHeight != null
-        // El nodo marca local_mining tambien cuando el worker de EQUIPO esta
-        // trabajando, y publica el hashrate del equipo como propio (main.rs:
-        // `runtime_mining_enabled || mining_active || team_hashing`). Desde el
-        // nodo eso es correcto -- esta minando --, pero ZSilent necesita saber
-        // cual de las dos, porque son excluyentes y cada una tiene su seccion.
-        //
-        // Sin esta consulta la seccion Mining se veia encendida, con el hashrate
-        // del equipo, mientras el minado solo estaba realmente apagado.
-        val teamStatus = if (localRpcOnline) {
-            runCatching { localRpc.teamMiningStatus() }.getOrNull()
-        } else {
-            null
-        }
-        val teamEnabled = teamStatus?.enabled ?: snapshot.teamMiningActive
-        val teamHashing = teamStatus?.hashing ?: false
-
         // Sticky mining indicator: a failed/timed-out local stats poll (the node
         // is briefly busy hashing) must NOT be read as "not mining", or the UI
         // flickers between ON and WARMING every time a poll misses. Only a
@@ -2439,9 +2378,7 @@ class ZSilentAppState(
         } else {
             snapshot.localMiningEnabled
         }
-        // Si el equipo esta activo, lo que reporta el nodo es el equipo: solo y
-        // equipo no pueden convivir, asi que atribuirlo al solo seria mentir.
-        val localRpcMining = nodeReportsMining && !teamEnabled
+        val localRpcMining = nodeReportsMining
         val miningDiagnostic = snapshot.miningDiagnostic
 
         // Read the local node's sync/mesh telemetry exactly once per poll. The
@@ -2518,13 +2455,6 @@ class ZSilentAppState(
                         else -> it.nodeStatus
                     },
                     miningStatus = when {
-                        // Con el equipo activo el minado solo esta apagado por
-                        // decision del usuario. Un Error suyo de antes ya no
-                        // describe nada, y como ninguna rama de abajo se cumple
-                        // cuando localRpcMining es false, se quedaba pegado para
-                        // siempre. Paso el 2026-07-30: la VM mostraba ERROR sin
-                        // motivo tras arrancar el equipo.
-                        teamEnabled -> ServiceStatus.Offline
                         localRpcMining && !miningDiagnostic.isNullOrBlank() -> ServiceStatus.Error
                         localRpcMining -> ServiceStatus.Online
                         // Same one-way stickiness fix: only downgrade a
@@ -2538,11 +2468,6 @@ class ZSilentAppState(
                     },
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
-                    // Mismo motivo: `miningFaulted` pinta ERROR mientras haya
-                    // diagnostico, aunque el estado ya sea Offline.
-                    miningDiagnostic = if (teamEnabled) null else it.miningDiagnostic,
-                    teamMiningActive = teamEnabled,
-                    teamMiningHashing = teamHashing,
                     localConnectedPeers = localStats?.connectedPeers ?: it.localConnectedPeers,
                     peers = localPeers?.peers ?: it.peers,
                     peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,
@@ -2633,13 +2558,6 @@ class ZSilentAppState(
                         else -> it.nodeStatus
                     },
                     miningStatus = when {
-                        // Con el equipo activo el minado solo esta apagado por
-                        // decision del usuario. Un Error suyo de antes ya no
-                        // describe nada, y como ninguna rama de abajo se cumple
-                        // cuando localRpcMining es false, se quedaba pegado para
-                        // siempre. Paso el 2026-07-30: la VM mostraba ERROR sin
-                        // motivo tras arrancar el equipo.
-                        teamEnabled -> ServiceStatus.Offline
                         localRpcMining && !miningDiagnostic.isNullOrBlank() -> ServiceStatus.Error
                         localRpcMining -> ServiceStatus.Online
                         localRpcOnline && localStats != null && !it.miningControlledByApp &&
@@ -2648,11 +2566,6 @@ class ZSilentAppState(
                     },
                     mining = reconciledMining,
                     localMiningEnabled = localRpcMining,
-                    // Mismo motivo: `miningFaulted` pinta ERROR mientras haya
-                    // diagnostico, aunque el estado ya sea Offline.
-                    miningDiagnostic = if (teamEnabled) null else it.miningDiagnostic,
-                    teamMiningActive = teamEnabled,
-                    teamMiningHashing = teamHashing,
                     localConnectedPeers = localStats?.connectedPeers ?: (localSync?.connectedPeers ?: it.localConnectedPeers),
                     peers = localPeers?.peers ?: it.peers,
                     peerTorCount = localPeers?.byTransport?.tor ?: it.peerTorCount,
@@ -3304,7 +3217,6 @@ class ZSilentAppState(
                 compactDensity = snapshot.compactDensity,
                 animationsEnabled = snapshot.animationsEnabled,
                 explorerEnabled = snapshot.explorerEnabled,
-                teamMiningEnabled = snapshot.teamMiningEnabled,
                 manualPeers = snapshot.manualPeers,
                 torEnabled = snapshot.torEnabled,
                 torOnly = snapshot.torOnly,

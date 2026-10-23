@@ -184,8 +184,8 @@ internal fun dashboardActionPolicy(
         ServiceStatus.Stopping
     )
     val minerMayOwnChain = externalMinerOwnsChain || minerOwnershipUnclear
-    val miningStateUnclear = ui.miningStatus == ServiceStatus.Online && !soloRunning && !ui.teamMiningActive
-    val canStartSolo = rpcEndpointLocal && ui.zokaReady && nodeRunning && ui.localRpcOnline && ui.miningSyncReady && !ui.teamMiningActive
+    val miningStateUnclear = ui.miningStatus == ServiceStatus.Online && !soloRunning
+    val canStartSolo = rpcEndpointLocal && ui.zokaReady && nodeRunning && ui.localRpcOnline && ui.miningSyncReady
     val nodeReason = when {
         nodeRunning || nodeBusy -> null
         externalMinerOwnsChain -> "stop the external miner before starting the managed node"
@@ -197,7 +197,6 @@ internal fun dashboardActionPolicy(
     val miningReason = when {
         !rpcEndpointLocal -> "configured RPC is remote · mining controls disabled"
         soloRunning -> null
-        ui.teamMiningActive -> "team mining active · solo miner unavailable"
         miningBusy -> "miner is changing state"
         miningStateUnclear -> "miner status is reconciling"
         !ui.zokaReady -> "Zoka binaries unavailable"
@@ -568,17 +567,8 @@ private fun DashboardRuntimePanel(
                 if (ui.torEnabled) dashboardServiceTone(ui.torStatus) else ZTone.Off
             )
             Pill(
-                when {
-                    ui.teamMiningActive && ui.teamMiningHashing -> "team mining active"
-                    ui.teamMiningActive -> "team mining waiting"
-                    ui.mining.running -> "solo mining running"
-                    else -> "mining off"
-                },
-                when {
-                    ui.teamMiningHashing || ui.mining.running -> ZTone.On
-                    ui.teamMiningActive -> ZTone.Warn
-                    else -> ZTone.Off
-                }
+                if (ui.mining.running) "solo mining running" else "mining off",
+                if (ui.mining.running) ZTone.On else ZTone.Off
             )
         }
         HintText(runtime.detail)
@@ -954,12 +944,7 @@ private fun DashboardMiningPanel(
 ) {
     Panel(
         title = "Mining status",
-        meta = when {
-            ui.teamMiningActive && ui.teamMiningHashing -> "team active · solo snapshot retained"
-            ui.teamMiningActive -> "team waiting · solo snapshot retained"
-            ui.mining.running -> "solo miner running"
-            else -> "idle"
-        },
+        meta = if (ui.mining.running) "solo miner running" else "idle",
         modifier = modifier
     ) {
         Row(
@@ -972,17 +957,8 @@ private fun DashboardMiningPanel(
                 Text(if (ui.mining.running) dashboardHashrate(reportedWork) else "—", style = ZTheme.text.monoDisplay, color = ZTheme.metrics.at(3))
             }
             Pill(
-                when {
-                    ui.teamMiningHashing -> "team hashing"
-                    ui.teamMiningActive -> "team waiting"
-                    ui.mining.running -> "solo active"
-                    else -> "idle"
-                },
-                when {
-                    ui.teamMiningHashing || ui.mining.running -> ZTone.On
-                    ui.teamMiningActive -> ZTone.Warn
-                    else -> ZTone.Off
-                }
+                if (ui.mining.running) "solo active" else "idle",
+                if (ui.mining.running) ZTone.On else ZTone.Off
             )
         }
         ThinDivider()
@@ -1002,7 +978,7 @@ private fun DashboardMiningPanel(
             availableWidth
         )
         HintText(
-            "Team state comes from the service flag above. The numeric values are the latest retained solo-miner snapshot; no freshness timestamp is available, and reported work is not a hardware-side hashrate measurement."
+            "The numeric values are the latest retained solo-miner snapshot; no freshness timestamp is available, and reported work is not a hardware-side hashrate measurement."
         )
     }
 }

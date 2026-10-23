@@ -758,8 +758,8 @@ fun CopyIconButton(value: String, enabled: Boolean = value.isNotBlank()) {
  *
  * La paleta nueva es acromática, así que estos seis colapsan sobre los cuatro
  * semánticos: se pierde la distinción entre Blue y Violet. Es intencional y
- * transitorio — cuando la etapa 9 reescriba MiningPoolScreen se pasa al
- * vocabulario de tonos del prototipo y este enum se puede borrar.
+ * transitorio — cuando las pantallas que lo usan pasen al vocabulario de tonos
+ * del prototipo, este enum se puede borrar.
  */
 enum class MetricAccent { Green, Blue, Violet, Amber, Rose, Neutral }
 

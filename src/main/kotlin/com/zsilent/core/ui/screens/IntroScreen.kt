@@ -334,8 +334,8 @@ private fun BootColumn(shown: Int, ready: Boolean, modifier: Modifier = Modifier
 
         HorizontalDivider(color = scheme.outlineVariant)
         // `standby` y no métricas: en este punto no hay sesión desbloqueada, así
-        // que no hay nada real que informar. Inventar números acá sería
-        // exactamente lo que la leyenda del Mining Pool existe para evitar.
+        // que no hay nada real que informar, e inventar números acá sería
+        // mentir.
         Row(Modifier.fillMaxWidth()) {
             listOf("node" to "standby", "tor" to "standby", "vault" to "sealed")
                 .forEachIndexed { index, (label, value) ->

@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Security
@@ -80,7 +79,6 @@ import com.zsilent.core.ui.screens.ExplorerScreen
 import com.zsilent.core.ui.screens.IntroScreen
 import com.zsilent.core.ui.screens.LoginScreen
 import com.zsilent.core.ui.screens.LogsScreen
-import com.zsilent.core.ui.screens.MiningPoolScreen
 import com.zsilent.core.ui.screens.MiningScreen
 import com.zsilent.core.ui.screens.NodeScreen
 import com.zsilent.core.ui.screens.OnboardingScreen
@@ -107,7 +105,7 @@ private enum class NavGroup(val label: String) {
 private val AppSection.group: NavGroup
     get() = when (this) {
         AppSection.Dashboard, AppSection.Wallet -> NavGroup.Core
-        AppSection.Node, AppSection.Mining, AppSection.MiningPool -> NavGroup.Network
+        AppSection.Node, AppSection.Mining -> NavGroup.Network
         AppSection.Explorer, AppSection.Privacy, AppSection.Logs -> NavGroup.Insight
         AppSection.Settings -> NavGroup.System
     }
@@ -142,7 +140,6 @@ fun ZSilentApp(appState: ZSilentAppState) {
             activeWalletAddress = uiState.activeWalletAddress,
             nodeRunning = uiState.nodeStatus == ServiceStatus.Online,
             miningRunning = uiState.miningStatus == ServiceStatus.Online,
-            poolRunning = uiState.teamMiningHashing,
             modifier = Modifier.width(sidebarWidth)
         )
         Box(Modifier.width(1.dp).fillMaxHeight().background(scheme.outlineVariant))
@@ -168,13 +165,9 @@ fun ZSilentApp(appState: ZSilentAppState) {
                         AppSection.Wallet    -> WalletScreen(uiState, appState)
                         AppSection.Node      -> NodeScreen(uiState, appState)
                         AppSection.Mining    -> MiningScreen(uiState, appState)
-                        // Las tres secciones opcionales son opt-in. Si el
-                        // interruptor se apaga desde otra superficie, el router
-                        // no puede seguir renderizando una sección que la
-                        // sidebar ya no lista.
-                        AppSection.MiningPool  ->
-                            if (uiState.teamMiningEnabled) MiningPoolScreen(uiState, appState)
-                            else DashboardScreen(uiState, appState)
+                        // Explorer es opt-in. Si el interruptor se apaga desde
+                        // otra superficie, el router no puede seguir
+                        // renderizando una sección que la sidebar ya no lista.
                         AppSection.Explorer    ->
                             if (uiState.explorerEnabled) ExplorerScreen(uiState, appState)
                             else DashboardScreen(uiState, appState)
@@ -191,10 +184,6 @@ fun ZSilentApp(appState: ZSilentAppState) {
 /**
  * Barra superior del prototipo: breadcrumb `/ sección` en mono, pills de estado
  * y el interruptor de tema.
- *
- * `mining` era un solo indicador y mentía: el minado solo y el de equipo son
- * excluyentes, así que con el pool trabajando el único indicador se veía
- * apagado. Ahora hay uno para cada uno, y sólo uno puede estar en verde.
  *
  * Las pills viven en una fila con scroll horizontal: son seis y la ventana se
  * puede achicar, y prefiero que se desplacen antes de que la última quede
@@ -243,21 +232,6 @@ private fun TopBar(
                     if (ui.torEnabled) ZTone.On else ZTone.Off
                 )
                 Pill("solo ${ui.miningStatus.shortLabel()}", ui.miningStatus.tone())
-                // El pool distingue "encendido" de "entregando shares": el worker
-                // se pausa al publicar una solución, y un verde fijo taparía esa
-                // diferencia justo cuando interesa verla.
-                Pill(
-                    "pool " + when {
-                        ui.teamMiningHashing -> "live"
-                        ui.teamMiningActive -> "idle"
-                        else -> "off"
-                    },
-                    when {
-                        ui.teamMiningHashing -> ZTone.On
-                        ui.teamMiningActive -> ZTone.Warn
-                        else -> ZTone.Off
-                    }
-                )
                 Pill(
                     "expl ${if (ui.explorerEnabled) "on" else "off"}",
                     if (ui.explorerEnabled) ZTone.On else ZTone.Off
@@ -322,8 +296,6 @@ private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
     AppSection.entries.filter { section ->
         when (section) {
             AppSection.Explorer -> uiState.explorerEnabled
-            // El minado en equipo es de Zenith: Zoka Quantic no lo tiene.
-            AppSection.MiningPool -> false
             else -> true
         }
     }
@@ -340,7 +312,6 @@ private fun CollapsibleSidebar(
     activeWalletAddress: String,
     nodeRunning: Boolean,
     miningRunning: Boolean,
-    poolRunning: Boolean,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -416,12 +387,10 @@ private fun CollapsibleSidebar(
                         expanded = expanded,
                         onClick = { onSelect(section) },
                         // El punto se enciende cuando la seccion esta haciendo
-                        // algo, no cuando esta habilitada. Para el pool eso es
-                        // entregar shares: "tengo equipo" no es "esta minando".
+                        // algo, no cuando esta habilitada.
                         live = when (section) {
                             AppSection.Node -> nodeRunning
                             AppSection.Mining -> miningRunning
-                            AppSection.MiningPool -> poolRunning
                             // Explorer no lleva punto: estar
                             // habilitada no es estar haciendo algo, y un verde
                             // permanente no informa nada.
@@ -602,7 +571,6 @@ private fun AppSection.navItem(): NavItem = when (this) {
     AppSection.Wallet    -> NavItem("Wallet",    Icons.Outlined.AccountBalanceWallet)
     AppSection.Node      -> NavItem("Node",      Icons.Outlined.Memory)
     AppSection.Mining    -> NavItem("Mining",    Icons.Outlined.Bolt)
-    AppSection.MiningPool  -> NavItem("Mining Pool",  Icons.Outlined.Groups)
     AppSection.Explorer    -> NavItem("Explorer",     Icons.Outlined.Explore)
     AppSection.Privacy   -> NavItem("Privacy",   Icons.Outlined.Security)
     AppSection.Logs      -> NavItem("Logs",      Icons.Outlined.Terminal)

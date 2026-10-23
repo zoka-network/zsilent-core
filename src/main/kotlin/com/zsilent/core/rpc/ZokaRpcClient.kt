@@ -5,7 +5,6 @@ import com.zsilent.core.models.ShortAddressLookup
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
 import com.zsilent.core.models.ChainHeightResponse
-import com.zsilent.core.models.JoinMiningTeamRequest
 import com.zsilent.core.models.ViewScanKeyRequest
 import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.models.MempoolTransaction
@@ -14,8 +13,6 @@ import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
 import com.zsilent.core.models.PeersResponse
 import com.zsilent.core.models.PrivateTxLookup
-import com.zsilent.core.models.TeamMiningControlRequest
-import com.zsilent.core.models.TeamMiningStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
@@ -190,63 +187,6 @@ class ZokaRpcClient(val baseUrl: String) {
         val body = response.bodyAsText()
         if (!response.status.isSuccess()) {
             throw IllegalStateException(body.ifBlank { "view scan failed: ${response.status}" })
-        }
-        return codec.decodeFromString(body)
-    }
-
-    /**
-     * Raised when the node answers 404 on an endpoint the app knows about.
-     *
-     * For team mining this is expected rather than exceptional: a node built
-     * before teams existed has no such route, and the UI must say "your node
-     * is too old" instead of "there are no teams", which would be a lie about
-     * the network.
-     */
-    class EndpointUnsupported(val path: String) : Exception("node has no $path endpoint")
-
-    suspend fun teamMiningStatus(): TeamMiningStatus =
-        getOrNull<TeamMiningStatus>("/team-mining/status")
-            ?: throw EndpointUnsupported("/team-mining/status")
-
-    suspend fun createMiningTeam(): TeamMiningStatus =
-        postTeamMining("/team-mining/team")
-
-    suspend fun joinMiningTeam(inviteCode: String): TeamMiningStatus =
-        postTeamMining(
-            "/team-mining/join",
-            codec.encodeToString(JoinMiningTeamRequest(inviteCode.trim().uppercase()))
-        )
-
-    suspend fun leaveMiningTeam(): TeamMiningStatus =
-        postTeamMining("/team-mining/leave")
-
-    /** Disuelve el equipo. Solo el coordinador puede; el resto usa leave. */
-    suspend fun disbandMiningTeam(): TeamMiningStatus =
-        postTeamMining("/team-mining/disband")
-
-    suspend fun startTeamMining(threads: Int): TeamMiningStatus =
-        postTeamMining(
-            "/team-mining/start",
-            codec.encodeToString(TeamMiningControlRequest(threads.coerceAtLeast(1)))
-        )
-
-    suspend fun stopTeamMining(): TeamMiningStatus =
-        postTeamMining("/team-mining/stop")
-
-    private suspend fun postTeamMining(path: String, jsonBody: String? = null): TeamMiningStatus {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val response = client.post("$baseUrl$path") {
-            if (jsonBody != null) {
-                contentType(ContentType.Application.Json)
-                setBody(jsonBody)
-            }
-        }
-        if (response.status == HttpStatusCode.NotFound) {
-            throw EndpointUnsupported(path)
-        }
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException(body.ifBlank { "team mining request failed: ${response.status}" })
         }
         return codec.decodeFromString(body)
     }

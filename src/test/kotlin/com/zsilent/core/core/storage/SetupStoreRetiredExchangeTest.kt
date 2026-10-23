@@ -8,10 +8,10 @@ import kotlin.test.assertTrue
 
 class SetupStoreRetiredExchangeTest {
 
-    // El P2P Exchange se retiro en octubre de 2026, pero los archivos de setup
-    // escritos antes siguen teniendo sus claves. Si el lector dejara de
-    // ignorarlas, el usuario que alguna vez lo activo perderia todo su setup
-    // al actualizar y volveria al onboarding.
+    // El P2P Exchange y el minado en equipo de Zenith se retiraron en octubre
+    // de 2026, pero los archivos de setup escritos antes siguen teniendo sus
+    // claves. Si el lector dejara de ignorarlas, el usuario que alguna vez los
+    // activo perderia todo su setup al actualizar y volveria al onboarding.
     @Test
     fun setup_written_while_the_exchange_existed_still_loads() {
         val dir = Files.createTempDirectory("zsilent-retired-exchange")
@@ -36,7 +36,6 @@ class SetupStoreRetiredExchangeTest {
         val loaded = assertNotNull(SetupStore(path).load())
 
         assertTrue(loaded.onboardingComplete)
-        assertTrue(loaded.teamMiningEnabled)
         assertEquals(listOf("abcdefghijklmnop.onion:30303"), loaded.manualPeers)
     }
 }
