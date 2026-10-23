@@ -83,6 +83,17 @@ if ($zokaVersion -ne $nodeSourceVersion -or $zokahdVersion -ne $nodeSourceVersio
     throw "Binary version mismatch: node source=$nodeSourceVersion, zoka=$zokaVersion, zokahd=$zokahdVersion. Rebuild both release binaries."
 }
 
+# Un ejecutable sin datos de version (producto, empresa, descripcion) es lo que
+# el modelo de Defender marca como PUA: paso el 02/07/2026 con un zoka.exe bajado
+# de GitHub. Los pone el build.rs del nodo; sin rc.exe compila sin ellos, y ese
+# binario no se empaqueta.
+foreach ($exe in @($zokaExe, $zokahdExe)) {
+    $info = (Get-Item -LiteralPath $exe).VersionInfo
+    if ($info.ProductName -ne "Zoka" -or $info.CompanyName -ne "Zoka Network" -or $info.ProductVersion -ne $nodeSourceVersion) {
+        throw "$exe has no Windows version data (product '$($info.ProductName)', version '$($info.ProductVersion)'). Rebuild on a machine with the Windows SDK (rc.exe)."
+    }
+}
+
 # ZSilent 3.0 es solo de Zoka Quantic: el binario tiene que traer la feature
 # `quantic` (si no, no hay wallet ni red que usar). Se prueba en una carpeta
 # propia, sin tocar las wallets de quien arma el release.
