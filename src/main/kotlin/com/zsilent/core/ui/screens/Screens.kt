@@ -522,6 +522,13 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         // en Receive. Antes desaparecian al cambiar de pestana, y perdias de
         // vista cuanto tenias justo cuando ibas a enviar.
         if (walletPage != WalletPage.Create) {
+            // La tarjeta avisa si la corta no está publicada: hay que saberlo
+            // también fuera de Receive.
+            LaunchedEffect(activeWallet?.shortAddress, ui.localRpcOnline) {
+                if (!activeWallet?.shortAddress.isNullOrBlank() && ui.localRpcOnline) {
+                    appState.refreshShortAddressPublished()
+                }
+            }
             WalletHeroCard(
                 ui = ui,
                 activeWallet = activeWallet,
@@ -712,7 +719,11 @@ private fun WalletHeroCard(
     onReceive: () -> Unit = {}
 ) {
     val shape = MaterialTheme.shapes.medium
-    val address = activeWallet?.address ?: ui.activeWalletAddress.ifBlank { "" }
+    val address = ui.shownAddress(activeWallet?.address ?: ui.activeWalletAddress.ifBlank { "" })
+    // Una corta que el nodo todavía no conoce no se puede pagar: se avisa al
+    // lado, y el aviso lleva a Receive, donde está el botón para publicarla.
+    val shortNotPublished = activeWallet != null && address != activeWallet.address &&
+        ui.activeShortAddressPublished == false
     val totalAtoms = ui.walletBalance?.totalBalanceAtoms ?: activeWallet?.totalBalanceAtoms ?: 0L
     val hidden = ui.balancesHidden || ui.walletLocked
     val (whole, decimals) = splitZkaForDisplay(totalAtoms)
@@ -746,6 +757,9 @@ private fun WalletHeroCard(
                     fontWeight = FontWeight.Medium
                 )
                 if (address.isNotBlank()) CopyIconButton(address)
+                if (shortNotPublished) {
+                    Pill("not published", ZTone.Warn, modifier = Modifier.clickable(onClick = onReceive))
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // El prototipo pone SEND y RECEIVE aca, pegados al balance:
@@ -1106,7 +1120,7 @@ private fun WalletsListSection(
                         fontSize = 13.sp
                     )
                     Text(
-                        truncateAddressForHero(wallet.address),
+                        truncateAddressForHero(ui.shownAddress(wallet.address)),
                         color = com.zsilent.core.ui.onboarding.NoirTextMuted,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp
@@ -1121,7 +1135,7 @@ private fun WalletsListSection(
                             letterSpacing = 1.4.sp
                         )
                     }
-                    CopyIconButton(wallet.address)
+                    CopyIconButton(ui.shownAddress(wallet.address))
                 }
             }
         }
@@ -2168,7 +2182,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         Text(wallet.name, modifier = Modifier.weight(0.8f))
                         MonoText("available ${privateBalanceLabel(ui, null, wallet.balance)}", modifier = Modifier.weight(1f))
                         MonoText("locked ${privateBalanceLabel(ui, null, wallet.lockedBalance)}", modifier = Modifier.weight(1f))
-                        CopyIconButton(wallet.address)
+                        CopyIconButton(ui.shownAddress(wallet.address))
                     }
                 }
             }
@@ -2403,7 +2417,7 @@ private fun MiningRewardsPanel(ui: ZSilentUiState, rewardAddress: String, modifi
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ZLabel("Reward address")
             Truncate(
-                rewardAddress.ifBlank { "not selected" },
+                ui.shownAddress(rewardAddress).ifBlank { "not selected" },
                 head = 12, tail = 6,
                 color = scheme.onSurface
             )
@@ -4176,7 +4190,7 @@ private fun SettingsWalletsPage(ui: ZSilentUiState, appState: ZSilentAppState) {
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Truncate(
-                            wallet.address,
+                            ui.shownAddress(wallet.address),
                             head = 14, tail = 6,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

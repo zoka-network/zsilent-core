@@ -139,7 +139,7 @@ fun ZSilentApp(appState: ZSilentAppState) {
             onCloseSession = { appState.lockApp("Session closed.") },
             sections = visibleSections(uiState),
             activeWalletName = uiState.activeWalletName,
-            activeWalletAddress = uiState.activeWalletAddress,
+            activeWalletAddress = uiState.shownAddress(uiState.activeWalletAddress),
             nodeRunning = uiState.nodeStatus == ServiceStatus.Online,
             miningRunning = uiState.miningStatus == ServiceStatus.Online,
             stratumMining = (uiState.stratum?.miners ?: 0) > 0,

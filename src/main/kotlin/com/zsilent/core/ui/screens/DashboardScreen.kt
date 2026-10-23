@@ -1013,7 +1013,7 @@ private fun DashboardBalancePanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    dashboardShortHash(balance.address.ifBlank { "not selected" }),
+                    dashboardShortHash(ui.shownAddress(balance.address).ifBlank { "not selected" }),
                     modifier = Modifier.weight(1f, fill = false),
                     color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = FontFamily.Monospace,
@@ -1021,7 +1021,7 @@ private fun DashboardBalancePanel(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                CopyIconButton(balance.address, enabled = balance.address.isNotBlank())
+                CopyIconButton(ui.shownAddress(balance.address), enabled = balance.address.isNotBlank())
             }
         }
         if (!privateVisible) {

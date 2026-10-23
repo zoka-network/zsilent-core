@@ -218,7 +218,16 @@ data class ZSilentUiState(
     val rpcOnline: Boolean = false,
     val zokaReady: Boolean = false,
     val lastBalanceRefreshedAt: Long = 0L
-)
+) {
+    /**
+     * La dirección que se muestra de una wallet propia: la corta (57
+     * caracteres en la testnet) si se conoce, la completa si no. Es lo que
+     * decía el diseño de direcciones cortas, y lo que se copia. La completa
+     * sigue en Receive, en "Show full address".
+     */
+    fun shownAddress(address: String): String =
+        wallets.firstOrNull { it.address == address }?.shortAddress?.takeIf { it.isNotBlank() } ?: address
+}
 
 // Mining may start while trailing the observed network head by up to this
 // many blocks. Transient bootstrap saturation or gossip lag must not lock

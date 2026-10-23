@@ -130,6 +130,7 @@ fun LoginScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         onLogin = appState::login,
         onRestore = { showRestoreConfirm = true },
         onReset = { showReset = true },
+        shownAddress = ui::shownAddress,
     )
 }
 
@@ -153,6 +154,8 @@ fun LoginContent(
     onLogin: (CharArray) -> Unit,
     onRestore: () -> Unit,
     onReset: () -> Unit,
+    /** Lo que se muestra de cada dirección (la corta); la elección sigue por la completa. */
+    shownAddress: (String) -> String = { it },
 ) {
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -218,7 +221,7 @@ fun LoginContent(
                                     color = scheme.onSurface
                                 )
                                 activeWalletAddress.takeIf { it.isNotBlank() }?.let {
-                                    Truncate(it, head = 10, tail = 8, color = scheme.onSurfaceVariant)
+                                    Truncate(shownAddress(it), head = 10, tail = 8, color = scheme.onSurfaceVariant)
                                 }
                             }
                         }
@@ -230,7 +233,8 @@ fun LoginContent(
                             wallets = wallets,
                             activeName = activeWalletName,
                             activeAddress = activeWalletAddress,
-                            onSelect = { name -> password = ""; onSelectWallet(name) }
+                            onSelect = { name -> password = ""; onSelectWallet(name) },
+                            shownAddress = shownAddress,
                         )
                     }
 
@@ -362,7 +366,8 @@ private fun LoginWalletSelector(
     wallets: List<Pair<String, String>>,
     activeName: String,
     activeAddress: String,
-    onSelect: (String) -> Unit
+    onSelect: (String) -> Unit,
+    shownAddress: (String) -> String = { it },
 ) {
     val scheme = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.small
@@ -398,7 +403,7 @@ private fun LoginWalletSelector(
                         color = scheme.onSurface
                     )
                     if (address.isNotBlank()) {
-                        Truncate(address, head = 10, tail = 8, color = scheme.onSurfaceVariant)
+                        Truncate(shownAddress(address), head = 10, tail = 8, color = scheme.onSurfaceVariant)
                     }
                 }
                 if (selected) Box(Modifier.size(6.dp).background(scheme.primary, CircleShape))
