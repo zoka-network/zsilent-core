@@ -111,7 +111,7 @@ if ($probeExit -ne 0 -or $probe -notmatch '"wallets"') {
     throw "zoka.exe was built without the Zoka Quantic v2 wallet. Rebuild with: cargo build --release --features randomx,quantic-pq --bins"
 }
 
-$networkManifest = Join-Path $NodeRepoRoot "docs\quantic-testnet-network.v1.json"
+$networkManifest = Join-Path $NodeRepoRoot "docs\quantic-testnet-v2-network.v1.json"
 $trustedSetupDir = Join-Path $NodeRepoRoot "trusted-setup"
 $requiredSetup = @("DIGEST", "balance.params", "merkle.params", "nullifier.params", "private_tx.params")
 foreach ($name in $requiredSetup) {

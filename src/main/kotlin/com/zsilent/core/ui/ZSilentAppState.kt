@@ -1277,17 +1277,7 @@ class ZSilentAppState(
             appendLog(RuntimeLog("node", "Auto-start skipped: external miner already owns the node."))
             return
         }
-        // Onion is this network's default transport. Bring managed Tor up
-        // automatically so the Privacy panel and the Node come online together
-        // on launch, with no switches to flip. setTorOnionMode is idempotent
-        // and hybrid (onion + clearnet): an already-on Tor stays on, and if
-        // managed Tor is slow to bootstrap the node still starts over clearnet
-        // (startNode never blocks on Tor). This is what makes "connect on
-        // launch" fully automatic end to end.
-        if (!(snapshot.torEnabled && snapshot.managedTorEnabled)) {
-            appendLog(RuntimeLog("privacy", "Auto-enabling Tor onion mode before node start."))
-            setTorOnionMode(true)
-        }
+        // La v1 prendía Tor acá; el nodo v2 va por iroh y no lo usa.
         appendLog(RuntimeLog("node", "Auto-starting full node after wallet unlock."))
         startNode(autoMine = snapshot.onboardingMiningEnabled)
     }

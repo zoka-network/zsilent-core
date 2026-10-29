@@ -294,7 +294,10 @@ object ZokaNetworkConfig {
             return File(configured).let { if (it.isAbsolute) it else File(projectRoot, configured) }
         }
         val network = envOrProperty("ZSILENT_NETWORK", "zsilent.network") ?: DEFAULT_NETWORK
-        val name = "$network-network.v1.json"
+        // El manifiesto de la red v2 (`quantic-testnet-v2-network.v1.json` en el
+        // repo del nodo). `testnet-network.v1.json` es el de la testnet de
+        // Zenith: con su API en el puerto 3000, no se tiene que encontrar.
+        val name = "quantic-$network-v2-network.v1.json"
         return listOfNotNull(
             resourcesRoot?.let { File(it, "docs/$name") },
             resourcesRoot?.let { File(it, "config/$name") },

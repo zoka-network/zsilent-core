@@ -21,9 +21,9 @@ val nodeRepoRoot = (findProperty("zoka.nodeRepoRoot") as String?)
 val binaryExt = if (hostOs.isWindows) ".exe" else ""
 val zokaExe = nodeRepoRoot.file("target/release/zoka$binaryExt")
 val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
-// Desde la 3.0 ZSilent es solo de Zoka Quantic: se empaqueta el manifiesto de la
-// testnet de Quantic (el de Zenith queda en las versiones anteriores).
-val networkManifest = nodeRepoRoot.file("docs/quantic-testnet-network.v1.json")
+// Desde la 4.0 ZSilent es de la red STARK v2: se empaqueta el manifiesto de la
+// testnet v2 (el nodo trae el mismo compilado; la app solo lee su chain id).
+val networkManifest = nodeRepoRoot.file("docs/quantic-testnet-v2-network.v1.json")
 val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
 val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")
 val torBundleDir = (findProperty("zsilent.torBundleDir") as String?)

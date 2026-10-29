@@ -282,7 +282,11 @@ class NodeController(private val cli: ZokaCli) {
         if (cleanStratumBind.isNotBlank()) {
             command += listOf("--stratum", cleanStratumBind)
         }
-        if (!syncOnly && ZokaNetworkConfig.isAddress(address)) {
+        // En la testnet `--mine-to` solo dice a quién le paga el Stratum: sin
+        // Stratum el nodo no lo acepta. En regtest prende su minero de prueba.
+        if (!syncOnly && ZokaNetworkConfig.isAddress(address) &&
+            (cleanStratumBind.isNotBlank() || network == "regtest")
+        ) {
             command += listOf("--mine-to", address.trim())
         }
         checkpointAuthorityDir(network)?.let { dir ->
