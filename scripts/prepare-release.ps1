@@ -94,21 +94,21 @@ foreach ($exe in @($zokaExe, $zokahdExe)) {
     }
 }
 
-# ZSilent 3.0 es solo de Zoka Quantic: el binario tiene que traer la feature
-# `quantic` (si no, no hay wallet ni red que usar). Se prueba en una carpeta
-# propia, sin tocar las wallets de quien arma el release.
+# ZSilent 4.0 es de la red STARK v2: el binario tiene que traer la feature
+# `quantic-pq` (si no, no hay wallet ni nodo v2 que usar). Se prueba en una
+# carpeta propia, sin tocar las wallets de quien arma el release.
 $probeHome = Join-Path ([System.IO.Path]::GetTempPath()) ("zsilent-quantic-probe-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $probeHome | Out-Null
 $previousZokaHome = $env:ZOKA_HOME
 $env:ZOKA_HOME = $probeHome
 try {
-    $probe = (& $zokaExe quantic-wallet list --network quantic-testnet --json 2>&1 | Out-String)
+    $probe = (& $zokaExe quantic-pq-wallet list --network testnet --dir (Join-Path $probeHome "quantic-testnet-v2") --json 2>&1 | Out-String)
     $probeExit = $LASTEXITCODE
 } finally {
     $env:ZOKA_HOME = $previousZokaHome
 }
 if ($probeExit -ne 0 -or $probe -notmatch '"wallets"') {
-    throw "zoka.exe was built without Zoka Quantic. Rebuild with: cargo build --release --features randomx,quantic --bins"
+    throw "zoka.exe was built without the Zoka Quantic v2 wallet. Rebuild with: cargo build --release --features randomx,quantic-pq --bins"
 }
 
 $networkManifest = Join-Path $NodeRepoRoot "docs\quantic-testnet-network.v1.json"

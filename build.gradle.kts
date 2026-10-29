@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.zsilent"
-val releaseVersion = "3.0.5"
+val releaseVersion = "4.0.0"
 version = releaseVersion
 
 val hostOs = OperatingSystem.current()
@@ -70,7 +70,7 @@ val prepareZSilentRuntimeResources by tasks.registering(Copy::class) {
         if (missing.isNotEmpty()) {
             throw GradleException(
                 "Missing ZSilent runtime file(s): ${missing.joinToString { it.path }}. " +
-                    "Build the Rust node first with: cargo build --release --features randomx,quantic --bins"
+                    "Build the Rust node first with: cargo build --release --features randomx,quantic-pq --bins"
             )
         }
         val missingTrustedSetup = requiredTrustedSetupFiles
