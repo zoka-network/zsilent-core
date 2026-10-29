@@ -554,11 +554,12 @@ data class PersistedSetup(
      * tiene que sobrevivir a que el otro esté apagado una semana.
      */
     val manualPeers: List<String> = emptyList(),
-    val torEnabled: Boolean = true,
+    // El nodo v2 no usa Tor: apagado por omisión (era de la v1).
+    val torEnabled: Boolean = false,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",
     val torSocksPort: Int = 19050,
-    val managedTorEnabled: Boolean = true,
+    val managedTorEnabled: Boolean = false,
     val onionSeedEnabled: Boolean = false,
     val managedTorSocksPort: Int = 19050
 )

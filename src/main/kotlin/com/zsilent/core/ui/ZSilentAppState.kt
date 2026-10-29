@@ -34,7 +34,11 @@ import com.zsilent.core.models.StratumStatus
 import com.zsilent.core.models.WalletBalance
 import com.zsilent.core.models.WalletHistory
 import com.zsilent.core.models.WalletSetupMode
+import com.zsilent.core.rpc.V2Status
 import com.zsilent.core.rpc.ZokaRpcClient
+import com.zsilent.core.rpc.toPeers
+import com.zsilent.core.rpc.toStats
+import com.zsilent.core.rpc.toSyncStatus
 import com.zsilent.core.services.ZokaCli
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,11 +116,12 @@ data class ZSilentUiState(
     val loginBusy: Boolean = false,
     val loginError: String? = null,
     val lockMessage: String? = null,
-    val torEnabled: Boolean = true,
+    // El nodo v2 va por iroh: Tor queda apagado (era de la v1).
+    val torEnabled: Boolean = false,
     val torOnly: Boolean = false,
     val torSocksHost: String = "127.0.0.1",
     val torSocksPort: Int = 19050,
-    val managedTorEnabled: Boolean = true,
+    val managedTorEnabled: Boolean = false,
     val onionSeedEnabled: Boolean = false,
     val managedTorSocksPort: Int = 19050,
     val torStatus: ServiceStatus = ServiceStatus.Offline,
@@ -198,6 +203,11 @@ data class ZSilentUiState(
     // This node's own iroh snapshot-seed EndpointId (from `zoka iroh-id`), so
     // it can be advertised to help fresh nodes bootstrap. Fetched once.
     val irohEndpointId: String = "",
+    /** Lo último que dijo `/status` del nodo v2: checkpoint, directorio y pares. */
+    val nodeV2: V2Status? = null,
+    /** La identidad de red del nodo v2, de su descriptor: la fija una semilla. */
+    val nodeEndpointId: String = "",
+    val nodeKeyId: String = "",
     val networkRpcUrl: String = ZokaNetworkConfig.RemoteRpcUrl,
     val localRpcUrl: String = ZokaNetworkConfig.LocalRpcUrl,
     val bootstrapPeer: String = ZokaNetworkConfig.BootstrapMultiaddr,
@@ -322,12 +332,13 @@ class ZSilentAppState(
                     stratumEnabled = setup.stratumEnabled,
                     stratumAllowLan = setup.stratumAllowLan,
                     manualPeers = setup.manualPeers,
-                    torEnabled = setup.torEnabled,
-                    torOnly = setup.torOnly,
+                    // El nodo v2 no usa Tor: aunque un setup lo pida, queda apagado.
+                    torEnabled = false,
+                    torOnly = false,
                     torSocksHost = setup.torSocksHost,
                     torSocksPort = setup.torSocksPort,
-                    managedTorEnabled = setup.managedTorEnabled,
-                    onionSeedEnabled = setup.onionSeedEnabled,
+                    managedTorEnabled = false,
+                    onionSeedEnabled = false,
                     managedTorSocksPort = setup.managedTorSocksPort,
                     appLocked = true,
                     walletLocked = true,
@@ -2405,8 +2416,12 @@ class ZSilentAppState(
 
     private suspend fun pollRpc() {
         val snapshot = _uiState.value
-        val localStats = runCatching { localRpc.stats() }.getOrNull()
-        val localRpcHeight = localStats?.height ?: runCatching { localRpc.height() }.getOrNull()
+        // Una sola lectura de `/status` del nodo v2 por ciclo: de ahí salen la
+        // altura, la sincronización, los pares y el Stratum.
+        val localV2 = runCatching { localRpc.status() }.getOrNull()
+        if (localV2 != null) update { it.copy(nodeV2 = localV2) }
+        val localStats = localV2?.toStats()
+        val localRpcHeight = localStats?.height
         val mayReadDbDirectly = localRpcHeight == null &&
             snapshot.nodeStatus == ServiceStatus.Offline &&
             snapshot.miningStatus == ServiceStatus.Offline
@@ -2437,30 +2452,22 @@ class ZSilentAppState(
         // Read the local node's sync/mesh telemetry exactly once per poll. The
         // same snapshot feeds both the bootstrap-online and serverless paths;
         // a failed request leaves the last successful UI value untouched.
-        val localSync = if (localRpcOnline) {
-            runCatching { localRpc.syncStatus() }.getOrNull()
-        } else {
-            null
-        }
-
-        // Live mesh view (serverless): who this node is connected to + transport.
-        val localPeers = if (localRpcOnline) {
-            runCatching { localRpc.peers() }.getOrNull()
-        } else {
-            null
-        }
-        // El Stratum solo se consulta si el usuario lo encendio: apagado no hay
-        // nada que mostrar y es una lectura menos por ciclo.
+        val localSync = localV2?.toSyncStatus()
+        val localPeers = localV2?.toPeers()
+        // El Stratum se muestra solo si el usuario lo encendio.
         val stratumWanted = localRpcOnline && snapshot.stratumEnabled
-        val localStratum = if (stratumWanted) {
-            runCatching { localRpc.stratumStatus() }.getOrNull()
-        } else {
-            null
-        }
+        val localStratum = if (stratumWanted) localV2?.stratum else null
         val telemetryPollAtMillis = System.currentTimeMillis()
         // This node's iroh snapshot-seed EndpointId is derived from a persistent
         // key, so it never changes — fetch it once (a short zoka subprocess),
         // in the background so it never blocks the poll.
+        // La identidad de red del nodo v2 (lo que fija una semilla en el
+        // manifiesto) está en su descriptor; se lee una vez.
+        if (localRpcOnline && snapshot.nodeEndpointId.isBlank()) {
+            readNodeIdentity()?.let { (endpointId, keyId) ->
+                update { it.copy(nodeEndpointId = endpointId, nodeKeyId = keyId) }
+            }
+        }
         if (READ_V1_IROH_ID && snapshot.irohEndpointId.isBlank() && localRpcOnline && !irohIdFetchInFlight) {
             irohIdFetchInFlight = true
             scope.launch {
@@ -2881,6 +2888,14 @@ class ZSilentAppState(
             }
         }
     }
+
+    /** El endpoint y la huella ML-DSA del nodo v2, de su descriptor (`peer.json`). */
+    private fun readNodeIdentity(): Pair<String, String>? = runCatching {
+        val root = json.parseToJsonElement(cli.nodeDescriptor().readText()).jsonObject
+        val id = root["endpoint_addr"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull.orEmpty()
+        val key = root["ml_dsa_key_id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        (id to key).takeIf { id.isNotBlank() && key.isNotBlank() }
+    }.getOrNull()
 
     // This node's iroh snapshot-seed EndpointId (base32 public key derived from
     // the persistent iroh key). Same value the node advertises so fresh nodes

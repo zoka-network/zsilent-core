@@ -1783,16 +1783,8 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                             ZButtonText("Start node")
                         }
                     }
-                    // El prototipo pone aca "Reload config", que no existe en
-                    // ZSilent. Se usa la accion real equivalente: forzar sync.
-                    ZButton(
-                        onClick = appState::syncNow,
-                        variant = ZButtonVariant.Outline,
-                        enabled = ui.localRpcOnline && !ui.syncBusy,
-                    ) {
-                        Icon(Icons.Outlined.Sync, null, modifier = Modifier.size(14.dp))
-                        ZButtonText("Sync now")
-                    }
+                    // El nodo v2 se sincroniza solo con sus pares: no hay
+                    // sincronización que forzar desde acá.
                 }
             }
 
@@ -1822,8 +1814,7 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     "Node height" to ui.chainHeight.toString(),
                     "Network height" to ui.networkHeight.toString(),
                     "Remaining" to ui.syncRemainingBlocks.toString(),
-                    "Pending queue" to ui.pendingPrivateTransfers.count.toString(),
-                    "Mining" to if (ui.mining.running) "active" else "not active"
+                    "Mempool" to ui.pendingPrivateTransfers.count.toString()
                 )
             )
         }
@@ -1831,8 +1822,13 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard("Status", ui.nodeStatus.name, if (ui.localRpcOnline) "node RPC online" else "node RPC waiting", Modifier.weight(1f))
             StatusCard("Height", ui.chainHeight.toString(), "node chain tip", Modifier.weight(1f))
-            StatusCard("Queue", ui.pendingPrivateTransfers.count.toString(), "private txs waiting", Modifier.weight(1f))
-            StatusCard("Difficulty", ui.stats.difficulty.toString(), "network", Modifier.weight(1f))
+            StatusCard("Mempool", ui.pendingPrivateTransfers.count.toString(), "payments waiting", Modifier.weight(1f))
+            StatusCard(
+                "Peers",
+                ui.localConnectedPeers.toString(),
+                ui.nodeV2?.peers?.let { "${it.outbound} out · ${it.inbound} in" } ?: "not reported",
+                Modifier.weight(1f)
+            )
             // El prototipo muestra ETA junto a las alturas. Se deriva de los
             // bloques que faltan; si ya esta sincronizado no hay nada que
             // estimar y se muestra un guion en vez de un cero enganoso.
@@ -1859,54 +1855,50 @@ fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 Modifier.weight(1.6f),
                 verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
             ) {
-                NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
+                NetworkSyncPanel(ui)
                 NodePeerTable(ui)
             }
             Column(
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)
             ) {
-                Panel(title = "Zoka node", meta = if (ui.localRpcOnline) "online" else "offline", modifier = Modifier.weight(1f)) {
+                Panel(title = "Zoka node", meta = if (ui.localRpcOnline) "online" else "offline") {
                     KeyValueRow("RPC", if (ui.localRpcOnline) "online" else "offline")
                     KeyValueRow("RPC address", ZokaNetworkConfig.displayUrl(ui.localRpcUrl))
-                    CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
+                    KeyValueRow("Data", ZokaNetworkConfig.dataDir())
                     KeyValueRow("Zoka binaries", if (ui.zokaReady) "ready" else "missing")
                 }
 
-                Panel(title = "Network state", meta = ZokaNetworkConfig.Network, modifier = Modifier.weight(1f)) {
+                Panel(title = "Network state", meta = ZokaNetworkConfig.Network) {
+                    val v2 = ui.nodeV2
                     KeyValueRow("P2P mesh", if (ui.localConnectedPeers > 0) "connected" else "isolated")
-                    KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
                     KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
-                    KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
-                    KeyValueRow("Difficulty", ui.stats.difficulty.toString())
+                    KeyValueRow("Outbound · inbound", v2?.peers?.let { "${it.outbound} · ${it.inbound}" } ?: "not reported")
+                    KeyValueRow("Known peers", v2?.peers?.known?.toString() ?: "not reported")
+                    KeyValueRow("Best peer height", v2?.peers?.bestHeight?.takeIf { it > 0 }?.toString() ?: "no outbound peer")
+                    KeyValueRow(
+                        "Checkpoint",
+                        v2?.checkpoint?.let { "#${it.height} · ${if (it.followed) "on this chain" else "not on this chain yet"}" } ?: "none yet"
+                    )
                     KeyValueRow("Emission", "%.4f ZKA".format(ui.stats.emissionZka))
-                    KeyValueRow("Miner state blocks", ui.mining.blocksMined.toString())
-                    KeyValueRow("Miner state rewards", "${ui.mining.totalRewards} ZKA")
-                    KeyValueRow("Supply emitted", "${ui.mining.totalSupplyEmitted} ZKA")
-                    KeyValueRow("Pending queue DB", ui.pendingPrivateTransfers.db.ifBlank { ".zoka/${ZokaNetworkConfig.Network}/blockchain.db" })
+                    KeyValueRow(
+                        "Short addresses",
+                        v2?.directory?.let { "${it.addresses} known · ${it.publishedHere} published here" } ?: "not reported"
+                    )
                 }
-            Panel(title = "Seed · bootstrap", meta = "help fresh nodes join") {
+            Panel(title = "Node identity", meta = "what a seed pins") {
                 Text(
-                    "Share these so a new node can bootstrap directly from you — no open port, no central server. iroh pulls a full snapshot in ~90s; the onion is your reachable p2p address.",
+                    "Your node's network identity: its endpoint and the fingerprint of its ML-DSA key. A seed in the network manifest is pinned by these two values; peers reach it through iroh, with no open port.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )
-                if (ui.irohEndpointId.isNotBlank()) {
-                    CopyableKeyValueRow("iroh EndpointId", ui.irohEndpointId)
+                if (ui.nodeEndpointId.isNotBlank()) {
+                    CopyableKeyValueRow("Endpoint id", ui.nodeEndpointId)
+                    CopyableKeyValueRow("ML-DSA key id", ui.nodeKeyId)
                 } else {
-                    KeyValueRow("iroh EndpointId", if (ui.localRpcOnline) "resolving…" else "start the node to view")
-                }
-                if (ui.torOnionMultiaddr.isNotBlank()) {
-                    CopyableKeyValueRow("Onion address", ui.torOnionMultiaddr)
-                } else {
-                    KeyValueRow("Onion address", if (ui.onionSeedEnabled) "waiting for Tor…" else "enable the onion seed in Settings")
+                    KeyValueRow("Endpoint id", if (ui.localRpcOnline) "reading…" else "start the node to view")
                 }
             }
-
-            // Va pegado al panel de arriba a proposito: ese muestra la
-            // direccion que uno REGALA, este las que a uno LE DIERON. Son las
-            // dos mitades del mismo intercambio y se leen juntas.
-            TorPeersPanel(ui, appState)
             }
         }
 
@@ -1936,17 +1928,22 @@ private fun NodePeerTable(ui: ZSilentUiState) {
                 subtitle = "Your own node's view — serverless, no central directory",
                 right = { Pill("${ui.localConnectedPeers} connected", if (ui.localConnectedPeers > 0) ZTone.On else ZTone.Off) }
             )
+            // El nodo v2 cuenta sus sesiones: las que abrió él y las que le
+            // abrieron. No lista los pares ni va por Tor.
+            val peers = ui.nodeV2?.peers
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
-                StatusCard("Tor", ui.peerTorCount.toString(), "onion", Modifier.weight(1f))
-                StatusCard("Direct", ui.peerDirectCount.toString(), "clearnet", Modifier.weight(1f))
-                StatusCard("Total", ui.localConnectedPeers.toString(), "p2p mesh", Modifier.weight(1f))
+                StatusCard("Outbound", peers?.outbound?.toString() ?: "—", "sessions this node opened", Modifier.weight(1f))
+                StatusCard("Inbound", peers?.inbound?.toString() ?: "—", "sessions to this node", Modifier.weight(1f))
+                StatusCard("Total", ui.localConnectedPeers.toString(), if (peers?.relay == true) "iroh · relays" else "iroh · direct", Modifier.weight(1f))
             }
         }
         if (ui.peers.isEmpty()) {
             Box(Modifier.padding(ZTheme.spacing.panel)) {
                 EmptyState(
-                    if (ui.localRpcOnline) "No connected peers yet" else "Node offline",
-                    sub = if (ui.localRpcOnline) "Dialing the seed and the mesh over Tor/iroh."
+                    if (ui.localConnectedPeers > 0) "${ui.localConnectedPeers} session(s) open"
+                    else if (ui.localRpcOnline) "No connected peers yet" else "Node offline",
+                    sub = if (ui.localConnectedPeers > 0) "The v2 node reports how many sessions it holds, not who they are."
+                          else if (ui.localRpcOnline) "Dialing the seeds over iroh."
                           else "Start the node to see connected peers."
                 )
             }
@@ -2137,7 +2134,7 @@ fun MiningScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         // Network sync va aca abajo y a todo el ancho: es contexto de red,
         // no un control de mineria, asi que no compite con el grafico ni
         // con el pre-flight por la atencion de arriba.
-        NetworkSyncPanel(ui, onSyncNow = appState::syncNow)
+        NetworkSyncPanel(ui)
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Panel(title = "Reward target", meta = "address only", modifier = Modifier.weight(1f)) {
@@ -2505,98 +2502,34 @@ private fun MiningPreflightPanel(
 @Composable
 fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     val rpcEndpointLocal = remember(appState) { appState.localRpc.isLocalEndpoint() }
-    val torError = ui.torError?.takeIf { it.isNotBlank() }
-    val torProcessOnline = ui.torStatus == ServiceStatus.Online
-    val onionReady = torProcessOnline && ui.torOnionHost.isNotBlank()
-    val seedAddress = ui.torSeedAddress.ifBlank { ui.torOnionMultiaddr }
-    val seedReady = ui.onionSeedEnabled && seedAddress.isNotBlank()
-    val torFailed = ui.torStatus == ServiceStatus.Error || torError != null
-    val torChanging = ui.torStatus == ServiceStatus.Starting || ui.torStatus == ServiceStatus.Stopping
-    val peerSplitKnown = ui.peerTelemetryObservedAtMillis > 0L
-    val peerSplitLive = ui.localRpcOnline && peerSplitKnown && ui.peerTelemetryConsecutiveFailures == 0
+    val nodeOnline = ui.localRpcOnline
+    val peers = ui.nodeV2?.peers
+    val relay = peers?.relay == true
     val runtimeKeepsSessionOpen = ui.nodeStatus == ServiceStatus.Starting ||
         ui.nodeStatus == ServiceStatus.Online ||
-        ui.nodeStatus == ServiceStatus.Stopping ||
-        ui.mining.running ||
-        ui.miningStatus == ServiceStatus.Starting ||
-        ui.miningStatus == ServiceStatus.Online ||
-        ui.miningStatus == ServiceStatus.Stopping
+        ui.nodeStatus == ServiceStatus.Stopping
 
+    // La red v2 va por iroh (QUIC): cada conexión negocia el intercambio
+    // postcuántico híbrido y cada servidor prueba la identidad ML-DSA que fija
+    // su descriptor. No hay Tor: QUIC va por UDP y Tor solo lleva TCP.
     val stateLabel = when {
-        torFailed -> "ATTENTION"
         !rpcEndpointLocal -> "REMOTE RPC"
-        onionReady -> "ONION READY"
-        torProcessOnline -> "TOR ONLINE"
-        torChanging -> "WARMING"
-        ui.torEnabled -> "STANDBY"
-        else -> "DIRECT MODE"
+        !nodeOnline -> "NODE OFFLINE"
+        relay -> "IROH · RELAYED"
+        else -> "IROH · DIRECT"
     }
-    val stateTone = when {
-        torFailed -> ZTone.Err
-        !rpcEndpointLocal -> ZTone.Warn
-        onionReady || torProcessOnline -> ZTone.On
-        else -> ZTone.Warn
-    }
-    val stateColor = when (stateTone) {
-        ZTone.On -> ZTheme.semantics.success
-        ZTone.Warn -> ZTheme.semantics.warning
-        ZTone.Err -> ZTheme.semantics.danger
+    val stateColor = when {
+        !rpcEndpointLocal -> ZTheme.semantics.warning
+        nodeOnline -> ZTheme.semantics.success
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val processTone = when (ui.torStatus) {
-        ServiceStatus.Online -> ZTone.On
-        ServiceStatus.Starting, ServiceStatus.Stopping -> ZTone.Warn
-        ServiceStatus.Error -> ZTone.Err
-        ServiceStatus.Offline -> ZTone.Off
-    }
-    val routeValue = when {
-        !rpcEndpointLocal -> "Remote route unknown"
-        !ui.torEnabled -> "Clearnet"
-        torProcessOnline && ui.torOnly -> "Tor only"
-        ui.torOnly && ui.torStatus == ServiceStatus.Starting -> "Tor-only starting"
-        ui.torOnly && ui.torStatus == ServiceStatus.Stopping -> "Tor-only stopping"
-        ui.torOnly -> "Tor-only unavailable"
-        onionReady -> "Onion + TCP"
-        torProcessOnline -> "Tor + TCP"
-        ui.nodeStatus == ServiceStatus.Online -> "Direct fallback"
-        else -> "Standby"
-    }
     val notices = buildList {
-        if (torFailed) {
+        if (nodeOnline && relay) {
             add(
                 ScreenNotice(
-                    title = "Tor reported a runtime problem",
-                    detail = torError ?: "The Tor process entered an error state. Review the Tor entries in Logs before relying on onion reachability.",
-                    tone = ZTone.Err
-                )
-            )
-        } else if (rpcEndpointLocal && ui.torEnabled && ui.nodeStatus == ServiceStatus.Online && !torProcessOnline && !torChanging) {
-            add(
-                ScreenNotice(
-                    title = "Node online without active Tor",
-                    detail = if (ui.torOnly) {
-                        "Tor is configured but its process is not online. Tor-only policy blocks direct peer dialing, so network reachability is degraded until Tor returns."
-                    } else {
-                        "Tor is configured but its process is not online. The node can use its direct TCP fallback until Tor becomes available."
-                    },
-                    tone = ZTone.Warn
-                )
-            )
-        } else if (!ui.torEnabled) {
-            add(
-                ScreenNotice(
-                    title = "Direct network mode is selected",
-                    detail = "Peer connections use clearnet TCP. Enable managed Tor above if you want onion reachability and Tor-assisted dialing.",
-                    tone = ZTone.Warn
-                )
-            )
-        }
-        if (ui.onionSeedEnabled && !seedReady && ui.nodeStatus == ServiceStatus.Online && torProcessOnline) {
-            add(
-                ScreenNotice(
-                    title = "Onion seed address is still pending",
-                    detail = "Publishing is enabled, but no shareable seed address has been reported yet. Keep the node online and check Tor logs if it does not appear.",
-                    tone = ZTone.Warn
+                    title = "The relay sees this PC's IP address",
+                    detail = "Connections carried by the relays (n0 today) and the pkarr DNS that resolves endpoints see this PC's IP and endpoint id. Peers see your endpoint id and what your node asks them. Payments stay private: amounts, owners and memos travel encrypted, inside the STARK.",
+                    tone = ZTone.Info
                 )
             )
         }
@@ -2613,16 +2546,7 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             add(
                 ScreenNotice(
                     title = "Remote explorer RPC is configured",
-                    detail = "Regular Explorer lookups and peer metrics come from another machine. Its network route is unknown here, and private view-key scans remain blocked until the RPC endpoint is local.",
-                    tone = ZTone.Warn
-                )
-            )
-        }
-        if (ui.localRpcOnline && ui.peerTelemetryConsecutiveFailures >= 3) {
-            add(
-                ScreenNotice(
-                    title = "Peer transport split is stale",
-                    detail = "The configured RPC responds, but /peers failed ${ui.peerTelemetryConsecutiveFailures} consecutive poll(s). Tor/direct counts are labelled last known.",
+                    detail = "Explorer lookups and peer metrics come from another machine, whose network path is unknown here.",
                     tone = ZTone.Warn
                 )
             )
@@ -2632,104 +2556,36 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     com.zsilent.core.ui.onboarding.NoirScreenShell(
         eyebrow = "Privacy",
         title = "Privacy controls",
-        subtitle = "See the network path active now, manage local disclosure, and spot degraded privacy states."
+        subtitle = "See the network path in use, manage local disclosure, and spot degraded privacy states."
     ) {
         Panel(title = "Privacy runtime", meta = stateLabel.lowercase()) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stateLabel, style = ZTheme.text.monoDisplay, color = stateColor)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Pill("tor preference ${if (ui.torEnabled) "on" else "off"}", if (ui.torEnabled) ZTone.On else ZTone.Warn)
-                        Pill("process ${ui.torStatus.name.lowercase()}", processTone)
-                        Pill(
-                            "onion ${if (onionReady) "ready" else if (ui.torEnabled) "waiting" else "off"}",
-                            if (onionReady) ZTone.On else if (ui.torEnabled) ZTone.Warn else ZTone.Off
-                        )
-                        Pill(
-                            "seed ${if (seedReady) "address ready" else if (ui.onionSeedEnabled) "waiting" else "private"}",
-                            if (seedReady) ZTone.On else if (ui.onionSeedEnabled) ZTone.Warn else ZTone.Off
-                        )
-                    }
-                }
-                Column(
-                    Modifier.widthIn(min = 260.dp, max = 340.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stateLabel, style = ZTheme.text.monoDisplay, color = stateColor)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ToggleRow(
-                        if (ui.managedTorEnabled || !ui.torEnabled) "Managed Tor / onion mode" else "Tor routing via external SOCKS",
-                        ui.torEnabled,
-                        appState::setTorOnionMode
-                    )
-                    HintText(
-                        if (ui.managedTorEnabled || !ui.torEnabled) {
-                            "Managed mode is hybrid; this switch does not mean Tor-only routing."
-                        } else {
-                            "An external SOCKS endpoint is configured. Turning this off disables Tor; enabling again selects managed hybrid mode."
-                        }
-                    )
+                    Pill("post-quantum tls required", ZTone.On)
+                    Pill("ml-dsa pinned peers", ZTone.On)
+                    Pill(if (relay) "relays · n0" else "direct only", if (relay) ZTone.Warn else ZTone.On)
+                    Pill("no tor", ZTone.Off)
                 }
             }
             HintText(
-                when {
-                    torFailed -> "Tor is not healthy. Onion reachability should not be assumed while this state is active."
-                    !rpcEndpointLocal -> "The configured node is remote, so its transport cannot be inferred here. Tor controls and process state refer only to this machine."
-                    onionReady && ui.torOnly -> "Tor is online, an onion identity is ready, and the node policy is Tor-only."
-                    onionReady -> "Managed Tor and the onion identity are ready. Hybrid mode can also dial direct TCP peers."
-                    torProcessOnline -> "The Tor process is online; the onion identity has not been reported yet."
-                    torChanging -> "Tor is changing state. The status and onion identity update when the process settles."
-                    ui.torEnabled -> "Tor is configured but currently idle. It normally starts with the node."
-                    !rpcEndpointLocal -> "Managed Tor is disabled on this machine. The configured remote node's transport cannot be inferred here."
-                    else -> "Tor is disabled and the local node uses direct clearnet connectivity."
-                }
+                "Every connection of the v2 node must negotiate the hybrid post-quantum key exchange (X25519MLKEM768), and each server proves the ML-DSA-65 identity its descriptor pins. There is no Tor transport yet: QUIC runs over UDP and Tor only carries TCP."
             )
         }
 
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            StatusCard("Transport", "iroh", "QUIC, hybrid TLS", Modifier.weight(1f))
             StatusCard(
-                "Transport",
-                routeValue,
-                when (routeValue) {
-                    "Tor only" -> "Tor policy active"
-                    "Onion + TCP" -> "managed hybrid mode"
-                    "Tor + TCP" -> "onion identity pending"
-                    "Tor-only starting" -> "direct dialing blocked"
-                    "Tor-only stopping" -> "direct dialing remains blocked"
-                    "Tor-only unavailable" -> "Tor required; no fallback"
-                    "Remote route unknown" -> "configured RPC is remote"
-                    "Direct fallback" -> "Tor is not online"
-                    "Clearnet" -> "Tor preference off"
-                    else -> "network services idle"
-                },
+                "Relay",
+                if (relay) "n0" else "none",
+                if (relay) "sees IP and endpoint id" else "direct connections only",
                 Modifier.weight(1f)
             )
-            StatusCard("Tor", ui.torStatus.name, if (onionReady) "onion identity ready" else "process state", Modifier.weight(1f))
-            StatusCard(
-                "Tor peers",
-                if (peerSplitKnown) ui.peerTorCount.toString() else "-",
-                when {
-                    peerSplitLive -> "current /peers sample"
-                    peerSplitKnown -> "last reported /peers sample"
-                    else -> "not reported"
-                },
-                Modifier.weight(1f)
-            )
-            StatusCard(
-                "Direct peers",
-                if (peerSplitKnown) ui.peerDirectCount.toString() else "-",
-                when {
-                    peerSplitLive -> "current /peers sample"
-                    peerSplitKnown -> "last reported /peers sample"
-                    else -> "not reported"
-                },
-                Modifier.weight(1f)
-            )
+            StatusCard("Outbound", peers?.outbound?.toString() ?: "-", "sessions this node opened", Modifier.weight(1f))
+            StatusCard("Inbound", peers?.inbound?.toString() ?: "-", "sessions to this node", Modifier.weight(1f))
             StatusCard(
                 "Auto-lock",
                 if (ui.onboardingAutoLockMinutes > 0) "${ui.onboardingAutoLockMinutes} min" else "Off",
@@ -2750,52 +2606,16 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
             Column(Modifier.weight(1.45f), verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
-                Panel(title = "Tor network", meta = ui.torStatus.name.lowercase()) {
-                    KeyValueRow("Network mode", routeValue.lowercase())
-                    KeyValueRow("Tor process", ui.torStatus.name.lowercase())
-                    KeyValueRow("Tor controller", if (ui.managedTorEnabled) "managed by ZSilent" else "external SOCKS")
-                    if (ui.torEnabled) KeyValueRow("SOCKS endpoint", "${ui.torSocksHost}:${ui.torSocksPort}")
-                    if (ui.torOnionHost.isNotBlank()) {
-                        CopyableKeyValueRow("Onion host", ui.torOnionHost)
-                    } else {
-                        KeyValueRow(
-                            "Onion host",
-                            when {
-                                !ui.torEnabled -> "Tor disabled"
-                                ui.torStatus == ServiceStatus.Starting -> "starting Tor..."
-                                ui.torStatus == ServiceStatus.Error -> "unavailable"
-                                else -> "not reported"
-                            }
-                        )
-                    }
-                    torError?.let { ErrorText(it) }
+                Panel(title = "Network path", meta = if (relay) "relayed" else "direct") {
+                    KeyValueRow("Transport", "iroh (QUIC)")
+                    KeyValueRow("Key exchange", "X25519MLKEM768, required")
+                    KeyValueRow("Peer identity", "ML-DSA-65, pinned by descriptor")
+                    KeyValueRow("Relays", if (relay) "n0 (relay and pkarr DNS)" else "none")
+                    KeyValueRow("Sees your IP", if (relay) "relay operator and peers" else "peers")
+                    KeyValueRow("Payments", "private: STARK proofs, encrypted notes")
                     HintText(
-                        if (!rpcEndpointLocal) {
-                            "These Tor controls are local. The configured remote node's Tor-only or direct-dial policy is not reported by this screen."
-                        } else if (ui.torOnly) {
-                            "Tor-only policy is active. Direct peer dialing is disabled by the node policy."
-                        } else {
-                            "The standard managed mode is hybrid: it adds Tor/onion support while retaining direct TCP dialing for network availability."
-                        }
+                        "What the network sees: your IP, your endpoint id and what your node asks. What stays private: amounts, owners, memos and which note a payment spends."
                     )
-                }
-
-                Panel(title = "Onion seed", meta = if (seedReady) "address ready" else if (ui.onionSeedEnabled) "waiting" else "private") {
-                    ToggleRow("Publish my node as an onion seed", ui.onionSeedEnabled, appState::setOnionSeedEnabled)
-                    HintText("The preference is not proof of publication; the address below confirms when a shareable seed is ready.")
-                    if (seedAddress.isNotBlank()) {
-                        CopyableKeyValueRow("Seed address", seedAddress)
-                    } else {
-                        KeyValueRow(
-                            "Seed address",
-                            when {
-                                !ui.onionSeedEnabled -> "publishing disabled"
-                                !torProcessOnline -> "waiting for Tor"
-                                !ui.localRpcOnline -> "waiting for node RPC"
-                                else -> "not reported yet"
-                            }
-                        )
-                    }
                 }
             }
 
@@ -2813,7 +2633,7 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         Icon(Icons.Outlined.Lock, null, modifier = Modifier.size(14.dp))
                         ZButtonText("Lock wallet & stop services")
                     }
-                    HintText("Locking clears the wallet session and stops the node, miner and managed Tor processes.")
+                    HintText("Locking clears the wallet session and stops the node.")
                 }
 
                 Panel(
@@ -2823,9 +2643,9 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     ToggleRow("Show Explorer section", ui.explorerEnabled) { appState.setExplorerEnabled(it) }
                     HintText(
                         if (rpcEndpointLocal) {
-                            "Explorer reads the chain view exposed by the node on this machine."
+                            "Explorer reads the block summaries of the node on this machine."
                         } else {
-                            "Regular lookups use the configured remote node; private view-key scans are blocked remotely."
+                            "Lookups use the configured remote node."
                         }
                     )
                     KeyValueRow(
@@ -2836,9 +2656,7 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         "Chain data",
                         when {
                             !ui.localRpcOnline -> "unavailable"
-                            ui.networkHeight <= 0L -> "tip reference unavailable"
                             ui.syncRemainingBlocks <= 0L -> "at observed tip"
-                            ui.networkSynced -> "within mining tolerance"
                             else -> "not at network tip"
                         }
                     )
@@ -2847,10 +2665,8 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         }
 
         Panel(title = "Live privacy posture", meta = "current UI state") {
-            PostureRow("Network path", torProcessOnline, routeValue.lowercase())
-            PostureRow("Tor process", torProcessOnline, ui.torStatus.name.lowercase())
-            PostureRow("Onion identity", onionReady, if (onionReady) "ready" else "not ready")
-            PostureRow("Seed address", !ui.onionSeedEnabled || seedReady, if (seedReady) "ready" else if (ui.onionSeedEnabled) "waiting" else "private")
+            PostureRow("Hybrid TLS", true, "required on every connection")
+            PostureRow("Relay", !relay, if (relay) "n0 sees your IP" else "none")
             PostureRow("On-screen balances", ui.balancesHidden, if (ui.balancesHidden) "hidden" else "visible")
             PostureRow("Wallet session", ui.appLocked, if (ui.sessionUnlocked && !ui.appLocked) "unlocked" else "locked")
             PostureRow(
@@ -4125,7 +3941,7 @@ private fun SettingsSecurityPage(
 private fun SettingsNetworkPage(ui: ZSilentUiState) {
     val netLive = ui.localRpcOnline && (ui.localConnectedPeers > 0 || ui.networkSynced)
     Panel(title = "Network", meta = if (netLive) "live (p2p)" else if (ui.localRpcOnline) "node online" else "offline") {
-        KeyValueRow("Transport", "P2P mesh — Tor onion + iroh (serverless)")
+        KeyValueRow("Transport", "iroh (QUIC) · hybrid post-quantum TLS (serverless)")
         KeyValueRow("Reachability", if (netLive) "connected via peers" else "isolated")
         KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
         KeyValueRow("Network height", ui.networkHeight.toString())
@@ -4134,9 +3950,9 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
     }
     Panel(title = "Local node", meta = if (ui.localRpcOnline) "online" else "offline") {
         KeyValueRow("Local RPC", if (ui.localRpcOnline) "${ZokaNetworkConfig.displayUrl(ui.localRpcUrl)} online" else "offline")
-        CopyableKeyValueRow("Bootstrap", ui.bootstrapPeer)
+        KeyValueRow("Data", ZokaNetworkConfig.dataDir())
         KeyValueRow("Connected peers", ui.localConnectedPeers.toString())
-        KeyValueRow("Your mining", if (ui.mining.running) "on" else "off")
+        KeyValueRow("Stratum", ui.stratum?.listening?.let { "listening on $it" } ?: if (ui.stratumEnabled) "starting" else "off")
     }
 }
 

@@ -248,10 +248,11 @@ internal fun V2Status.toSyncStatus(nowSeconds: Long = System.currentTimeMillis()
 }
 
 // The v2 node reaches its peers over iroh, directly or through a relay, never
-// over Tor; it reports counts only.
+// over Tor; it reports counts only. "Direct" carries the sessions it opened and
+// "other" the ones opened to it, which is how the screens label them.
 internal fun V2Status.toPeers() = PeersResponse(
     connectedPeers = peers.connected,
-    byTransport = PeerTransportCounts(direct = peers.connected)
+    byTransport = PeerTransportCounts(direct = peers.outbound, other = peers.inbound)
 )
 
 @Serializable

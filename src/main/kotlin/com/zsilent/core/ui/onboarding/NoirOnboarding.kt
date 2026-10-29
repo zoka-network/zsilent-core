@@ -1442,7 +1442,7 @@ fun TutorialStepNoir(ui: ZSilentUiState, appState: ZSilentAppState) {
             TourRow("Send / Receive", "Private transfers with zero-knowledge proofs.")
             TourRow("Node", "Full node, sync state, RPC settings.")
             TourRow("Mining", "Local PoW mining and reward queue.")
-            TourRow("Privacy", "Tor routing, log redaction, key control.")
+            TourRow("Privacy", "Network path, log redaction, key control.")
         }
         ResponsibilityCheck(
             "I am ready to open the dashboard.",

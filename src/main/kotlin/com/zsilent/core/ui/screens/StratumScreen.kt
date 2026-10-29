@@ -108,7 +108,10 @@ fun StratumScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                     "This is solo mining through your node, not a shared pool: a block pays its whole " +
                         "reward to the miner that found it, and nothing is split."
                 )
-                HintText("ZSilent's own miner and the Stratum can run together, but they share the CPU.")
+                HintText(
+                    "The v2 testnet has no built-in miner: XMRig through this Stratum is how a block gets " +
+                        "found. A block reward matures after 60 confirmations."
+                )
             }
         }
     }

@@ -313,6 +313,9 @@ private fun visibleSections(uiState: ZSilentUiState): List<AppSection> =
     AppSection.entries.filter { section ->
         when (section) {
             AppSection.Explorer -> uiState.explorerEnabled
+            // La testnet v2 no tiene minero integrado: se mina con XMRig por el
+            // Stratum del nodo, que tiene su propia sección.
+            AppSection.Mining -> false
             else -> true
         }
     }

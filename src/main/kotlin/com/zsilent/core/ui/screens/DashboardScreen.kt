@@ -562,13 +562,16 @@ private fun DashboardRuntimePanel(
                     else -> ZTone.Off
                 }
             )
+            // La v2 no usa Tor ni tiene minero integrado: se mina con XMRig
+            // contra el Stratum del nodo.
+            val stratumMiners = ui.stratum?.miners ?: 0
             Pill(
-                if (ui.torEnabled) "tor ${ui.torStatus.name.lowercase()}" else "tor disabled",
-                if (ui.torEnabled) dashboardServiceTone(ui.torStatus) else ZTone.Off
-            )
-            Pill(
-                if (ui.mining.running) "solo mining running" else "mining off",
-                if (ui.mining.running) ZTone.On else ZTone.Off
+                when {
+                    ui.stratum?.listening != null -> "stratum · $stratumMiners miner(s)"
+                    ui.stratumEnabled -> "stratum starting"
+                    else -> "stratum off"
+                },
+                if (stratumMiners > 0) ZTone.On else ZTone.Off
             )
         }
         HintText(runtime.detail)
@@ -582,7 +585,8 @@ private fun DashboardRuntimePanel(
 private fun DashboardActions(ui: ZSilentUiState, appState: ZSilentAppState, rpcEndpointLocal: Boolean) {
     val policy = dashboardActionPolicy(ui, rpcEndpointLocal)
     val nodeOnline = ui.nodeStatus == ServiceStatus.Online
-    val mining = ui.mining.running
+    // Sin minero integrado ni Tor en la v2: el nodo es el único control. Se
+    // mina desde la sección Stratum.
     FlowRow(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -596,33 +600,8 @@ private fun DashboardActions(ui: ZSilentUiState, appState: ZSilentAppState, rpcE
             Icon(Icons.Outlined.PowerSettingsNew, null, modifier = Modifier.size(14.dp))
             ZButtonText(policy.nodeLabel)
         }
-        ZButton(
-            onClick = {
-                if (mining) appState.stopMining()
-                else appState.startMining(ui.mining.availableCpuThreads.coerceAtLeast(1))
-            },
-            variant = ZButtonVariant.Outline,
-            enabled = policy.miningEnabled
-        ) {
-            Icon(Icons.Outlined.Bolt, null, modifier = Modifier.size(14.dp))
-            ZButtonText(policy.miningLabel)
-        }
-        ZButton(
-            onClick = { appState.setTorOnionMode(!ui.torEnabled) },
-            variant = ZButtonVariant.Outline,
-            enabled = policy.torEnabled
-        ) {
-            Icon(Icons.Outlined.Security, null, modifier = Modifier.size(14.dp))
-            ZButtonText(policy.torLabel)
-        }
         if (policy.nodeReason != null) {
             Pill(policy.nodeReason, ZTone.Warn)
-        }
-        if (policy.miningReason != null) {
-            Pill(policy.miningReason, ZTone.Warn)
-        }
-        if (policy.torReason != null) {
-            Pill(policy.torReason, ZTone.Info)
         }
     }
 }
@@ -870,9 +849,9 @@ private fun DashboardPeerPanel(
                 ) {
                     DashboardPeerRing(total, tor, direct, other, splitKnown, Modifier.size(142.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DashboardRouteRow("Tor", if (splitKnown) tor.toString() else "—", ZTheme.metrics.at(0))
-                        DashboardRouteRow("Direct", if (splitKnown) direct.toString() else "—", ZTheme.metrics.at(2))
-                        DashboardRouteRow("Other", if (splitKnown) other.toString() else "—", ZTheme.metrics.at(4))
+                        // v2: las sesiones que abrió el nodo y las que le abrieron.
+                        DashboardRouteRow("Outbound", if (splitKnown) direct.toString() else "—", ZTheme.metrics.at(2))
+                        DashboardRouteRow("Inbound", if (splitKnown) other.toString() else "—", ZTheme.metrics.at(4))
                     }
                 }
             } else {
@@ -883,9 +862,9 @@ private fun DashboardPeerPanel(
                 ) {
                     DashboardPeerRing(total, tor, direct, other, splitKnown, Modifier.size(132.dp))
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DashboardRouteRow("Tor", if (splitKnown) tor.toString() else "—", ZTheme.metrics.at(0))
-                        DashboardRouteRow("Direct", if (splitKnown) direct.toString() else "—", ZTheme.metrics.at(2))
-                        DashboardRouteRow("Other", if (splitKnown) other.toString() else "—", ZTheme.metrics.at(4))
+                        // v2: las sesiones que abrió el nodo y las que le abrieron.
+                        DashboardRouteRow("Outbound", if (splitKnown) direct.toString() else "—", ZTheme.metrics.at(2))
+                        DashboardRouteRow("Inbound", if (splitKnown) other.toString() else "—", ZTheme.metrics.at(4))
                     }
                 }
             }
@@ -898,7 +877,7 @@ private fun DashboardPeerPanel(
         )
         HintText(
             if (rpcEndpointLocal) {
-                "This is the local node's adjacent mesh, not a global node count. Onion identity alone does not prove external reachability."
+                "This is the local node's sessions, not a global node count: the v2 node counts them and does not list who they are."
             } else {
                 "This is the configured RPC endpoint's adjacent mesh, not this PC's peer count or a global node count."
             }
@@ -935,6 +914,7 @@ private fun DashboardSecondaryGrid(
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
 private fun DashboardMiningPanel(
     ui: ZSilentUiState,
@@ -942,9 +922,17 @@ private fun DashboardMiningPanel(
     availableWidth: Dp,
     modifier: Modifier = Modifier
 ) {
+    // La v2 mina con XMRig por el Stratum del nodo: estas son sus cifras.
+    val stratum = ui.stratum
+    val listening = stratum?.listening != null
+    val miners = stratum?.miners ?: 0
     Panel(
         title = "Mining status",
-        meta = if (ui.mining.running) "solo miner running" else "idle",
+        meta = when {
+            listening -> "stratum listening"
+            ui.stratumEnabled -> "stratum starting"
+            else -> "stratum off"
+        },
         modifier = modifier
     ) {
         Row(
@@ -953,32 +941,33 @@ private fun DashboardMiningPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("REPORTED SOLO WORK", style = ZTheme.text.eyebrow, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(if (ui.mining.running) dashboardHashrate(reportedWork) else "—", style = ZTheme.text.monoDisplay, color = ZTheme.metrics.at(3))
+                Text("XMRIG MINERS", style = ZTheme.text.eyebrow, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(miners.toString(), style = ZTheme.text.monoDisplay, color = ZTheme.metrics.at(3))
             }
             Pill(
-                if (ui.mining.running) "solo active" else "idle",
-                if (ui.mining.running) ZTone.On else ZTone.Off
+                when {
+                    miners > 0 -> "mining"
+                    listening -> "waiting for xmrig"
+                    else -> "off"
+                },
+                if (miners > 0) ZTone.On else ZTone.Off
             )
         }
         ThinDivider()
         DashboardInlineMetricGrid(
             listOf(
-                "Solo blocks" to ui.mining.blocksMined.toString(),
-                "Solo difficulty" to (ui.mining.difficultyBits.takeIf { it > 0 }?.toString() ?: "—"),
-                "CPU threads" to ui.mining.availableCpuThreads.toString()
-            ),
-            availableWidth
-        )
-        DashboardInlineMetricGrid(
-            listOf(
-                "Average solve" to dashboardSeconds(ui.mining.avgSolveTimeSecs),
-                "Last solve" to dashboardSeconds(ui.mining.lastSolveTimeSecs)
+                "Accepted shares" to (stratum?.acceptedShares ?: 0L).toString(),
+                "Rejected" to (stratum?.rejectedShares ?: 0L).toString(),
+                "Blocks found" to (stratum?.blocksFound ?: 0L).toString()
             ),
             availableWidth
         )
         HintText(
-            "The numeric values are the latest retained solo-miner snapshot; no freshness timestamp is available, and reported work is not a hardware-side hashrate measurement."
+            if (listening) {
+                "XMRig mines against ${stratum?.listening}; each block pays the address its miner logs in with. The counts start with the node."
+            } else {
+                "Turn the Stratum on in its section to mine with XMRig: the v2 testnet has no built-in miner."
+            }
         )
     }
 }
@@ -1399,7 +1388,8 @@ internal fun dashboardTelemetrySampleFresh(
     nowMillis: Long
 ): Boolean = dashboardTelemetryFresh(localRpcOnline, observedAtMillis, consecutiveFailures, nowMillis)
 
-private fun dashboardPeerCount(ui: ZSilentUiState): Long = ui.peers.size.toLong()
+// El nodo v2 no lista a sus pares: informa cuántas sesiones tiene.
+private fun dashboardPeerCount(ui: ZSilentUiState): Long = maxOf(ui.peers.size.toLong(), ui.localConnectedPeers)
 
 internal fun dashboardLocalHeight(ui: ZSilentUiState, nowMillis: Long): Long = when {
     dashboardTelemetryFresh(ui.localRpcOnline, ui.nodeSyncStatusObservedAtMillis, ui.nodeSyncStatusConsecutiveFailures, nowMillis) ->
