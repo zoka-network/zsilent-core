@@ -237,6 +237,10 @@ data class ZSilentUiState(
 // that will be orphaned.
 private const val MINING_SYNC_TOLERANCE_BLOCKS = 2L
 
+// La identidad de iroh que mostraba la v1 era la de las instantáneas de su
+// nodo (`zoka iroh-id`); el nodo v2 tiene otra, la de su descriptor.
+private const val READ_V1_IROH_ID = false
+
 class ZSilentAppState(
     val cli: ZokaCli,
     val rpc: ZokaRpcClient,
@@ -387,7 +391,8 @@ class ZSilentAppState(
                 appendLog(log)
             }
         }
-        miningController.startPolling()
+        // La v2 no tiene minero integrado que sondear (`zoka mine-status` era de
+        // la v1): en la testnet se mina con XMRig contra el Stratum del nodo.
         scope.launch {
             miningController.status.collectLatest { status ->
                 update {
@@ -2178,50 +2183,10 @@ class ZSilentAppState(
             password.fill('\u0000')
         }
         scope.launch {
-            var torProxy = if (snapshot.torEnabled) "${snapshot.torSocksHost}:${snapshot.torSocksPort}" else ""
-            var externalAddrs = emptyList<String>()
-
-            if (snapshot.torEnabled && snapshot.managedTorEnabled) {
-                val torResult = runCatching {
-                    torSupervisor.start(
-                        TorLaunchConfig(
-                            socksHost = "127.0.0.1",
-                            socksPort = snapshot.managedTorSocksPort.coerceIn(1, 65535)
-                        )
-                    )
-                }
-
-                torResult.onSuccess { tor ->
-                    torProxy = "${tor.socksHost}:${tor.socksPort}"
-                    externalAddrs = listOf(tor.onionMultiaddr)
-                    update {
-                        it.copy(
-                            torEnabled = true,
-                            torSocksHost = tor.socksHost,
-                            torSocksPort = tor.socksPort,
-                            managedTorSocksPort = tor.socksPort,
-                            torOnionHost = tor.onionHost,
-                            torOnionMultiaddr = tor.onionMultiaddr,
-                            torSeedAddress = tor.onionMultiaddr,
-                            torError = null
-                        )
-                    }
-                }.onFailure { error ->
-                    // Never block node startup on Tor. Hybrid mode means the
-                    // node can run over clearnet even if managed Tor didn't come
-                    // up (Tor bootstrap can be slow or the network overloaded);
-                    // it just won't advertise its onion this run. Previously a
-                    // Tor failure with tor-only/onion-seed set aborted startup
-                    // entirely, leaving the node switch stuck in Error -- the
-                    // node must always at least start.
-                    val message = safeLogMessage(error)
-                    update { it.copy(torStatus = ServiceStatus.Error, torError = message) }
-                    appendLog(RuntimeLog("tor", "Managed Tor failed: $message"))
-                    torProxy = ""
-                    externalAddrs = emptyList()
-                    appendLog(RuntimeLog("node", "Starting the node over direct clearnet; onion will be unavailable until Tor recovers."))
-                }
-            }
+            // El nodo v2 va por iroh (directo o por relay) y no usa Tor: no hay
+            // Tor que levantar ni onion que anunciar.
+            val torProxy = ""
+            val externalAddrs = emptyList<String>()
 
             nodeController.start(
                 password = passwordText,
@@ -2496,7 +2461,7 @@ class ZSilentAppState(
         // This node's iroh snapshot-seed EndpointId is derived from a persistent
         // key, so it never changes — fetch it once (a short zoka subprocess),
         // in the background so it never blocks the poll.
-        if (snapshot.irohEndpointId.isBlank() && localRpcOnline && !irohIdFetchInFlight) {
+        if (READ_V1_IROH_ID && snapshot.irohEndpointId.isBlank() && localRpcOnline && !irohIdFetchInFlight) {
             irohIdFetchInFlight = true
             scope.launch {
                 try {
@@ -2784,24 +2749,14 @@ class ZSilentAppState(
         }
     }
 
-    private fun canRunRpcSync(snapshot: ZSilentUiState): Boolean {
-        // `rpc-sync` opens the chain DB directly with its own RocksDB handle.
-        // RocksDB only allows one process to hold that DB open at a time, and
-        // the embedded fullnode (whenever it's running at all, not just while
-        // Starting/Stopping) already owns it for as long as the process is
-        // alive — including the warmup window before its own API/P2P sync has
-        // caught up. Running rpc-sync concurrently makes both sides spin on
-        // lock contention instead of progressing. Only allow it when there is
-        // no managed node process holding the DB, i.e. fully Offline.
-        return cli.zoka != null &&
-            !rpcSyncInProgress &&
-            !snapshot.mining.running &&
-            snapshot.miningStatus != ServiceStatus.Online &&
-            snapshot.nodeStatus == ServiceStatus.Offline
-    }
+    // El nodo v2 se sincroniza solo con sus pares: la sincronización directa
+    // por RPC (`zoka rpc-sync`) era de la v1.
+    @Suppress("UNUSED_PARAMETER")
+    private fun canRunRpcSync(snapshot: ZSilentUiState): Boolean = false
 
     private fun rpcSyncBlockedReason(snapshot: ZSilentUiState): String {
         if (cli.zoka == null) return "Cannot sync: zoka binary was not found."
+        if (!canRunRpcSync(snapshot)) return "The v2 node syncs itself with its peers; start the node to sync."
         if (rpcSyncInProgress || snapshot.syncBusy) return "Sync is already running."
         if (snapshot.nodeStatus != ServiceStatus.Offline) {
             return "The full node already syncs itself while it's running; stop it before running a direct RPC sync."
@@ -2898,13 +2853,16 @@ class ZSilentAppState(
     private suspend fun readLocalChainHeight(): Result<Long> = withContext(Dispatchers.IO) {
         runCatching {
             val zoka = cli.zoka ?: error("zoka binary not found")
+            val db = File(cli.networkDir(), "node/db")
+            check(db.isDirectory) { "the node has no chain yet" }
             cli.withZokaCommandLock {
                 val child = cli.processBuilder(
                     zoka,
                     listOf(
-                        "height",
-                        "--network", ZokaNetworkConfig.Network,
-                        "--json"
+                        "quantic-pq",
+                        "status",
+                        "--db", db.absolutePath,
+                        "--network", ZokaNetworkConfig.Network
                     )
                 )
                     .redirectErrorStream(true)

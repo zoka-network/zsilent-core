@@ -10,7 +10,10 @@ object ZokaProcessKiller {
         "node",
         "zokahd-guided",
         "mine",
-        "mine-console"
+        "mine-console",
+        // El nodo v2 (`quantic-pq-node serve`): uno que quedó de una sesión
+        // anterior retiene su base y el puerto de la API.
+        "quantic-pq-node"
     )
 
     fun terminate(process: Process?, graceMillis: Long = 1_500L) {

@@ -230,42 +230,17 @@ class NodeController(private val cli: ZokaCli) {
         }
         if (binary == null) {
             _status.value = ServiceStatus.Error
-            _logs.tryEmit(RuntimeLog("node", "zoka binary not found. Build target/release/zoka first."))
+            _logs.tryEmit(RuntimeLog("node", "zoka binary not found. Build target/release/zoka with --features quantic-pq first."))
             return
         }
-        // En modo solo-sincronizar no hay wallet que abrir, asi que tampoco
-        // hay contrasena que pedir: exigirla aca seria volver a atar el
-        // arranque al login, que es justo lo que este modo evita.
-        if (!syncOnly && password.isBlank()) {
-            _status.value = ServiceStatus.Error
-            _logs.tryEmit(RuntimeLog("node", "Wallet password is required to start the node."))
-            return
-        }
-        if ((torProxy.isNotBlank() || torOnly) && !supportsTorFlags(binary)) {
-            _status.value = ServiceStatus.Error
-            _logs.tryEmit(RuntimeLog("node", "This zokahd binary does not support Tor flags. Rebuild with cargo build --release --features randomx."))
-            return
-        }
-        val cleanExternalAddrs = externalAddrs.map { it.trim() }.filter { it.isNotBlank() }.distinct()
-        if (cleanExternalAddrs.isNotEmpty() && !supportsExternalAddrFlag(binary)) {
-            _status.value = ServiceStatus.Error
-            _logs.tryEmit(RuntimeLog("node", "This zoka binary does not support --external-addr. Rebuild the Rust node before enabling managed onion reachability."))
-            return
-        }
-
-        // Sin el Stratum el nodo igual arranca: es un agregado, y un binario
-        // viejo no puede dejar a nadie sin nodo.
-        var cleanStratumBind = if (syncOnly) "" else stratumBind.trim()
-        if (cleanStratumBind.isNotBlank() && !supportsStratumFlag(binary)) {
-            _logs.tryEmit(
-                RuntimeLog(
-                    "node",
-                    "This zoka binary does not support --stratum. Starting the node without the Stratum server.",
-                    level = LogLevel.Warning
-                )
-            )
-            cleanStratumBind = ""
-        }
+        // El nodo v2 no abre ninguna wallet ni recibe su contraseña: arranca
+        // antes del login igual que después. Tor, la onion, las instantáneas
+        // por iroh y los pares por multiaddr eran de la v1: el nodo v2 va por
+        // iroh, con las semillas del manifiesto que trae compilado, así que
+        // esos parámetros se guardan para el reinicio pero no viajan.
+        // En modo solo-sincronizar no se abre el Stratum: un nodo que todavía
+        // baja bloques no tiene trabajo que darle a un minero.
+        val cleanStratumBind = if (syncOnly) "" else stratumBind.trim()
 
         stopRequested = false
         lastStartParams = StartParams(
@@ -277,98 +252,47 @@ class NodeController(private val cli: ZokaCli) {
             threads,
             torProxy,
             torOnly,
-            cleanExternalAddrs,
+            externalAddrs.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
             manualPeers,
             syncOnly,
             stratumBind
         )
         _status.value = ServiceStatus.Starting
-        readyFile.parentFile?.mkdirs()
-        if (readyFile.exists()) readyFile.delete()
+        val nodeDir = File(cli.networkDir(network), "node").apply { mkdirs() }
+        val descriptor = cli.nodeDescriptor(network)
+        // El nodo nunca pisa un archivo: el descriptor de la corrida anterior
+        // se borra antes de arrancar.
+        if (descriptor.exists()) descriptor.delete()
+        val secret = runCatching { identitySecret(nodeDir) }.getOrElse {
+            _status.value = ServiceStatus.Error
+            _logs.tryEmit(RuntimeLog("node", "Cannot prepare the node identity: ${sanitize(it.message ?: "unknown error")}", level = LogLevel.Error))
+            return
+        }
         val command = mutableListOf(
-            "fullnode",
-            // The node defaults to a fluid streaming console (as of the
-            // ZokaNetwork node build that follows v1.6.1); ZSilent parses
-            // stdout for its own log panel (see streamLogs/DASHBOARD_NOISE
-            // below), which is tuned to the older full-screen dashboard's
-            // line format, so keep requesting that explicitly here.
-            "--dashboard",
+            "quantic-pq-node",
+            "serve",
             "--network", network,
-            "--power", power,
-            "--allow-isolated-start",
-            "--sync-warmup-secs", "30",
-            "--sync-rebroadcast-recent-blocks", "32",
-            "--ready-file", readyFile.absolutePath
+            "--db", File(nodeDir, "db").absolutePath,
+            "--identity", File(nodeDir, "node.identity").absolutePath,
+            "--api", ZokaNetworkConfig.LocalRpcUrl.removePrefix("http://").trimEnd('/'),
+            "--descriptor-out", descriptor.absolutePath
         )
-        if (ZokaNetworkConfig.ManifestPath.isNotBlank()) {
-            command += listOf("--network-config", ZokaNetworkConfig.ManifestPath)
-        }
-        if (ZokaNetworkConfig.BootstrapMultiaddr.isNotBlank()) {
-            command += listOf("--seed", ZokaNetworkConfig.BootstrapMultiaddr)
-        }
-        // Los pares manuales van después de la semilla del manifiesto y antes
-        // de cualquier otra cosa: el nodo los trata igual que a una semilla,
-        // así que quedan en el peerstore y sobreviven a los reinicios. Solo los
-        // de esta red (ver `manualPeersForNetwork`).
-        val peersForNetwork = manualPeersForNetwork(manualPeers, network)
-        val skippedPeers = manualPeers.count { it.isNotBlank() } - peersForNetwork.size
-        if (skippedPeers > 0) {
-            _logs.tryEmit(
-                RuntimeLog(
-                    "node",
-                    "Skipping $skippedPeers saved peer(s) on another network's port; this network uses ${ZokaNetworkConfig.p2pPort(network)}."
-                )
-            )
-        }
-        for (peer in peersForNetwork) {
-            command += listOf("--seed", peer)
-        }
-        // Always launch the node in node-only mode (--no-mine). Mining is toggled
-        // at RUNTIME via the node's /mining RPC, so the node stays online + synced
-        // while mining is turned on/off without a restart. The miner params are
-        // still passed so the runtime-enabled miner uses them.
-        //
-        // Zoka Quantic: el nodo no abre ninguna wallet (las abre `quantic-wallet`
-        // en cada consulta), así que nunca recibe la contraseña. Mina a la
-        // dirección de `--quantic-mine-to`, que es pública; antes del login
-        // (solo-sincronizar) no hay dirección y no mina.
-        if (syncOnly) {
-            command += "--sync-only"
-        }
-        command += "--no-mine"
-        if (threads != null && threads > 0) {
-            command += listOf("--threads", threads.toString())
-        }
-        command += listOf("--min-mine-peers", "1")
-        // Every ZSilent node automatically serves its chain as an iroh snapshot
-        // (QUIC + NAT hole-punching, no open port) so fresh nodes can bootstrap
-        // in one transfer instead of crawling block-by-block IBD. Fully guarded
-        // node-side: it never blocks startup. Fresh-node auto-fetch is on by
-        // default in the binary, so the whole flow needs no user action.
-        command += "--serve-iroh-snapshot"
-        if (!syncOnly && ZokaNetworkConfig.isAddress(address)) {
-            command += listOf("--quantic-mine-to", address.trim())
-        }
-        if (torProxy.isNotBlank()) {
-            command += listOf("--tor-proxy", torProxy)
-        }
-        if (torOnly) {
-            command += "--tor-only"
-        }
-        cleanExternalAddrs.forEach { addr ->
-            command += listOf("--external-addr", addr)
-        }
-        // XMRig mina contra este nodo; cada bloque le paga a la direccion con la
-        // que entra el minero, o a la de `--quantic-mine-to`.
+        // XMRig mina contra este nodo: cada bloque le paga a la dirección con la
+        // que entra el minero, o a la de `--mine-to` si entra con otro nombre.
         if (cleanStratumBind.isNotBlank()) {
             command += listOf("--stratum", cleanStratumBind)
         }
+        if (!syncOnly && ZokaNetworkConfig.isAddress(address)) {
+            command += listOf("--mine-to", address.trim())
+        }
+        checkpointAuthorityDir(network)?.let { dir ->
+            command += listOf("--authority", dir.absolutePath)
+            _logs.tryEmit(RuntimeLog("node", "Checkpoint authority keys found in ${dir.absolutePath}: this node signs the chain's checkpoints."))
+        }
         val builder = cli.processBuilder(binary, command)
-        // Ninguna credencial viaja al proceso del nodo, ni por argumento ni por
-        // entorno: en Quantic no la usa.
-        // Enable the runtime mining-control RPC (/mining/start|stop) so mining can
-        // be toggled in-process without restarting the node.
-        builder.environment()["ZOKA_API_ENABLE_MINING_CONTROL"] = "true"
+        // La única credencial que recibe el nodo es la de su propia identidad
+        // de red; ninguna de las wallets.
+        builder.environment()[IDENTITY_PASSWORD_ENV] = secret
         builder.redirectErrorStream(true)
 
         scope.launch {
@@ -568,56 +492,46 @@ class NodeController(private val cli: ZokaCli) {
         /// Rotate the node log past this size, keeping one previous file, so
         /// a node left running for weeks can't fill the disk.
         private const val MAX_LOG_BYTES = 8L * 1024 * 1024
-
+        private const val IDENTITY_PASSWORD_ENV = "ZOKA_PQ_PASSWORD"
     }
 
-    private fun supportsTorFlags(binary: File): Boolean {
-        // "fullnode --help" is not recognized by this CLI's per-subcommand
-        // handler -- it silently ignores --help and actually tries to launch
-        // a fullnode (failing on the missing password) without ever printing
-        // flag names, which made this probe always return false regardless
-        // of the binary's real capability. The bare top-level --help banner
-        // does list every subcommand's flags (including --tor-proxy /
-        // --tor-only / --external-addr) and exits immediately, so use that.
-        return helpContainsTorFlags(binary, listOf("--help"))
+    /**
+     * La contraseña con la que el nodo cifra su identidad de red
+     * (`ZOKA_PQ_PASSWORD`): 32 bytes al azar, creados en el primer arranque al
+     * lado de ella. La identidad no mueve fondos; la protege el perfil del
+     * usuario, como al resto de la carpeta de datos. Sin esto el nodo no podría
+     * arrancar antes del login ni reiniciarse solo.
+     */
+    private fun identitySecret(nodeDir: File): String {
+        val file = File(nodeDir, "node.identity.secret")
+        if (file.isFile) {
+            val saved = file.readText().trim()
+            require(saved.isNotEmpty()) { "${file.name} is empty" }
+            return saved
+        }
+        val bytes = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val created = bytes.joinToString("") { "%02x".format(it) }
+        file.writeText(created)
+        return created
     }
 
-    private fun supportsExternalAddrFlag(binary: File): Boolean {
-        return runCatching {
-            cli.withZokaCommandLock {
-                val child = cli.processBuilder(binary, listOf("--help"))
-                    .redirectErrorStream(true)
-                    .start()
-                val output = child.inputStream.bufferedReader().readText()
-                child.waitFor()
-                output.contains("--external-addr")
-            }
-        }.getOrDefault(false)
-    }
-
-    private fun supportsStratumFlag(binary: File): Boolean {
-        return runCatching {
-            cli.withZokaCommandLock {
-                val child = cli.processBuilder(binary, listOf("--help"))
-                    .redirectErrorStream(true)
-                    .start()
-                val output = child.inputStream.bufferedReader().readText()
-                child.waitFor()
-                output.contains("--stratum")
-            }
-        }.getOrDefault(false)
-    }
-
-    private fun helpContainsTorFlags(binary: File, args: List<String> = listOf("--help")): Boolean {
-        return runCatching {
-            cli.withZokaCommandLock {
-                val child = cli.processBuilder(binary, args)
-                    .redirectErrorStream(true)
-                    .start()
-                val output = child.inputStream.bufferedReader().readText()
-                child.waitFor()
-                output.contains("--tor-proxy") && output.contains("--tor-only")
-            }
-        }.getOrDefault(false)
+    /**
+     * La carpeta con las claves de la autoridad de checkpoints, si esta PC las
+     * tiene: la de `ZSILENT_CHECKPOINT_AUTHORITY_DIR` ("none" lo apaga), o en la
+     * testnet la de la red v1, donde las dejó `zoka checkpoint-keygen` (la
+     * testnet v2 usa las mismas claves). Si no son las compiladas, el nodo no
+     * arranca: es mejor que firmar algo que nadie aceptaría.
+     */
+    private fun checkpointAuthorityDir(network: String): File? {
+        val configured = System.getenv("ZSILENT_CHECKPOINT_AUTHORITY_DIR")?.trim().orEmpty()
+        if (configured.equals("none", ignoreCase = true)) return null
+        val candidates = when {
+            configured.isNotBlank() -> listOf(File(configured))
+            network == "testnet" -> listOf(File(cli.dataRoot, ".zoka/quantic-testnet"), cli.networkDir(network))
+            else -> emptyList()
+        }
+        return candidates.firstOrNull {
+            File(it, "checkpoint-authority.key").isFile && File(it, "checkpoint-authority-mldsa.key").isFile
+        }
     }
 }

@@ -4,28 +4,23 @@ import com.zsilent.core.models.AccountCheck
 import com.zsilent.core.models.ShortAddressLookup
 import com.zsilent.core.models.BlockSummary
 import com.zsilent.core.models.BlockTransactions
-import com.zsilent.core.models.ChainHeightResponse
-import com.zsilent.core.models.ViewScanKeyRequest
 import com.zsilent.core.models.ViewScanResponse
 import com.zsilent.core.models.MempoolTransaction
 import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
 import com.zsilent.core.models.PendingPrivateTransfers
+import com.zsilent.core.models.PeerTransportCounts
 import com.zsilent.core.models.PeersResponse
 import com.zsilent.core.models.PrivateTxLookup
 import com.zsilent.core.models.StratumStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class ZokaRpcClient(val baseUrl: String) {
@@ -42,57 +37,44 @@ class ZokaRpcClient(val baseUrl: String) {
         }
     }
 
-    suspend fun height(): Long {
+    /**
+     * `GET /status` del nodo v2: altura, punta, emisión, pares, Stratum y
+     * checkpoint en una sola lectura. Casi todo lo que muestra el tablero sale
+     * de acá; las funciones de abajo lo traducen a los modelos de siempre.
+     */
+    suspend fun status(): V2Status {
         require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val text = client.get("$baseUrl/chain/height").bodyAsText()
-        return codec.decodeFromString<ChainHeightResponse>(text).height
+        val response = client.get("$baseUrl/status")
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("RPC /status failed: ${response.status}")
+        }
+        return codec.decodeFromString(response.bodyAsText())
     }
 
-    suspend fun stats(): NodeStats {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val text = client.get("$baseUrl/stats").bodyAsText()
-        return codec.decodeFromString<NodeStats>(text)
-    }
+    suspend fun height(): Long = status().height
 
-    // The node's own sync view (P2P mesh + RPC combined). Meaningful even
-    // when the centralized bootstrap RPC is saturated or unreachable.
-    suspend fun syncStatus(): NodeSyncStatus {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val text = client.get("$baseUrl/sync/status").bodyAsText()
-        return codec.decodeFromString<NodeSyncStatus>(text)
-    }
+    suspend fun stats(): NodeStats = status().toStats()
 
-    // The local node's live mesh view: which p2p peers it is connected to and
-    // over which transport (Tor onion / direct). Serverless replacement for a
-    // central "who's online" directory — a node only knows its own peers.
-    suspend fun peers(): PeersResponse {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val text = client.get("$baseUrl/peers").bodyAsText()
-        return codec.decodeFromString<PeersResponse>(text)
-    }
+    // The node's own sync view: how far the outbound peers report their tips.
+    suspend fun syncStatus(): NodeSyncStatus = status().toSyncStatus()
+
+    // Only counts: the v2 node does not list its peers.
+    suspend fun peers(): PeersResponse = status().toPeers()
+
+    /** Los pagos del mempool del nodo: el v2 los cuenta, sin hashes que mostrar. */
+    suspend fun pendingPrivateTransfers(): PendingPrivateTransfers =
+        PendingPrivateTransfers(count = status().mempoolTransactions.toInt())
 
     /**
-     * Read the running node's pending queue without spawning a second zoka
-     * process (and therefore without repeatedly reopening RocksDB).
+     * La testnet v2 no tiene minería integrada que prender: se mina con XMRig
+     * contra el Stratum del nodo (`--stratum`).
      */
-    suspend fun pendingPrivateTransfers(): PendingPrivateTransfers {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val text = client.get("$baseUrl/private/pending").bodyAsText()
-        return decodePendingPrivateTransfers(text, codec)
-    }
-
     suspend fun startMining(threads: Int) {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val body = codec.encodeToString(LocalMiningControlRequest(threads.coerceAtLeast(1)))
-        client.post("$baseUrl/local/mining/start") {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }
+        throw UnsupportedOperationException(NO_INTEGRATED_MINING)
     }
 
     suspend fun stopMining() {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        client.post("$baseUrl/local/mining/stop")
+        throw UnsupportedOperationException(NO_INTEGRATED_MINING)
     }
 
     /**
@@ -114,52 +96,33 @@ class ZokaRpcClient(val baseUrl: String) {
         return codec.decodeFromString<T>(response.bodyAsText())
     }
 
-    suspend fun latestBlock(): BlockSummary? = getOrNull("/blocks/latest")
+    suspend fun latestBlock(): BlockSummary? = blockByHeight(height())
 
-    suspend fun blockByHeight(height: Long): BlockSummary? = getOrNull("/blocks/$height")
+    /** El resumen del bloque, sin los cuerpos de sus pagos (llevan las pruebas). */
+    suspend fun blockByHeight(height: Long): BlockSummary? = getOrNull("/blocks/$height/summary")
 
-    suspend fun blockByHash(hash: String): BlockSummary? = getOrNull("/blocks/hash/$hash")
+    // The v2 node indexes blocks by height only, and its payments are private:
+    // there is no hash index, no transaction list, no account to look up.
+    suspend fun blockByHash(hash: String): BlockSummary? = null
 
-    suspend fun blockTransactions(height: Long): BlockTransactions? =
-        getOrNull("/blocks/$height/transactions")
+    suspend fun blockTransactions(height: Long): BlockTransactions? = null
 
-    /**
-     * Looks up an *unconfirmed* transaction. The node keeps no tx-hash index
-     * over mined blocks, so a hash that already made it into a block 404s here
-     * — absence means "not pending", never "does not exist".
-     */
-    suspend fun mempoolTransaction(hash: String): MempoolTransaction? =
-        getOrNull("/mempool/tx/$hash")
+    suspend fun mempoolTransaction(hash: String): MempoolTransaction? = null
 
-    /**
-     * Where a private transaction stands on the chain: "Confirmed" with the
-     * block that holds it, "Pending", "Rejected"/"Spent" with the reason, or
-     * "Unknown". This is the only way to place an already-mined transaction,
-     * since the node indexes no confirmed tx hashes; it answers only for the
-     * private transactions whose body it keeps. 404 means it has no body.
-     */
-    suspend fun privateTransaction(hash: String): PrivateTxLookup? =
-        getOrNull("/private/tx/$hash")
+    suspend fun privateTransaction(hash: String): PrivateTxLookup? = null
+
+    suspend fun accountExists(address: String): AccountCheck? = null
 
     /**
-     * Whether the chain knows this address. The node returns existence only —
-     * balance and nonce stay private — so this answers "is this address real"
-     * and nothing more.
-     */
-    suspend fun accountExists(address: String): AccountCheck? =
-        getOrNull("/accounts/$address")
-
-    /**
-     * La dirección completa de una corta en el directorio del nodo
-     * (`GET /quantic/address/<corta>`), o null si el nodo no la tiene. Para
-     * ZSilent, que la tenga el nodo local quiere decir que ya está publicada.
+     * La dirección completa de una corta en el directorio del nodo local, sin
+     * preguntarles a sus pares (`GET /address/<corta>?local=1`), o null si no
+     * la tiene. Para ZSilent, que la tenga quiere decir que ya está publicada.
      */
     suspend fun shortAddress(short: String): ShortAddressLookup? =
-        getOrNull("/quantic/address/$short")
+        getOrNull("/address/$short?local=1")
 
-    /** El servidor Stratum del nodo; nulo si el nodo no tiene la ruta. */
-    suspend fun stratumStatus(): StratumStatus? =
-        getOrNull("/quantic/stratum")
+    /** El servidor Stratum del nodo; nulo si no se abrió. */
+    suspend fun stratumStatus(): StratumStatus? = status().stratum
 
     /**
      * True when this client points at a node on this machine.
@@ -185,44 +148,110 @@ class ZokaRpcClient(val baseUrl: String) {
         check(isLocalEndpoint()) {
             "refusing to send a view scan key to a non-local node ($baseUrl)"
         }
-        val response = client.post("$baseUrl/private/view-scan-key") {
-            contentType(ContentType.Application.Json)
-            setBody(codec.encodeToString(ViewScanKeyRequest(scanKeyHex, limit)))
-        }
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException(body.ifBlank { "view scan failed: ${response.status}" })
-        }
-        return codec.decodeFromString(body)
+        // Las wallets v2 escanean su propia copia de la cadena: el nodo nunca
+        // recibe una clave de vista.
+        throw UnsupportedOperationException("the v2 node has no view-key scan; wallets scan their own chain copy")
     }
 
-    // Returns the Block JSON for a given height.
-    // Same format as GET /blocks/:height/raw, accepted by POST /sync/block.
+    // Moving raw blocks between nodes over HTTP was a v1 sync path. The v2
+    // nodes exchange blocks over their own authenticated connections.
     suspend fun getRawBlock(height: Long): String {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        return client.get("$baseUrl/blocks/$height/raw").bodyAsText()
+        throw UnsupportedOperationException("the v2 node syncs blocks with its peers, not through ZSilent")
     }
 
-    // Submit a raw BlockResponseMessage JSON to the node's /blocks/submit
-    // endpoint. Returns true if the node accepted or already knew the block.
-    suspend fun submitBlock(rawBlockJson: String): Boolean {
-        require(baseUrl.isNotBlank()) { "RPC URL is not configured" }
-        val response = client.post("$baseUrl/sync/block") {
-            contentType(ContentType.Application.Json)
-            setBody(rawBlockJson)
-        }
-        val status = response.status.value
-        return status in 200..299
-    }
+    suspend fun submitBlock(rawBlockJson: String): Boolean = false
 
     fun close() {
         client.close()
     }
 }
 
+private const val NO_INTEGRATED_MINING =
+    "the Zoka Quantic v2 testnet has no built-in miner: mine with XMRig against the node's Stratum"
+
+/** `GET /status` del nodo v2 (`src/quantic/stark_api.rs` del nodo). */
 @Serializable
-private data class LocalMiningControlRequest(
-    val threads: Int
+data class V2Status(
+    @SerialName("chain_id") val chainId: String = "",
+    val height: Long = 0,
+    val hash: String = "",
+    @SerialName("tip_timestamp") val tipTimestamp: Long = 0,
+    @SerialName("issued_atoms") val issuedAtoms: Long = 0,
+    @SerialName("mempool_transactions") val mempoolTransactions: Long = 0,
+    val stratum: StratumStatus? = null,
+    val peers: V2Peers = V2Peers(),
+    val checkpoint: V2Checkpoint? = null,
+    @SerialName("checkpoint_authority") val checkpointAuthority: Boolean = false,
+    val directory: V2Directory = V2Directory()
+)
+
+@Serializable
+data class V2Peers(
+    val outbound: Long = 0,
+    val inbound: Long = 0,
+    val known: Long = 0,
+    val pending: Long = 0,
+    val relay: Boolean = false,
+    /** La punta más alta que informa un par saliente; cero sin ninguno. */
+    @SerialName("best_height") val bestHeight: Long = 0
+) {
+    val connected: Long
+        get() = outbound + inbound
+}
+
+@Serializable
+data class V2Checkpoint(
+    val height: Long = 0,
+    @SerialName("block_hash") val blockHash: String = "",
+    /** Si la cadena canónica del nodo contiene el checkpoint. */
+    val followed: Boolean = false
+)
+
+@Serializable
+data class V2Directory(
+    val addresses: Long = 0,
+    @SerialName("published_here") val publishedHere: Long = 0
+)
+
+private const val ATOMS_PER_ZKA = 1_000_000.0
+
+internal fun V2Status.toStats() = NodeStats(
+    height = height,
+    emissionZka = issuedAtoms / ATOMS_PER_ZKA,
+    totalSupplyEmittedAtoms = issuedAtoms,
+    lastBlockTime = tipTimestamp,
+    connectedPeers = peers.connected,
+    minersOnline = (stratum?.miners ?: 0).toLong(),
+    localMining = false
+)
+
+/**
+ * Sincronizado cuando ningún par saliente informa una punta más alta que la
+ * propia (con un bloque de margen). Una semilla, que solo tiene sesiones
+ * entrantes, es la punta: queda sincronizada.
+ */
+internal fun V2Status.toSyncStatus(nowSeconds: Long = System.currentTimeMillis() / 1000): NodeSyncStatus {
+    val target = maxOf(height, peers.bestHeight)
+    val lag = target - height
+    val synced = lag <= 1
+    return NodeSyncStatus(
+        status = if (synced) "synced" else "syncing",
+        mode = "stark-v2",
+        readyToMine = synced,
+        localHeight = height,
+        targetHeight = target,
+        lag = lag,
+        connectedPeers = peers.connected,
+        minPeers = 1,
+        lastUpdated = nowSeconds
+    )
+}
+
+// The v2 node reaches its peers over iroh, directly or through a relay, never
+// over Tor; it reports counts only.
+internal fun V2Status.toPeers() = PeersResponse(
+    connectedPeers = peers.connected,
+    byTransport = PeerTransportCounts(direct = peers.connected)
 )
 
 @Serializable

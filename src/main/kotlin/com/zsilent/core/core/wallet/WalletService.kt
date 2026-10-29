@@ -76,10 +76,12 @@ data class WalletSecretsResult(
 const val QUANTIC_SEED_WORDS = 24
 
 /**
- * Las wallets de Zoka Quantic, por `zoka quantic-wallet` (ZSilent es solo de
- * Quantic desde la 3.0). Las firmas son las de antes para que el resto de la
- * app no cambie: la wallet se elige por su dirección (`--address`), la
- * contraseña viaja por variable de entorno y la frase nunca como argumento.
+ * Las wallets de Zoka Quantic v2, por `zoka quantic-pq-wallet`, que tiene las
+ * acciones y las respuestas de la `quantic-wallet` de la v1. Las firmas son las
+ * de antes para que el resto de la app no cambie: la wallet se elige por su
+ * dirección (`--address`), la contraseña viaja por variable de entorno y la
+ * frase nunca como argumento. Saldo, historial y envíos leen una copia de la
+ * cadena que cada llamada pone al día con el nodo local (`--peer`).
  */
 class WalletService(private val cli: ZokaCli) {
     private val json = Json {
@@ -145,8 +147,8 @@ class WalletService(private val cli: ZokaCli) {
     }
 
     /**
-     * En Quantic la dirección que se comparte es una sola (unos 1.730
-     * caracteres): no hay una segunda dirección híbrida que activar.
+     * En Quantic la dirección completa es una sola (unos 1.760 caracteres en
+     * la v2): no hay una segunda dirección híbrida que activar.
      */
     suspend fun hybridReceive(
         wallet: String,
@@ -344,14 +346,17 @@ class WalletService(private val cli: ZokaCli) {
     }
 
     private fun quanticArgs(action: String, network: String): List<String> = buildList {
-        add("quantic-wallet")
+        val chosen = network.ifBlank { ZokaNetworkConfig.Network }
+        add("quantic-pq-wallet")
         add(action)
         add("--network")
-        add(network.ifBlank { ZokaNetworkConfig.Network })
-        ZokaNetworkConfig.LocalRpcUrl.takeIf { it.isNotBlank() }?.let {
-            add("--rpc")
-            add(it)
-        }
+        add(chosen)
+        add("--dir")
+        add(cli.networkDir(chosen).absolutePath)
+        add("--api")
+        add(ZokaNetworkConfig.LocalRpcUrl)
+        add("--peer")
+        add(cli.nodeDescriptor(chosen).absolutePath)
         add("--json")
     }
 

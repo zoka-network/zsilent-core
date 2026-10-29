@@ -66,15 +66,19 @@ object ZokaNetworkConfig {
     // pone en el manifiesto o en `ZSILENT_REMOTE_RPC_URL`.
     private const val DEFAULT_REMOTE_RPC_URL = ""
 
-    // Desde la 3.0 ZSilent es solo de Zoka Quantic (decisión del 21/10/2026):
-    // Zenith queda en las versiones anteriores y en la línea de comandos.
-    // `Network` es la palabra que se le pasa al nodo con --network.
+    // Desde la 3.0 ZSilent es solo de Zoka Quantic (decisión del 21/10/2026), y
+    // desde la 4.0 de la red STARK v2: la testnet v2 reemplaza a la v1
+    // (decisión del 28/10/2026). `Network` es la palabra que se le pasa al
+    // nodo v2 (`quantic-pq-node serve --network`) y a `quantic-pq-wallet`.
     const val ZENITH_CHAIN_ID = "zoka-mainnet-zenith-v1"
-    const val QUANTIC_TESTNET_CHAIN_ID = "zoka-quantic-testnet-v1"
-    const val QUANTIC_MAINNET_CHAIN_ID = "zoka-quantic-v1"
-    const val QUANTIC_REGTEST_CHAIN_ID = "zoka-quantic-regtest-v1"
+    const val QUANTIC_TESTNET_CHAIN_ID = "zoka-quantic-testnet-v2"
+    /** Reservado: la mainnet v2 todavía no existe en el nodo. */
+    const val QUANTIC_MAINNET_CHAIN_ID = "zoka-quantic-v2"
+    const val QUANTIC_REGTEST_CHAIN_ID = "zoka-quantic-regtest-v2"
     private const val DEFAULT_CHAIN_ID = QUANTIC_TESTNET_CHAIN_ID
-    private const val DEFAULT_NETWORK = "quantic-testnet"
+    private const val DEFAULT_NETWORK = "testnet"
+    /** La API local del nodo v2 (`--api`), solo en loopback. */
+    const val DEFAULT_LOCAL_API = "http://127.0.0.1:9140"
 
     /** App version, injected at build time via -Dzsilent.version (see build.gradle.kts). */
     val AppVersion: String = System.getProperty("zsilent.version")?.takeIf { it.isNotBlank() } ?: "dev"
@@ -98,7 +102,7 @@ object ZokaNetworkConfig {
     val ShortName: String
         get() = shortName(current.chainId, current.network)
     val LocalRpcUrl: String
-        get() = current.localRpcUrl
+        get() = current.localRpcUrl.ifBlank { DEFAULT_LOCAL_API }
     val RemoteRpcUrl: String
         get() = current.remoteRpcUrl
     val CliRemoteRpcUrl: String
@@ -179,18 +183,29 @@ object ZokaNetworkConfig {
 
     /** La palabra de `--network` para una cadena de Quantic. */
     fun networkForChain(chainId: String): String = when (chainId.ifBlank { DEFAULT_CHAIN_ID }) {
-        QUANTIC_MAINNET_CHAIN_ID -> "quantic-mainnet"
-        QUANTIC_REGTEST_CHAIN_ID -> "quantic-regtest"
+        QUANTIC_MAINNET_CHAIN_ID -> "mainnet"
+        QUANTIC_REGTEST_CHAIN_ID -> "regtest"
         else -> DEFAULT_NETWORK
     }
 
-    /** El puerto P2P del nodo en esta red (el del servicio onion y de los pares). */
+    /**
+     * La carpeta de la red, relativa al hogar de Zoka: el nodo (`node/`), las
+     * wallets (`wallets/`) y la copia de la cadena que leen (`wallet-mirror/`).
+     * No es la de la v1 (`.zoka/quantic-testnet`): las dos conviven.
+     */
+    fun dataDir(network: String = current.network): String =
+        ".zoka/quantic-${network.ifBlank { DEFAULT_NETWORK }}-v2"
+
+    /**
+     * El puerto P2P de la v1, que solo usan el servicio onion y los pares
+     * manuales. El nodo v2 va por iroh y no abre ningún puerto fijo.
+     */
     val P2pPort: Int
         get() = p2pPort(current.network)
 
     fun p2pPort(network: String): Int = when (network.ifBlank { DEFAULT_NETWORK }) {
-        "quantic-mainnet" -> 28380
-        "quantic-regtest" -> 28280
+        "mainnet", "quantic-mainnet" -> 28380
+        "regtest", "quantic-regtest" -> 28280
         else -> 28180
     }
 
@@ -205,14 +220,14 @@ object ZokaNetworkConfig {
     fun stratumBind(allowLan: Boolean): String =
         if (allowLan) "0.0.0.0:$StratumPort" else "127.0.0.1:$StratumPort"
 
-    /** Cómo empiezan las direcciones de la red configurada (`zqtest1…`). */
+    /** Cómo empiezan las direcciones de la red configurada (`zqtest2…`). */
     val AddressPrefix: String
         get() = addressPrefix(current.network)
 
     fun addressPrefix(network: String): String = when (network.ifBlank { DEFAULT_NETWORK }) {
-        "quantic-mainnet" -> "zq1"
-        "quantic-regtest" -> "zqregtest1"
-        else -> "zqtest1"
+        "mainnet" -> "zq2"
+        "regtest" -> "zqregtest2"
+        else -> "zqtest2"
     }
 
     /**

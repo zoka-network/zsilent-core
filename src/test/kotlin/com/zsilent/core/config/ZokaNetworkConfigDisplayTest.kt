@@ -7,18 +7,21 @@ import kotlin.test.assertTrue
 
 class ZokaNetworkConfigDisplayTest {
 
-    // Desde la 3.0 ZSilent es solo de Zoka Quantic. El título es lo primero que
-    // se mira para saber si lo que hay en pantalla es dinero: la testnet tiene
-    // que decir testnet.
+    // Desde la 3.0 ZSilent es solo de Zoka Quantic, y desde la 4.0 de la red
+    // STARK v2. El título es lo primero que se mira para saber si lo que hay en
+    // pantalla es dinero: la testnet tiene que decir testnet.
     @Test
-    fun the_quantic_testnet_is_shown_as_a_testnet_and_runs_as_quantic_testnet() {
+    fun the_quantic_testnet_is_shown_as_a_testnet_and_runs_as_the_v2_testnet() {
         val chainId = ZokaNetworkConfig.QUANTIC_TESTNET_CHAIN_ID
 
-        assertEquals("Zoka Quantic · Testnet", ZokaNetworkConfig.displayName(chainId, "quantic-testnet"))
-        assertEquals("quantic testnet", ZokaNetworkConfig.shortName(chainId, "quantic-testnet"))
-        assertTrue(ZokaNetworkConfig.isTestnet(chainId, "quantic-testnet"))
-        assertEquals("quantic-testnet", ZokaNetworkConfig.networkForChain(chainId))
-        assertEquals("zqtest1", ZokaNetworkConfig.addressPrefix("quantic-testnet"))
+        assertEquals("zoka-quantic-testnet-v2", chainId)
+        assertEquals("Zoka Quantic · Testnet", ZokaNetworkConfig.displayName(chainId, "testnet"))
+        assertEquals("quantic testnet", ZokaNetworkConfig.shortName(chainId, "testnet"))
+        assertTrue(ZokaNetworkConfig.isTestnet(chainId, "testnet"))
+        assertEquals("testnet", ZokaNetworkConfig.networkForChain(chainId))
+        assertEquals("zqtest2", ZokaNetworkConfig.addressPrefix("testnet"))
+        // Su carpeta no es la de la v1 (`.zoka/quantic-testnet`): conviven.
+        assertEquals(".zoka/quantic-testnet-v2", ZokaNetworkConfig.dataDir("testnet"))
     }
 
     @Test
@@ -26,8 +29,9 @@ class ZokaNetworkConfigDisplayTest {
         assertEquals("Zoka Quantic · Testnet", ZokaNetworkConfig.displayName("", ""))
         assertEquals("quantic testnet", ZokaNetworkConfig.shortName("", ""))
         assertTrue(ZokaNetworkConfig.isTestnet("", ""))
-        assertEquals("quantic-testnet", ZokaNetworkConfig.networkForChain(""))
-        assertEquals("zqtest1", ZokaNetworkConfig.addressPrefix(""))
+        assertEquals("testnet", ZokaNetworkConfig.networkForChain(""))
+        assertEquals("zqtest2", ZokaNetworkConfig.addressPrefix(""))
+        assertEquals("http://127.0.0.1:9140", ZokaNetworkConfig.LocalRpcUrl)
     }
 
     // Solo la cadena de la mainnet se presenta como dinero; Zenith, que ZSilent
@@ -35,12 +39,13 @@ class ZokaNetworkConfigDisplayTest {
     @Test
     fun only_the_mainnet_chain_is_not_a_testnet() {
         val mainnet = ZokaNetworkConfig.QUANTIC_MAINNET_CHAIN_ID
-        assertEquals("Zoka Quantic · Mainnet", ZokaNetworkConfig.displayName(mainnet, "quantic-mainnet"))
-        assertEquals("quantic mainnet", ZokaNetworkConfig.shortName(mainnet, "quantic-mainnet"))
-        assertFalse(ZokaNetworkConfig.isTestnet(mainnet, "quantic-mainnet"))
-        assertEquals("quantic-mainnet", ZokaNetworkConfig.networkForChain(mainnet))
-        assertEquals("zq1", ZokaNetworkConfig.addressPrefix("quantic-mainnet"))
+        assertEquals("Zoka Quantic · Mainnet", ZokaNetworkConfig.displayName(mainnet, "mainnet"))
+        assertEquals("quantic mainnet", ZokaNetworkConfig.shortName(mainnet, "mainnet"))
+        assertFalse(ZokaNetworkConfig.isTestnet(mainnet, "mainnet"))
+        assertEquals("mainnet", ZokaNetworkConfig.networkForChain(mainnet))
+        assertEquals("zq2", ZokaNetworkConfig.addressPrefix("mainnet"))
         assertTrue(ZokaNetworkConfig.isTestnet(ZokaNetworkConfig.ZENITH_CHAIN_ID, "mainnet"))
-        assertEquals("zqregtest1", ZokaNetworkConfig.addressPrefix("quantic-regtest"))
+        assertEquals("zqregtest2", ZokaNetworkConfig.addressPrefix("regtest"))
+        assertEquals("regtest", ZokaNetworkConfig.networkForChain(ZokaNetworkConfig.QUANTIC_REGTEST_CHAIN_ID))
     }
 }

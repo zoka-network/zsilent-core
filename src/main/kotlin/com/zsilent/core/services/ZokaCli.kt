@@ -19,6 +19,17 @@ data class ZokaCli(
     val workDir: File
         get() = dataRoot.apply { mkdirs() }
 
+    /** La carpeta de la red v2: nodo, wallets y la copia de la cadena. */
+    fun networkDir(network: String = ZokaNetworkConfig.Network): File =
+        File(dataRoot, ZokaNetworkConfig.dataDir(network))
+
+    /**
+     * El descriptor del nodo local (`--descriptor-out`): por él la wallet
+     * sincroniza su copia con una conexión directa, sin salir de la PC.
+     */
+    fun nodeDescriptor(network: String = ZokaNetworkConfig.Network): File =
+        File(networkDir(network), "node/peer.json")
+
     fun <T> withZokaCommandLock(action: () -> T): T {
         // JVM-level mutex. A NIO FileChannel.lock() is exclusive *per JVM*, so a
         // second caller from another coroutine inside this JVM would throw
