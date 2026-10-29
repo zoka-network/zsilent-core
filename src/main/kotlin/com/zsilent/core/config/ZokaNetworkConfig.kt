@@ -164,8 +164,12 @@ object ZokaNetworkConfig {
             ?: DEFAULT_REMOTE_RPC_URL
         val cliRpc = envOrProperty("ZSILENT_CLI_RPC_URL", "zsilent.cliRpcUrl")
             ?: remoteRpc
+        // El manifiesto de la v2 no trae `desktop.localRpcUrl`: sin la caída a
+        // la API por omisión, el cliente del nodo local quedaba sin URL y la
+        // app nunca leía /status (4.0.0 y 4.0.1), aunque el nodo andaba.
         val localRpc = envOrProperty("ZSILENT_LOCAL_RPC_URL", "zsilent.localRpcUrl")
-            ?: manifest?.desktop?.localRpcUrl.orEmpty()
+            ?: manifest?.desktop?.localRpcUrl?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_LOCAL_API
 
         return ZokaNetworkSettings(
             network = network,

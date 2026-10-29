@@ -34,6 +34,25 @@ class ZokaNetworkConfigDisplayTest {
         assertEquals("http://127.0.0.1:9140", ZokaNetworkConfig.LocalRpcUrl)
     }
 
+    // El manifiesto de la v2 no trae `desktop.localRpcUrl`, y el cliente del
+    // nodo local se arma con la URL de la configuración cargada, no con
+    // `LocalRpcUrl`: sin la caída a 9140 quedaba vacía y la app nunca leía
+    // /status ni refrescaba el saldo (4.0.0 y 4.0.1).
+    @Test
+    fun a_manifest_without_a_desktop_section_still_reaches_the_local_node() {
+        val root = kotlin.io.path.createTempDirectory("zsilent-manifest").toFile()
+        try {
+            java.io.File(root, "docs").mkdirs()
+            java.io.File(root, "docs/quantic-testnet-v2-network.v1.json").writeText(
+                """{"schema":"zoka-quantic-stark-network-v1","status":"active",""" +
+                    """"chain_id":"zoka-quantic-testnet-v2","seed_nodes":[]}"""
+            )
+            assertEquals("http://127.0.0.1:9140", ZokaNetworkConfig.load(root).localRpcUrl)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     // Solo la cadena de la mainnet se presenta como dinero; Zenith, que ZSilent
     // ya no sigue, tampoco.
     @Test
