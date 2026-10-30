@@ -3405,7 +3405,7 @@ fun SettingsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 when (currentPage) {
                     SettingsPage.Home -> SettingsHome(ui) { page = it }
                     SettingsPage.Security -> SettingsSecurityPage(ui, appState)
-                    SettingsPage.Network -> SettingsNetworkPage(ui)
+                    SettingsPage.Network -> SettingsNetworkPage(ui, appState)
                     SettingsPage.Wallets -> SettingsWalletsPage(ui, appState)
             SettingsPage.Appearance -> SettingsAppearancePage(ui, appState)
             SettingsPage.About -> SettingsAboutPage(ui)
@@ -3515,10 +3515,14 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
             // tarjeta dice qué ve la red, sin un interruptor que no existe.
             SettingsMenuCard(
                 title = "Network privacy",
-                detail = "Peers and relays see this computer's IP address. Payments stay private.",
+                detail = if (ui.torEnabled) {
+                    "Tor mode: the node reaches the network only through Tor."
+                } else {
+                    "Peers and relays see this computer's IP address. Tor mode is optional."
+                },
                 icon = Icons.Outlined.Shield,
-                meta = "ip visible",
-                health = SettingHealth.Neutral,
+                meta = if (ui.torEnabled) "tor mode" else "ip visible",
+                health = if (ui.torEnabled && ui.torStatus == ServiceStatus.Error) SettingHealth.Bad else SettingHealth.Neutral,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Network) }
             )
@@ -3923,7 +3927,7 @@ private fun SettingsSecurityPage(
 }
 
 @Composable
-private fun SettingsNetworkPage(ui: ZSilentUiState) {
+private fun SettingsNetworkPage(ui: ZSilentUiState, appState: ZSilentAppState) {
     val netLive = ui.localRpcOnline && (ui.localConnectedPeers > 0 || ui.networkSynced)
     Panel(title = "Network", meta = if (netLive) "live (p2p)" else if (ui.localRpcOnline) "node online" else "offline") {
         KeyValueRow("Transport", "iroh (QUIC) · hybrid post-quantum TLS (serverless)")
@@ -3933,14 +3937,37 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Sync gate", if (ui.networkSynced) "synced" else "syncing")
     }
-    Panel(title = "What the network sees", meta = "ip visible") {
-        KeyValueRow("This computer's IP", "visible to peers and to the relays")
+    val torLive = ui.torEnabled && ui.torStatus == ServiceStatus.Online
+    Panel(title = "What the network sees", meta = if (ui.torEnabled) "tor mode" else "ip visible") {
+        KeyValueRow(
+            "This computer's IP",
+            if (ui.torEnabled) "hidden: the node reaches the network only through Tor" else "visible to peers and to the relays"
+        )
         KeyValueRow("Your payments", "private: amounts, owners and memos are encrypted")
-        KeyValueRow("Tor", "not available on testnet v2")
+        KeyValueRow(
+            "Tor",
+            when {
+                !ui.torEnabled -> "off"
+                torLive -> "on · the node dials the network's onion seeds"
+                ui.torStatus == ServiceStatus.Starting -> "starting"
+                ui.torStatus == ServiceStatus.Error -> "error: the node stays off until Tor works"
+                else -> "on · waiting for the node to restart"
+            }
+        )
+    }
+    Panel(title = "Tor mode", meta = "optional · off by default") {
+        val blocked = appState.torModeBlockedReason()
+        ToggleRow("Reach the network only through Tor", ui.torEnabled) { on ->
+            if (!on || blocked == null) appState.setTorMode(on)
+        }
+        blocked?.takeIf { !ui.torEnabled }?.let { HintText(it) }
         HintText(
-            "The v2 node reaches its peers over QUIC, which runs on UDP; Tor only carries TCP. " +
-                "An optional Tor mode is planned. Until then, peers and n0's relays see this " +
-                "computer's IP address and that it runs a Zoka node, never what it pays or receives."
+            "With Tor mode on, ZSilent starts its own Tor and the node connects only through it, to the " +
+                "network's onion seeds: peers and relays no longer see this computer's IP address, and your " +
+                "internet provider does not see that you use Zoka. It costs speed: syncing and sending are " +
+                "slower, and a block you mine takes a few seconds longer to reach the network. If Tor cannot " +
+                "start, the node stays off rather than connecting without it. Your payments are private " +
+                "either way."
         )
     }
     Panel(title = "Local node", meta = if (ui.localRpcOnline) "online" else "offline") {

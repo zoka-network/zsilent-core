@@ -19,6 +19,7 @@ import com.zsilent.core.models.FeeEstimate
 import com.zsilent.core.models.IrohIdResponse
 import com.zsilent.core.models.LocalChainHeightResponse
 import com.zsilent.core.models.LocalWallet
+import com.zsilent.core.models.LogLevel
 import com.zsilent.core.models.MiningSnapshot
 import com.zsilent.core.models.NodeStats
 import com.zsilent.core.models.NodeSyncStatus
@@ -959,6 +960,55 @@ class ZSilentAppState(
         persistCurrentSetup()
     }
 
+    /**
+     * Modo Tor del nodo v2 (opcional, apagado por defecto). Prendido, el nodo
+     * sale solo por un Tor cliente que levanta ZSilent: los pares y los relays
+     * dejan de ver la IP de esta PC. Se aplica reiniciando el nodo.
+     */
+    fun setTorMode(enabled: Boolean) {
+        torModeBlockedReason()?.takeIf { enabled }?.let { reason ->
+            appendLog(RuntimeLog("privacy", reason, level = LogLevel.Warning))
+            return
+        }
+        update { it.copy(torEnabled = enabled, lastActivityMillis = System.currentTimeMillis()) }
+        persistCurrentSetup()
+        appendLog(RuntimeLog("privacy", if (enabled) "Tor mode on: the node will reach the network only through Tor." else "Tor mode off: the node goes back to direct connections and relays."))
+        restartNodeToApply(if (enabled) "Tor mode on" else "Tor mode off")
+        if (!enabled) torSupervisor.stop()
+    }
+
+    /** Por qué no se puede prender el Modo Tor en esta PC, o null. */
+    fun torModeBlockedReason(): String? = when {
+        nodeController.holdsCheckpointAuthority() ->
+            "This computer signs the network's checkpoints and is its seed: over Tor the network would lose it."
+        torSupervisor.discoverTorBinary() == null ->
+            "Tor is not installed with this copy of ZSilent."
+        else -> null
+    }
+
+    /** Levanta el Tor cliente (solo SOCKS) y devuelve su host:puerto, o null si falló. */
+    private suspend fun startTorClient(): String? {
+        val snapshot = _uiState.value
+        return runCatching {
+            val result = torSupervisor.start(
+                com.zsilent.core.core.tor.TorLaunchConfig(
+                    socksPort = snapshot.managedTorSocksPort,
+                    hiddenService = false
+                )
+            )
+            "${result.socksHost}:${result.socksPort}"
+        }.getOrElse { error ->
+            appendLog(
+                RuntimeLog(
+                    "privacy",
+                    "Tor did not start, so the node stays off while Tor mode is on: ${error.message ?: "unknown error"}",
+                    level = LogLevel.Error
+                )
+            )
+            null
+        }
+    }
+
     fun setTorEnabled(enabled: Boolean) {
         update {
             it.copy(
@@ -1234,16 +1284,26 @@ class ZSilentAppState(
             )
         )
         syncOnlyNodeRunning = true
-        nodeController.start(
-            password = "",
-            address = "",
-            network = ZokaNetworkConfig.Network,
-            autoMine = false,
-            torProxy = if (snapshot.torEnabled) "${snapshot.torSocksHost}:${snapshot.torSocksPort}" else "",
-            torOnly = snapshot.torOnly,
-            manualPeers = snapshot.manualPeers,
-            syncOnly = true
-        )
+        scope.launch {
+            val torProxy = if (snapshot.torEnabled) {
+                startTorClient() ?: run {
+                    syncOnlyNodeRunning = false
+                    return@launch
+                }
+            } else {
+                ""
+            }
+            nodeController.start(
+                password = "",
+                address = "",
+                network = ZokaNetworkConfig.Network,
+                autoMine = false,
+                torProxy = torProxy,
+                torOnly = snapshot.torOnly,
+                manualPeers = snapshot.manualPeers,
+                syncOnly = true
+            )
+        }
     }
 
     private fun maybeAutoStartNode() {
@@ -2187,9 +2247,13 @@ class ZSilentAppState(
             password.fill('\u0000')
         }
         scope.launch {
-            // El nodo v2 va por iroh (directo o por relay) y no usa Tor: no hay
-            // Tor que levantar ni onion que anunciar.
-            val torProxy = ""
+            // Modo Tor (opcional, apagado por defecto): primero el Tor cliente;
+            // si no arranca, el nodo tampoco, para no salir sin Tor.
+            val torProxy = if (snapshot.torEnabled) {
+                startTorClient() ?: return@launch
+            } else {
+                ""
+            }
             val externalAddrs = emptyList<String>()
 
             nodeController.start(

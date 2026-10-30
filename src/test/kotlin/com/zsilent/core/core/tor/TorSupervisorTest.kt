@@ -89,4 +89,19 @@ class TorSupervisorTest {
             "DataDirectory with a space must be quoted"
         )
     }
+
+    @Test
+    fun a_client_tor_for_tor_mode_has_a_socks_port_and_no_onion_service() {
+        val dataDir = tempDir("tor-client-data")
+        val torrc = TorSupervisor.buildTorrcContent(
+            dataDir = dataDir,
+            hiddenServiceDir = tempDir("tor-client-hs"),
+            config = TorLaunchConfig(socksPort = 19050, hiddenService = false),
+            bundleDir = null
+        )
+        assertTrue(torrc.lines().any { it == "SocksPort 127.0.0.1:19050" }, torrc)
+        assertTrue(torrc.lines().any { it.startsWith("DataDirectory ") }, torrc)
+        assertTrue(torrc.lines().none { it.startsWith("HiddenService") }, torrc)
+        assertTrue(torrc.lines().any { it == "Log notice stdout" }, torrc)
+    }
 }

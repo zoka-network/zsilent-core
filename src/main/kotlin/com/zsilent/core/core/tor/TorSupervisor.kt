@@ -26,7 +26,12 @@ data class TorLaunchConfig(
     val socksPort: Int = 19050,
     val hiddenServiceVirtualPort: Int = com.zsilent.core.config.ZokaNetworkConfig.P2pPort,
     val hiddenServiceTargetHost: String = "127.0.0.1",
-    val hiddenServiceTargetPort: Int = com.zsilent.core.config.ZokaNetworkConfig.P2pPort
+    val hiddenServiceTargetPort: Int = com.zsilent.core.config.ZokaNetworkConfig.P2pPort,
+    /**
+     * Whether this Tor also hosts an onion service (the v1 node did). The v2
+     * node in Tor mode only dials out: a client Tor with its SOCKS port alone.
+     */
+    val hiddenService: Boolean = true
 )
 
 data class TorLaunchResult(
@@ -52,6 +57,7 @@ class TorSupervisor(private val cli: ZokaCli) {
     private var process: Process? = null
     private var logJob: Job? = null
     @Volatile private var bootstrapped = false
+    @Volatile private var lastHiddenService: Boolean? = null
 
     private val _state = MutableStateFlow(TorRuntimeState())
     val state: StateFlow<TorRuntimeState> = _state
@@ -70,6 +76,7 @@ class TorSupervisor(private val cli: ZokaCli) {
         val hiddenServiceDir = File(torRoot, "zoka-p2p").apply { mkdirs() }
         val torrc = File(torRoot, "torrc")
         writeTorrc(torrc, dataDir, hiddenServiceDir, config, torExe.parentFile)
+        lastHiddenService = config.hiddenService
 
         stopProcessOnly()
         bootstrapped = false
@@ -98,7 +105,7 @@ class TorSupervisor(private val cli: ZokaCli) {
         // building circuits. Timeout shortened so a genuinely stuck Tor falls
         // back to the node's clearnet startup quickly.
         val hostnameFile = File(hiddenServiceDir, "hostname")
-        val deadline = System.currentTimeMillis() + 40_000L
+        val deadline = System.currentTimeMillis() + if (config.hiddenService) 40_000L else 90_000L
         while (System.currentTimeMillis() < deadline) {
             if (!child.isAlive) {
                 val exit = runCatching { child.exitValue() }.getOrDefault(-1)
@@ -113,6 +120,25 @@ class TorSupervisor(private val cli: ZokaCli) {
                 ?.firstOrNull { it.endsWith(".onion") }
                 .orEmpty()
             val socksReady = canConnect(config.socksHost, config.socksPort)
+            // A client Tor is ready once its SOCKS port answers; the node
+            // waits on its circuits (it allows 90 s for a handshake over Tor).
+            if (!config.hiddenService && socksReady) {
+                val result = TorLaunchResult(
+                    torExe = torExe,
+                    socksHost = config.socksHost,
+                    socksPort = config.socksPort,
+                    onionHost = "",
+                    onionMultiaddr = "",
+                    torrc = torrc
+                )
+                _state.value = TorRuntimeState(
+                    status = ServiceStatus.Online,
+                    socksHost = result.socksHost,
+                    socksPort = result.socksPort
+                )
+                _logs.tryEmit(RuntimeLog("tor", "Managed Tor ready (client only) at ${config.socksHost}:${config.socksPort}."))
+                return@withContext result
+            }
             if (onionHost.isNotBlank() && socksReady) {
                 val onionId = onionHost.removeSuffix(".onion")
                 val onionMultiaddr = "/onion3/$onionId:${config.hiddenServiceVirtualPort}"
@@ -175,6 +201,13 @@ class TorSupervisor(private val cli: ZokaCli) {
     private fun cachedResult(config: TorLaunchConfig): TorLaunchResult? {
         process?.takeIf { it.isAlive } ?: return null
         val torExe = discoverTorBinary() ?: return null
+        if (!config.hiddenService) {
+            // A Tor started for the other mode has the wrong torrc.
+            if (lastHiddenService != false || !canConnect(config.socksHost, config.socksPort)) return null
+            _state.value = TorRuntimeState(status = ServiceStatus.Online, socksHost = config.socksHost, socksPort = config.socksPort)
+            return TorLaunchResult(torExe, config.socksHost, config.socksPort, "", "", File(File(cli.dataRoot, "tor"), "torrc"))
+        }
+        if (lastHiddenService == false) return null
         val hiddenServiceDir = File(File(cli.dataRoot, "tor"), "zoka-p2p")
         val onionHost = File(hiddenServiceDir, "hostname").readTextIfExists()
             ?.lineSequence()
@@ -236,14 +269,19 @@ class TorSupervisor(private val cli: ZokaCli) {
                     }
                 }
             }
-            return """
-                SocksPort ${config.socksHost}:${config.socksPort}
-                DataDirectory ${torPath(dataDir)}
+            val hiddenServiceLines = if (config.hiddenService) {
+                """
                 HiddenServiceDir ${torPath(hiddenServiceDir)}
                 HiddenServiceVersion 3
                 HiddenServicePort ${config.hiddenServiceVirtualPort} ${config.hiddenServiceTargetHost}:${config.hiddenServiceTargetPort}
-                Log notice stdout
-            """.trimIndent() + "\n" + geoipLines
+                """.trimIndent() + "\n"
+            } else {
+                ""
+            }
+            return """
+                SocksPort ${config.socksHost}:${config.socksPort}
+                DataDirectory ${torPath(dataDir)}
+            """.trimIndent() + "\n" + hiddenServiceLines + "Log notice stdout\n" + geoipLines
         }
 
         private fun torPath(file: File): String {

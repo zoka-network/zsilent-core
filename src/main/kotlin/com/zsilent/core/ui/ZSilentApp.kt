@@ -231,6 +231,9 @@ private fun TopBar(
                 // dice el estado. La palabra queda para lo que el color no
                 // distingue. Sin Tor: el nodo v2 no tiene transporte por Tor.
                 Pill("node ${ui.nodeStatus.shortLabel()}", ui.nodeStatus.tone())
+                if (ui.torEnabled) {
+                    Pill("tor ${ui.torStatus.shortLabel()}", ui.torStatus.tone())
+                }
                 Pill("solo ${ui.miningStatus.shortLabel()}", ui.miningStatus.tone())
                 // Encendido no es minando: "on" escucha, "live" tiene mineros.
                 Pill(

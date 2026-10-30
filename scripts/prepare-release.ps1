@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$NodeRepoRoot = "",
+    [string]$TorBundleDir = "",
     [string]$OutputDir = "",
     [switch]$Package
 )
@@ -52,6 +53,12 @@ if ([string]::IsNullOrWhiteSpace($NodeRepoRoot)) {
 } else {
     $NodeRepoRoot = Resolve-AbsolutePath -Path $NodeRepoRoot
 }
+if ([string]::IsNullOrWhiteSpace($TorBundleDir)) {
+    $TorBundleDir = Join-Path $NodeRepoRoot "third_party\tor\windows-x86_64"
+} else {
+    $TorBundleDir = Resolve-AbsolutePath -Path $TorBundleDir
+}
+
 $gradleBuild = Join-Path $zsilentRoot "build.gradle.kts"
 $cargoToml = Join-Path $NodeRepoRoot "Cargo.toml"
 $appVersion = Read-VersionMatch -Path $gradleBuild -Pattern '^[\s]*val[\s]+releaseVersion[\s]*=[\s]*"([^"]+)"' -Label "ZSilent releaseVersion"
@@ -111,13 +118,53 @@ foreach ($name in $requiredSetup) {
     $null = Get-RequiredHash -Path (Join-Path $trustedSetupDir $name)
 }
 
-# Desde la 4.0.1 el MSI no trae Tor: el nodo v2 llega a la red por iroh.
+$expectedTorBundleVersion = "15.0.25"
+$expectedTorVersion = "0.4.9.14"
+$expectedTorUrl = "https://archive.torproject.org/tor-package-archive/torbrowser/15.0.25/tor-expert-bundle-windows-x86_64-15.0.25.tar.gz"
+$expectedTorArchiveSha256 = "c1988c701de2f24f7d098d1d6d7f507b58f27740d097f29c246e0524d639b252"
+$torMetadataPath = Join-Path $TorBundleDir ".zsilent-bundle.json"
+if (-not (Test-Path -LiteralPath $torMetadataPath -PathType Leaf)) {
+    throw "Missing verified Tor metadata: $torMetadataPath. Re-run prepare-tor-expert-bundle-windows.ps1 for Expert Bundle $expectedTorBundleVersion."
+}
+$torMetadata = Get-Content -LiteralPath $torMetadataPath -Raw | ConvertFrom-Json
+if ($torMetadata.bundle_version -ne $expectedTorBundleVersion -or
+    $torMetadata.source_url -ne $expectedTorUrl -or
+    $torMetadata.archive_sha256 -ne $expectedTorArchiveSha256) {
+    throw "Tor bundle provenance mismatch; expected Expert Bundle $expectedTorBundleVersion with archive SHA256 $expectedTorArchiveSha256"
+}
+
+$torCandidates = @(
+    (Join-Path $TorBundleDir "tor.exe"),
+    (Join-Path $TorBundleDir "Tor\tor.exe"),
+    (Join-Path $TorBundleDir "tor\tor.exe"),
+    (Join-Path $TorBundleDir "bin\tor.exe")
+)
+$torExe = $torCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($torExe)) {
+    throw "Managed Tor is required for a Windows release but tor.exe was not found under $TorBundleDir"
+}
+$torVersionOutput = (& $torExe --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "tor.exe --version failed with exit code $LASTEXITCODE" }
+$torVersionMatch = [regex]::Match($torVersionOutput, 'Tor version ([0-9.]+)')
+$torVersion = if ($torVersionMatch.Success) { $torVersionMatch.Groups[1].Value.TrimEnd('.') } else { $torVersionOutput }
+$torExeSha256 = Get-RequiredHash -Path $torExe
+if ($torVersion -ne $expectedTorVersion -or $torMetadata.tor_version -ne $expectedTorVersion) {
+    throw "Unexpected Tor version '$torVersion'; expected $expectedTorVersion"
+}
+if ($torMetadata.tor_exe_sha256 -ne $torExeSha256) {
+    throw "tor.exe has changed since the verified bundle was prepared"
+}
+
 $preflight = [ordered]@{
     app_version = $appVersion
     node_version = $zokaVersion
     zokahd_version = $zokahdVersion
+    tor_bundle_version = $expectedTorBundleVersion
+    tor_version = $torVersion
     zoka_sha256 = Get-RequiredHash -Path $zokaExe
     zokahd_sha256 = Get-RequiredHash -Path $zokahdExe
+    tor_archive_sha256 = $expectedTorArchiveSha256
+    tor_sha256 = $torExeSha256
     network_manifest_sha256 = Get-RequiredHash -Path $networkManifest
     trusted_setup_digest_sha256 = Get-RequiredHash -Path (Join-Path $trustedSetupDir "DIGEST")
 }
@@ -133,7 +180,7 @@ if (-not $Package) {
 $gradlew = Join-Path $zsilentRoot "gradlew.bat"
 # -p: el runbook corre este script desde la raiz del nodo, donde no hay build
 # de Gradle; sin esto Gradle buscaba el proyecto en el directorio actual.
-& $gradlew -p $zsilentRoot packageMsi "-Pzoka.nodeRepoRoot=$NodeRepoRoot" --no-daemon --stacktrace
+& $gradlew -p $zsilentRoot packageMsi "-Pzoka.nodeRepoRoot=$NodeRepoRoot" "-Pzsilent.torBundleDir=$TorBundleDir" "-Pzsilent.requireTorBundle=true" --no-daemon --stacktrace
 if ($LASTEXITCODE -ne 0) { throw "Gradle packageMsi failed with exit code $LASTEXITCODE" }
 
 $msi = Join-Path $zsilentRoot "build\compose\binaries\main\msi\ZSilent Core-$appVersion.msi"

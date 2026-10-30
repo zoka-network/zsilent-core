@@ -289,6 +289,11 @@ class NodeController(private val cli: ZokaCli) {
         ) {
             command += listOf("--mine-to", address.trim())
         }
+        // Modo Tor (opcional): el nodo sale solo por el SOCKS del Tor que
+        // levantó ZSilent, sin UDP ni relays, y solo hacia semillas .onion.
+        if (torProxy.isNotBlank()) {
+            command += listOf("--tor", torProxy.trim())
+        }
         checkpointAuthorityDir(network)?.let { dir ->
             command += listOf("--authority", dir.absolutePath)
             _logs.tryEmit(RuntimeLog("node", "Checkpoint authority keys found in ${dir.absolutePath}: this node signs the chain's checkpoints."))
@@ -526,6 +531,10 @@ class NodeController(private val cli: ZokaCli) {
      * testnet v2 usa las mismas claves). Si no son las compiladas, el nodo no
      * arranca: es mejor que firmar algo que nadie aceptaría.
      */
+    /** Si esta PC firma los checkpoints de la red (es su semilla): no puede ir por Tor. */
+    fun holdsCheckpointAuthority(network: String = ZokaNetworkConfig.Network): Boolean =
+        checkpointAuthorityDir(network) != null
+
     private fun checkpointAuthorityDir(network: String): File? {
         val configured = System.getenv("ZSILENT_CHECKPOINT_AUTHORITY_DIR")?.trim().orEmpty()
         if (configured.equals("none", ignoreCase = true)) return null
