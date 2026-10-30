@@ -3440,7 +3440,7 @@ private enum class SettingsPage(
     val subtitle: String
 ) {
     Home("Settings", "Personal controls for ZSilent Core."),
-    Security("Security", "Change PIN, reveal recovery phrase and private keys."),
+    Security("Security", "Change PIN, reveal recovery phrase and view key."),
     Network("Network", "RPC endpoint and connection status."),
     Appearance("Appearance", "Theme, density and motion."),
     Wallets("Wallets", "Accounts on this device."),
@@ -3494,7 +3494,7 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsMenuCard(
                 title = "Security",
-                detail = "Change PIN, recovery phrase and private keys",
+                detail = "Change PIN, recovery phrase and view key",
                 icon = Icons.Outlined.Lock,
                 meta = if (ui.sessionUnlocked) "unlocked" else "locked",
                 health = if (ui.sessionUnlocked) SettingHealth.Ok else SettingHealth.Warn,
@@ -3756,9 +3756,7 @@ private fun SettingsSecurityPage(
     var newPin by remember(ui.activeWalletAddress, ui.activeWalletName) { mutableStateOf("") }
     var confirmPin by remember(ui.activeWalletAddress, ui.activeWalletName) { mutableStateOf("") }
     var recoveryPassword by remember(ui.activeWalletAddress, ui.activeWalletName) { mutableStateOf("") }
-    val hasVisibleSecrets = ui.revealedRecoveryPhrase != null ||
-        ui.revealedScanPrivateKey != null ||
-        ui.revealedSpendPrivateKey != null
+    val hasVisibleSecrets = ui.revealedRecoveryPhrase != null || ui.revealedViewKey != null
 
     Panel(title = "Access", meta = "${ui.onboardingAutoLockMinutes} min") {
         SettingsActionButton(
@@ -3876,7 +3874,7 @@ private fun SettingsSecurityPage(
             }
             Button(
                 onClick = {
-                    appState.revealPrivateKeys(recoveryPassword.toCharArray())
+                    appState.revealViewKey(recoveryPassword.toCharArray())
                     recoveryPassword = ""
                     notice = null
                 },
@@ -3887,7 +3885,7 @@ private fun SettingsSecurityPage(
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text("Show keys")
+                Text("Show view key")
             }
         }
         if (hasVisibleSecrets) {
@@ -3924,12 +3922,19 @@ private fun SettingsSecurityPage(
                 }
             }
         }
-        if (ui.revealedScanPrivateKey != null || ui.revealedSpendPrivateKey != null) {
+        ui.revealedViewKey?.let { viewKey ->
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    KeyValueRow("Type", "private keys")
-                    ui.revealedScanPrivateKey?.let { CopyableKeyValueRow("Scan private key", it) }
-                    ui.revealedSpendPrivateKey?.let { CopyableKeyValueRow("Spend private key", it) }
+                    KeyValueRow("Type", "view key")
+                    CopyableKeyValueRow("View key", viewKey)
+                    Text(
+                        "Sees every payment and the balance of this wallet, here or in zokascan.cc/wallet, where it " +
+                            "is opened inside the browser. It cannot spend: spending needs the recovery phrase, " +
+                            "since a Zoka Quantic wallet has no separate spend key. Share it only as you would a " +
+                            "bank statement; it cannot be revoked.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }

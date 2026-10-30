@@ -69,7 +69,10 @@ data class WalletSecretsResult(
     @SerialName("spend_private_key_hex")
     val spendPrivateKeyHex: String = "",
     @SerialName("spend_public_key_hex")
-    val spendPublicKeyHex: String = ""
+    val spendPublicKeyHex: String = "",
+    /** Zoka Quantic: sees the wallet's payments and balance, cannot spend. */
+    @SerialName("view_key")
+    val viewKey: String = ""
 )
 
 /** Palabras de la frase de Zoka Quantic: 256 bits, 128 frente a Grover. */
@@ -326,6 +329,23 @@ class WalletService(private val cli: ZokaCli) {
         )
     }
 
+    /**
+     * La clave de vista (`zqtestview2…`): ve cada pago y el saldo de la wallet,
+     * en ZSilent o en zokascan.cc/wallet, y no puede gastar. Es lo que en
+     * Zenith era la clave de escaneo; en Quantic no hay clave de gasto aparte:
+     * gastar pide la frase.
+     */
+    suspend fun exportViewKey(
+        wallet: String,
+        password: CharArray,
+        network: String = ZokaNetworkConfig.Network
+    ): String = withContext(Dispatchers.IO) {
+        require(wallet.isNotBlank()) { "wallet is required" }
+        val reply: QwShownViewKey = runJson(quanticArgs("show-view-key", network) + select(wallet), password)
+        require(reply.viewKey.isNotBlank()) { "this node does not export view keys; update ZSilent" }
+        reply.viewKey
+    }
+
     suspend fun changePassphrase(
         wallet: String,
         oldPassword: CharArray,
@@ -495,6 +515,9 @@ private data class QwPhrase(val words: Int = QUANTIC_SEED_WORDS, @SerialName("re
 
 @Serializable
 private data class QwShownPhrase(val name: String = "", @SerialName("recovery_phrase") val recoveryPhrase: String = "")
+
+@Serializable
+private data class QwShownViewKey(val name: String = "", @SerialName("view_key") val viewKey: String = "")
 
 @Serializable
 private data class QwBackup(val name: String = "", val backup: String = "")

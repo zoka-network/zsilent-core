@@ -1,4 +1,4 @@
-﻿package com.zsilent.core.ui
+package com.zsilent.core.ui
 
 import com.zsilent.core.config.ZokaNetworkConfig
 import com.zsilent.core.core.node.NodeController
@@ -13,6 +13,7 @@ import com.zsilent.core.core.wallet.WalletBackupResult
 import com.zsilent.core.core.wallet.WalletCreationResult
 import com.zsilent.core.core.wallet.WalletImportResult
 import com.zsilent.core.core.wallet.WalletPassphraseChangeResult
+import com.zsilent.core.core.wallet.WalletSecretsResult
 import com.zsilent.core.models.AppSection
 import com.zsilent.core.models.FeeEstimate
 import com.zsilent.core.models.IrohIdResponse
@@ -164,8 +165,7 @@ data class ZSilentUiState(
     val secretRevealError: String? = null,
     val revealedSecretWallet: String = "",
     val revealedRecoveryPhrase: String? = null,
-    val revealedScanPrivateKey: String? = null,
-    val revealedSpendPrivateKey: String? = null,
+    val revealedViewKey: String? = null,
     val pinChangeBusy: Boolean = false,
     val pinChangeError: String? = null,
     val pinChangeResult: WalletPassphraseChangeResult? = null,
@@ -1336,8 +1336,7 @@ class ZSilentAppState(
                 secretRevealError = null,
                 revealedSecretWallet = "",
                 revealedRecoveryPhrase = null,
-                revealedScanPrivateKey = null,
-                revealedSpendPrivateKey = null,
+                revealedViewKey = null,
                 pinChangeBusy = false,
                 pinChangeError = null,
                 pinChangeResult = null
@@ -1901,11 +1900,11 @@ class ZSilentAppState(
     }
 
     fun revealRecoveryPhrase(password: CharArray) {
-        revealWalletSecrets(password = password, revealPrivateKeys = false)
+        revealWalletSecrets(password = password, revealViewKey = false)
     }
 
-    fun revealPrivateKeys(password: CharArray) {
-        revealWalletSecrets(password = password, revealPrivateKeys = true)
+    fun revealViewKey(password: CharArray) {
+        revealWalletSecrets(password = password, revealViewKey = true)
     }
 
     fun clearRevealedSecrets() {
@@ -1915,8 +1914,7 @@ class ZSilentAppState(
                 secretRevealError = null,
                 revealedSecretWallet = "",
                 revealedRecoveryPhrase = null,
-                revealedScanPrivateKey = null,
-                revealedSpendPrivateKey = null,
+                revealedViewKey = null,
                 lastActivityMillis = System.currentTimeMillis()
             )
         }
@@ -2093,7 +2091,7 @@ class ZSilentAppState(
         return deletedEntries
     }
 
-    private fun revealWalletSecrets(password: CharArray, revealPrivateKeys: Boolean) {
+    private fun revealWalletSecrets(password: CharArray, revealViewKey: Boolean) {
         val snapshot = _uiState.value
         if (snapshot.secretRevealBusy) {
             password.fill('\u0000')
@@ -2118,33 +2116,39 @@ class ZSilentAppState(
                 secretRevealError = null,
                 revealedSecretWallet = "",
                 revealedRecoveryPhrase = null,
-                revealedScanPrivateKey = null,
-                revealedSpendPrivateKey = null,
+                revealedViewKey = null,
                 lastActivityMillis = System.currentTimeMillis()
             )
         }
         scope.launch {
             runCatching {
-                walletService.exportSecrets(walletSelector, revealPassword)
+                if (revealViewKey) {
+                    WalletSecretsResult(
+                        address = walletSelector,
+                        userAddress = walletSelector,
+                        viewKey = walletService.exportViewKey(walletSelector, revealPassword)
+                    )
+                } else {
+                    walletService.exportSecrets(walletSelector, revealPassword)
+                }
             }.onSuccess { secrets ->
                 revealPassword.fill('\u0000')
                 val secretWallet = secrets.userAddress.ifBlank { secrets.address.ifBlank { walletSelector } }
                 update {
                     it.copy(
                         secretRevealBusy = false,
-                        secretRevealError = if (!revealPrivateKeys && secrets.mnemonic.isNullOrBlank()) {
+                        secretRevealError = if (!revealViewKey && secrets.mnemonic.isNullOrBlank()) {
                             "This wallet has no recovery phrase stored in encrypted wallet data."
                         } else {
                             null
                         },
                         revealedSecretWallet = secretWallet,
-                        revealedRecoveryPhrase = if (revealPrivateKeys) null else secrets.mnemonic,
-                        revealedScanPrivateKey = if (revealPrivateKeys) secrets.scanPrivateKeyHex else null,
-                        revealedSpendPrivateKey = if (revealPrivateKeys) secrets.spendPrivateKeyHex else null,
+                        revealedRecoveryPhrase = if (revealViewKey) null else secrets.mnemonic,
+                        revealedViewKey = if (revealViewKey) secrets.viewKey else null,
                         lastActivityMillis = System.currentTimeMillis()
                     )
                 }
-                appendLog(RuntimeLog("wallet", if (revealPrivateKeys) "Private keys revealed after password confirmation." else "Recovery phrase revealed after password confirmation."))
+                appendLog(RuntimeLog("wallet", if (revealViewKey) "View key revealed after password confirmation." else "Recovery phrase revealed after password confirmation."))
             }.onFailure { error ->
                 revealPassword.fill('\u0000')
                 update {
@@ -2153,8 +2157,7 @@ class ZSilentAppState(
                         secretRevealError = PrivacyGuards.redactForLog(error.message ?: "Could not reveal wallet recovery data."),
                         revealedSecretWallet = "",
                         revealedRecoveryPhrase = null,
-                        revealedScanPrivateKey = null,
-                        revealedSpendPrivateKey = null
+                        revealedViewKey = null
                     )
                 }
             }
@@ -2975,8 +2978,7 @@ class ZSilentAppState(
                 secretRevealError = null,
                 revealedSecretWallet = "",
                 revealedRecoveryPhrase = null,
-                revealedScanPrivateKey = null,
-                revealedSpendPrivateKey = null,
+                revealedViewKey = null,
                 pinChangeBusy = false,
                 pinChangeError = null,
                 pinChangeResult = null

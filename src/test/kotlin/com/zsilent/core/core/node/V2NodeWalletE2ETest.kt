@@ -81,6 +81,11 @@ class V2NodeWalletE2ETest {
                 assertEquals("coinbase", history.transactions.last().kind)
                 assertEquals(1L, history.transactions.last().height)
 
+                // The view key: Quantic's watch-only key, which cannot spend.
+                val viewKey = wallets.exportViewKey(alice.address, password.toCharArray())
+                assertTrue(viewKey.startsWith("zqregtestview2"), viewKey)
+                assertEquals(alice.recoveryPhrase, wallets.exportSecrets(alice.address, password.toCharArray()).mnemonic)
+
                 // La corta: el nodo no la conoce hasta que se publica.
                 val listed = wallets.listWallets(password.toCharArray())
                 val entry = listed.privateWallets.single()
