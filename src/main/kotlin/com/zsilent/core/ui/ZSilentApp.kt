@@ -226,15 +226,11 @@ private fun TopBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                // Etiquetas cortas a proposito. Son seis: con "node · online"
-                // y "stratum · listening" completos no entran ni en 1360 px, y el
-                // color ya dice el estado. La palabra queda para lo que el
-                // color no distingue.
+                // Etiquetas cortas a proposito: con "node · online" y "stratum ·
+                // listening" completos no entran ni en 1360 px, y el color ya
+                // dice el estado. La palabra queda para lo que el color no
+                // distingue. Sin Tor: el nodo v2 no tiene transporte por Tor.
                 Pill("node ${ui.nodeStatus.shortLabel()}", ui.nodeStatus.tone())
-                Pill(
-                    "tor ${if (ui.torEnabled) "on" else "off"}",
-                    if (ui.torEnabled) ZTone.On else ZTone.Off
-                )
                 Pill("solo ${ui.miningStatus.shortLabel()}", ui.miningStatus.tone())
                 // Encendido no es minando: "on" escucha, "live" tiene mineros.
                 Pill(

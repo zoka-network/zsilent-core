@@ -3026,10 +3026,6 @@ fun LogsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
             ) {
                 Pill("node ${ui.nodeStatus.name.lowercase()}", serviceStatusTone(ui.nodeStatus))
                 Pill(
-                    if (ui.torEnabled) "tor ${ui.torStatus.name.lowercase()}" else "tor disabled",
-                    if (ui.torEnabled) serviceStatusTone(ui.torStatus) else ZTone.Off
-                )
-                Pill(
                     "mining ${ui.miningStatus.name.lowercase()} · ${formatHashrate(ui.mining.hashrateHps)}",
                     serviceStatusTone(ui.miningStatus)
                 )
@@ -3062,12 +3058,6 @@ fun LogsScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             StatusCard("Peers", if (ui.localRpcOnline) ui.localConnectedPeers.toString() else "-", if (ui.localRpcOnline) "live configured RPC mesh" else "configured RPC offline", Modifier.weight(1f))
-            StatusCard(
-                "Tor",
-                if (peerSplitKnown) ui.peerTorCount.toString() else "-",
-                if (peerSplitLive) "current onion peers" else if (peerSplitKnown) "last reported onion peers" else "not reported",
-                Modifier.weight(1f)
-            )
             StatusCard(
                 "Direct",
                 if (peerSplitKnown) ui.peerDirectCount.toString() else "-",
@@ -3485,7 +3475,6 @@ private fun RuntimeProgressPanel(
 private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SettingsStateBanner(ui)
-        val torLive = ui.torEnabled && ui.torStatus == ServiceStatus.Online
         val hasWallet = ui.activeWalletAddress.isNotBlank()
 
         // Rejilla pareja de tres columnas. Antes dos tarjetas no llevaban
@@ -3522,19 +3511,14 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Network) }
             )
-            // Faltaba: Tor es parte del protocolo y se decide aca, no solo en
-            // Privacy.
+            // La v2 no tiene Tor (QUIC va por UDP y Tor solo lleva TCP): la
+            // tarjeta dice qué ve la red, sin un interruptor que no existe.
             SettingsMenuCard(
-                title = "Privacy & Tor",
-                detail = if (torLive) "Traffic routed over Tor onion services."
-                else "Tor is off. Peers can see your IP address.",
+                title = "Network privacy",
+                detail = "Peers and relays see this computer's IP address. Payments stay private.",
                 icon = Icons.Outlined.Shield,
-                meta = if (torLive) "tor on" else if (ui.torEnabled) "starting" else "tor off",
-                health = when {
-                    torLive -> SettingHealth.Ok
-                    ui.torEnabled -> SettingHealth.Warn
-                    else -> SettingHealth.Bad
-                },
+                meta = "ip visible",
+                health = SettingHealth.Neutral,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Network) }
             )
@@ -3682,14 +3666,13 @@ private fun SettingsMenuCard(
  *
  * Resume de un vistazo lo que hace falta para operar. `READY` exige todo a la
  * vez, porque cada pieza que falta bloquea algo distinto: sin sesión no se firma,
- * sin nodo no hay cadena, sin Tor no se verifica un pago.
+ * sin nodo no hay cadena, sin binarios no corre nada.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SettingsStateBanner(ui: ZSilentUiState) {
     val sessionOk = ui.sessionUnlocked
     val nodeOk = ui.nodeStatus == ServiceStatus.Online
-    val torOk = ui.torEnabled && ui.torStatus == ServiceStatus.Online
     val binariesOk = ui.zokaReady
     val syncOk = ui.networkSynced
 
@@ -3697,7 +3680,6 @@ private fun SettingsStateBanner(ui: ZSilentUiState) {
     val broken = !binariesOk || ui.nodeStatus == ServiceStatus.Error
     val label = when {
         broken -> "ATTENTION"
-        ready && torOk -> "READY"
         ready -> "READY"
         else -> "INCOMPLETE"
     }
@@ -3721,7 +3703,6 @@ private fun SettingsStateBanner(ui: ZSilentUiState) {
                 ) {
                     Pill("session ${if (sessionOk) "unlocked" else "locked"}", if (sessionOk) ZTone.On else ZTone.Warn)
                     Pill("node ${if (nodeOk) "online" else "offline"}", if (nodeOk) ZTone.On else ZTone.Err)
-                    Pill("tor ${if (torOk) "on" else "off"}", if (torOk) ZTone.On else ZTone.Warn)
                     Pill("chain ${if (syncOk) "synced" else "syncing"}", if (syncOk) ZTone.On else ZTone.Warn)
                     Pill("binaries ${if (binariesOk) "ready" else "missing"}", if (binariesOk) ZTone.On else ZTone.Err)
                     Pill(
@@ -3738,7 +3719,6 @@ private fun SettingsStateBanner(ui: ZSilentUiState) {
                 !sessionOk -> "The wallet session is locked. Unlock it to sign anything."
                 !nodeOk -> "The node is offline. Start it from the Node section."
                 !syncOk -> "The chain is still catching up. Balances may be behind until it finishes."
-                !torOk -> "Tor is off. The app works, but peers can see your IP address."
                 else -> "Everything needed to operate is up."
             }
         )
@@ -3953,6 +3933,16 @@ private fun SettingsNetworkPage(ui: ZSilentUiState) {
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Sync gate", if (ui.networkSynced) "synced" else "syncing")
     }
+    Panel(title = "What the network sees", meta = "ip visible") {
+        KeyValueRow("This computer's IP", "visible to peers and to the relays")
+        KeyValueRow("Your payments", "private: amounts, owners and memos are encrypted")
+        KeyValueRow("Tor", "not available on testnet v2")
+        HintText(
+            "The v2 node reaches its peers over QUIC, which runs on UDP; Tor only carries TCP. " +
+                "An optional Tor mode is planned. Until then, peers and n0's relays see this " +
+                "computer's IP address and that it runs a Zoka node, never what it pays or receives."
+        )
+    }
     Panel(title = "Local node", meta = if (ui.localRpcOnline) "online" else "offline") {
         KeyValueRow("Local RPC", if (ui.localRpcOnline) "${ZokaNetworkConfig.displayUrl(ui.localRpcUrl)} online" else "offline")
         KeyValueRow("Data", ZokaNetworkConfig.dataDir())
@@ -4061,7 +4051,7 @@ private fun SettingsAboutPage(ui: ZSilentUiState) {
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Network height", ui.networkHeight.toString())
         KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
-        KeyValueRow("Tor policy", if (ui.torEnabled) "Tor onion (only)" else "direct clearnet")
+        KeyValueRow("Route", "iroh (QUIC) · no Tor")
     }
 }
 

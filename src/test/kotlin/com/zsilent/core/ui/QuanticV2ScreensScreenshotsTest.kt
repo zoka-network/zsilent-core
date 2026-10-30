@@ -2,12 +2,17 @@ package com.zsilent.core.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import com.zsilent.core.ui.components.CopyableKeyValueRow
 import com.zsilent.core.core.mining.MiningController
 import com.zsilent.core.core.node.NodeController
 import com.zsilent.core.core.storage.SetupStore
@@ -24,6 +29,7 @@ import com.zsilent.core.ui.screens.DashboardScreen
 import com.zsilent.core.ui.screens.MiningScreen
 import com.zsilent.core.ui.screens.NodeScreen
 import com.zsilent.core.ui.screens.PrivacyScreen
+import com.zsilent.core.ui.screens.SettingsScreen
 import com.zsilent.core.ui.screens.StratumScreen
 import com.zsilent.core.ui.theme.ZSilentTheme
 import java.io.File
@@ -118,6 +124,16 @@ class QuanticV2ScreensScreenshotsTest {
             shot(dir, "v2-mineria-$theme", dark) { MiningScreen(ui, appState) }
             shot(dir, "v2-stratum-$theme", dark) { StratumScreen(ui, appState) }
             shot(dir, "v2-privacidad-$theme", dark) { PrivacyScreen(ui, appState) }
+            shot(dir, "v2-ajustes-$theme", dark) { SettingsScreen(ui, appState) }
+            // A full address and a view key, as long as the real ones, in a
+            // column as wide as the Recovery card of a 1360 px window.
+            shot(dir, "v2-fila-copiable-$theme", dark) {
+                Column(Modifier.width(940.dp).padding(24.dp)) {
+                    CopyableKeyValueRow("Wallet", "zqtest22Bzm" + "HsHe1V95nFuCN2gAyrKvko1ktrDmbSsLcBwk7NHbphWY2NWmU7j".repeat(30) + "ysLDbN")
+                    CopyableKeyValueRow("View key", "zqtestview2EB67sAsQA42WgVACjWB4X2fng2wr7iEQK3DHyrC89fTgHwuUBwBeD41Fmi8ZRrNzXbhencg1YTWrTLPPmdgtNNhh3ppGnEi1phWFSqy6fkiDPm4ALq9Q")
+                    CopyableKeyValueRow("Short", "zqtest22m1iDEY")
+                }
+            }
         }
     }
 

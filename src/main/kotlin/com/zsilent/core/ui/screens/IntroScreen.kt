@@ -74,7 +74,7 @@ private val BOOT_LINES = listOf(
     BootLine("init", "loading zsilent runtime"),
     BootLine("keys", "sealed keystore · aes-256-gcm"),
     BootLine("core", "local node controller attached"),
-    BootLine("tor", "onion transport · standby"),
+    BootLine("tls", "hybrid post-quantum handshake · required"),
     BootLine("p2p", "peer discovery armed"),
     BootLine("ui", "render surface · local-first"),
 )
@@ -337,7 +337,7 @@ private fun BootColumn(shown: Int, ready: Boolean, modifier: Modifier = Modifier
         // que no hay nada real que informar, e inventar números acá sería
         // mentir.
         Row(Modifier.fillMaxWidth()) {
-            listOf("node" to "standby", "tor" to "standby", "vault" to "sealed")
+            listOf("node" to "standby", "p2p" to "standby", "vault" to "sealed")
                 .forEachIndexed { index, (label, value) ->
                     if (index > 0) {
                         Box(Modifier.width(1.dp).height(44.dp).background(scheme.outlineVariant))

@@ -935,8 +935,17 @@ fun KeyValueRow(label: String, value: String) {
     }
 }
 
+/**
+ * Un valor largo (dirección, clave, hash) cortado por el medio: quedan a la
+ * vista el principio y el final, que es lo que se compara, y el botón de copiar
+ * no se sale de la fila. Lo que se copia es el valor entero.
+ */
+fun middleTruncated(value: String, head: Int = 18, tail: Int = 12): String =
+    if (value.length <= head + tail + 1) value else value.take(head) + "…" + value.takeLast(tail)
+
 @Composable
 fun CopyableKeyValueRow(label: String, value: String) {
+    val shown = remember(value) { middleTruncated(value) }
     Row(
         Modifier.fillMaxWidth().padding(vertical = ZTheme.spacing.row / 2),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -949,7 +958,8 @@ fun CopyableKeyValueRow(label: String, value: String) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                value,
+                shown,
+                modifier = Modifier.weight(1f, fill = false),
                 style = ZTheme.text.mono,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
