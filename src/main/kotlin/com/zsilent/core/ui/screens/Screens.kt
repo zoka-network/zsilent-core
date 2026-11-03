@@ -988,6 +988,10 @@ private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
     val maturingAtoms  = balance?.lockedBalanceAtoms ?: activeWallet?.lockedBalanceAtoms ?: 0L
     val totalAtoms     = balance?.totalBalanceAtoms  ?: activeWallet?.totalBalanceAtoms  ?: 0L
     val pendingCount   = ui.pendingPrivateTransfers.count
+    // Zoka Quantic: un envío sin minar reserva sus notas. Siguen en el total
+    // y vuelven a "Spendable" si el envío vence sin entrar en un bloque.
+    val reservedAtoms  = balance?.reservedBalanceAtoms ?: 0L
+    val sendPending    = balance?.pendingPayment == true
     val txCount        = activeWallet?.txCount ?: ui.walletHistory.count
     val hidden         = ui.walletLocked || ui.balancesHidden
 
@@ -1041,10 +1045,18 @@ private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
             )
             com.zsilent.core.ui.onboarding.NoirMetricCard(
                 label    = "Pending",
-                value    = if (pendingCount > 0) "$pendingCount tx" else "—",
-                samples  = seedMetricHistory(pendingCount.toDouble()),
+                value    = when {
+                    sendPending -> if (hidden) "••••" else formatZkaCompact(reservedAtoms)
+                    pendingCount > 0 -> "$pendingCount tx"
+                    else -> "—"
+                },
+                samples  = seedMetricHistory(if (sendPending) reservedAtoms.toDouble() else pendingCount.toDouble()),
                 accent   = com.zsilent.core.ui.onboarding.PastelPink,
-                detail   = if (pendingCount > 0) "queued · not mined" else "no pending sends",
+                detail   = when {
+                    sendPending -> "reserved by an unmined send · back if it expires"
+                    pendingCount > 0 -> "queued · not mined"
+                    else -> "no pending sends"
+                },
                 modifier = Modifier.weight(1f)
             )
             com.zsilent.core.ui.onboarding.NoirMetricCard(

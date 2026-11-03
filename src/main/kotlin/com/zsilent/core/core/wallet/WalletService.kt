@@ -135,18 +135,7 @@ class WalletService(private val cli: ZokaCli) {
     ): WalletBalance = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
         val reply: QwBalance = runJson(quanticArgs("balance", network) + select(wallet), password)
-        val total = reply.spendableAtoms + reply.immatureAtoms
-        WalletBalance(
-            wallet = reply.name,
-            address = wallet.takeIf(ZokaNetworkConfig::isAddress).orEmpty(),
-            balanceAtoms = reply.spendableAtoms,
-            balance = formatZka(reply.spendableAtoms),
-            lockedBalanceAtoms = reply.immatureAtoms,
-            lockedBalance = formatZka(reply.immatureAtoms),
-            totalBalanceAtoms = total,
-            totalBalance = formatZka(total),
-            maxSendableAtoms = reply.maxSendableAtoms
-        )
+        reply.toWalletBalance(wallet)
     }
 
     /**
@@ -470,14 +459,40 @@ private data class QwPublished(@SerialName("short_address") val shortAddress: St
 private data class QwList(val network: String = "", val details: List<QwListEntry> = emptyList())
 
 @Serializable
-private data class QwBalance(
+internal data class QwBalance(
     val name: String = "",
     val height: Long = 0,
     @SerialName("spendable_atoms") val spendableAtoms: Long = 0,
     @SerialName("immature_atoms") val immatureAtoms: Long = 0,
     @SerialName("max_sendable_atoms") val maxSendableAtoms: Long = 0,
-    @SerialName("node_behind") val nodeBehind: Boolean = false
+    @SerialName("node_behind") val nodeBehind: Boolean = false,
+    @SerialName("reserved_atoms") val reservedAtoms: Long = 0,
+    @SerialName("pending_payment") val pendingPayment: Boolean = false
 )
+
+/**
+ * El saldo que muestra la app. Las notas que reserva un envío sin minar siguen
+ * siendo de la wallet (si el envío vence, vuelven a "spendable"), así que entran
+ * en el total. Antes no entraban: como el envío elige primero la nota más
+ * grande, el total perdía casi todo el saldo mientras el pago esperaba un bloque
+ * (3/11/2026: 36.776 ZKA a la vista de 5.019.799 reales).
+ */
+internal fun QwBalance.toWalletBalance(selection: String): WalletBalance {
+    val total = spendableAtoms + immatureAtoms + reservedAtoms
+    return WalletBalance(
+        wallet = name,
+        address = selection.takeIf(ZokaNetworkConfig::isAddress).orEmpty(),
+        balanceAtoms = spendableAtoms,
+        balance = formatZka(spendableAtoms),
+        lockedBalanceAtoms = immatureAtoms,
+        lockedBalance = formatZka(immatureAtoms),
+        totalBalanceAtoms = total,
+        totalBalance = formatZka(total),
+        maxSendableAtoms = maxSendableAtoms,
+        reservedBalanceAtoms = reservedAtoms,
+        pendingPayment = pendingPayment || reservedAtoms > 0
+    )
+}
 
 @Serializable
 private data class QwTx(

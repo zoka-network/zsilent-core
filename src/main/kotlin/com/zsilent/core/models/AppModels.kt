@@ -176,7 +176,9 @@ data class BlockSummary(
     val stateRoot: String = "",
     @SerialName("previous_hash")
     val previousHash: String = "",
-    val nonce: Long = 0,
+    // u64 en el nodo: en Zoka Quantic pasa de Long.MAX_VALUE (el bloque 4003
+    // trae 17480248669717492693) y con Long la lista entera de bloques fallaba.
+    val nonce: ULong = 0u,
     // Genesis (height 0) has no recorded difficulty — the node sends null.
     @SerialName("difficulty_bits")
     val difficultyBits: Int? = null,
@@ -359,7 +361,17 @@ data class WalletBalance(
     val viewOnly: Boolean = false,
     /** Zoka Quantic: lo más que sale en un envío ahora (saldo menos comisión). */
     @SerialName("max_sendable_atoms")
-    val maxSendableAtoms: Long = 0
+    val maxSendableAtoms: Long = 0,
+    /**
+     * Zoka Quantic: las notas que reserva un envío que todavía no se minó.
+     * Siguen siendo de la wallet (vuelven a "spendable" si el envío vence)
+     * y entran en el total.
+     */
+    @SerialName("reserved_balance_atoms")
+    val reservedBalanceAtoms: Long = 0,
+    /** Zoka Quantic: hay un envío aceptado por el nodo que espera un bloque. */
+    @SerialName("pending_payment")
+    val pendingPayment: Boolean = false
 )
 
 @Serializable

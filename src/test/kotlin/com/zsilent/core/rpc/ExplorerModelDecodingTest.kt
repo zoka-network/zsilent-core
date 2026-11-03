@@ -61,7 +61,7 @@ class ExplorerModelDecodingTest {
         assertEquals(1751000000L, block.timestamp)
         assertEquals("root-xyz", block.stateRoot)
         assertEquals("0000abb", block.previousHash)
-        assertEquals(987654L, block.nonce)
+        assertEquals(987654uL, block.nonce)
         assertEquals(21, block.difficultyBits)
         assertEquals(4096L, block.sizeBytes)
         assertEquals(12000000L, block.rewardAtoms)
@@ -70,6 +70,29 @@ class ExplorerModelDecodingTest {
         assertEquals(2, block.privateTxCount)
         assertEquals(4, block.privateNullifierCount)
         assertTrue(block.privateCoinbase)
+    }
+
+    /**
+     * Zoka Quantic sends the nonce as a u64 that does not fit in a Long. With
+     * a Long, "Latest blocks" failed on 3/11/2026 with "Numeric value overflow
+     * at path: $.nonce". Payload of block 4003 from the testnet v2 node.
+     */
+    @Test
+    fun a_quantic_nonce_above_long_max_decodes() {
+        val payload = """
+            {"canonical":true,"confirmations":2,"difficulty_bits":16,"fees_atoms":0,
+             "hash":"cc177aadb331b45a86254b4ce5b2b0ed8441b393ce50e4c4f78c7a6673fbf443",
+             "hashrate_estimate_hps":909,"height":4003,"nonce":17480248669717492693,
+             "previous_hash":"308d87b043989fdc0b744f02f5ade29950f6a12d4caa0848fbf1800decaca0b6",
+             "private_coinbase":true,"private_nullifier_count":0,"private_tx_count":0,
+             "reward_atoms":12000000,"reward_zka_display":"12","size_bytes":2832,
+             "timestamp":1793744033,"transactions_count":1}
+        """.trimIndent()
+
+        val block = codec.decodeFromString<BlockSummary>(payload)
+
+        assertEquals(4003L, block.height)
+        assertEquals("17480248669717492693", block.nonce.toString())
     }
 
     /**
