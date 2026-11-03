@@ -95,6 +95,19 @@ class QuanticWalletScreenshotsTest {
             shot(dir, "enviar-$theme", dark) { SendScreen(ui, appState) }
             shot(dir, "recibir-$theme", dark) { ReceiveScreen(ui, appState) }
         }
+        // Un envío sin minar reserva su nota más grande y sigue en el total
+        // (los números del 3/11/2026, cuando ZSilent mostraba solo 36.776).
+        val pending = ui.copy(
+            walletBalance = WalletBalance(
+                wallet = "main", address = main,
+                balanceAtoms = 36_776_999_800, balance = "36776.9998",
+                lockedBalanceAtoms = 0, lockedBalance = "0",
+                totalBalanceAtoms = 5_019_799_999_400, totalBalance = "5019799.9994",
+                maxSendableAtoms = 0,
+                reservedBalanceAtoms = 4_983_022_999_600, pendingPayment = true
+            )
+        )
+        shot(dir, "wallet-pendiente-oscuro", true) { WalletScreen(pending, appState) }
     }
 
     private fun entry(hash: String, kind: String, atoms: Long, height: Long, confirmations: Long) =

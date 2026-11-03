@@ -1030,7 +1030,8 @@ private fun WalletBreakdownRow(ui: ZSilentUiState, activeWallet: LocalWallet?) {
                 value    = if (hidden) "••••" else formatZkaCompact(spendableAtoms),
                 samples  = spendableHistory,
                 accent   = com.zsilent.core.ui.onboarding.PastelGreen,
-                detail   = "available now",
+                // One pending send per wallet: the next one waits for it.
+                detail   = if (sendPending) "next send waits for the pending one" else "available now",
                 hidden   = hidden,
                 modifier = Modifier.weight(1f)
             )
