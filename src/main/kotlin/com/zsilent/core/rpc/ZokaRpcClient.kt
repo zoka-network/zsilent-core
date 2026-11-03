@@ -101,10 +101,19 @@ class ZokaRpcClient(val baseUrl: String) {
     /** El resumen del bloque, sin los cuerpos de sus pagos (llevan las pruebas). */
     suspend fun blockByHeight(height: Long): BlockSummary? = getOrNull("/blocks/$height/summary")
 
-    // The v2 node indexes blocks by height only, and its payments are private:
-    // there is no hash index, no transaction list, no account to look up.
-    suspend fun blockByHash(hash: String): BlockSummary? = null
+    /** Un bloque guardado por su hash, canónico o de una rama lateral. */
+    suspend fun blockByHash(hash: String): BlockSummary? =
+        getOrNull("/blocks/hash/${hash.trim().lowercase()}/summary")
 
+    /**
+     * Dónde está un pago (`GET /transactions/<txid>`, nodo 4.0.5 en adelante):
+     * en el mempool del nodo o en uno de sus últimos 720 bloques. El nodo no
+     * indexa transacciones; más atrás, o en un nodo anterior, da null.
+     */
+    suspend fun transactionStatus(txid: String): V2TransactionStatus? =
+        getOrNull("/transactions/${txid.trim().lowercase()}")
+
+    // Its payments are private: there is no transaction list nor account to look up.
     suspend fun blockTransactions(height: Long): BlockTransactions? = null
 
     suspend fun mempoolTransaction(hash: String): MempoolTransaction? = null
@@ -168,6 +177,19 @@ class ZokaRpcClient(val baseUrl: String) {
 
 private const val NO_INTEGRATED_MINING =
     "the Zoka Quantic v2 testnet has no built-in miner: mine with XMRig against the node's Stratum"
+
+/**
+ * `GET /transactions/<txid>` del nodo v2: `status` es "pending" (en el
+ * mempool) o "confirmed" (con su bloque). Nada de quién pagó a quién.
+ */
+@Serializable
+data class V2TransactionStatus(
+    val txid: String = "",
+    val status: String = "",
+    val height: Long? = null,
+    @SerialName("block_hash") val blockHash: String? = null,
+    val confirmations: Long = 0
+)
 
 /** `GET /status` del nodo v2 (`src/quantic/stark_api.rs` del nodo). */
 @Serializable

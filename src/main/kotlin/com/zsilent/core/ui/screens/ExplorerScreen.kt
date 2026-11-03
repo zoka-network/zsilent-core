@@ -783,11 +783,12 @@ private fun PendingTxDetail(tx: MempoolTransaction) {
             Pill("not confirmed", ZTone.Off)
         }
         CopyableKeyValueRow("Hash", tx.hash)
-        KeyValueRow("Seen at", formatTimestamp(tx.timestamp))
+        if (tx.timestamp > 0) KeyValueRow("Seen at", formatTimestamp(tx.timestamp))
         KeyValueRow("Status", "waiting in mempool — not yet in a block")
         HintText(
-            "Once mined, this hash will no longer resolve here: the node keeps no " +
-                "transaction index over confirmed blocks."
+            "Accepted by the network and waiting for a miner. Once mined it is " +
+                "found in its block for about a day (720 blocks). If no block takes " +
+                "it before it expires, its notes return to the sender's wallet."
         )
     }
 }
@@ -815,7 +816,9 @@ private fun PrivateTxDetail(tx: PrivateTxLookup) {
         CopyableKeyValueRow("Hash", tx.txHash)
         KeyValueRow("Status", meaning)
         tx.blockHeight?.let { KeyValueRow("Block", "#$it") }
-        KeyValueRow("Created", formatTimestamp(tx.timestamp))
+        if (tx.timestamp > 0) {
+            KeyValueRow(if (tx.blockHeight != null) "Mined" else "Created", formatTimestamp(tx.timestamp))
+        }
         HintText(
             "Sender, receiver, amount and fee are private by protocol: no node " +
                 "stores them in clear."
@@ -877,10 +880,9 @@ private sealed interface ExplorerLookup {
  *
  * All-digits is treated as a height and address shapes go to the account
  * check. Anything else must be hexadecimal, because it is pasted into the URL
- * path; it is tried as a block hash, then as a private transaction and last as
- * a pending one. The node keeps no index of confirmed transaction hashes: a
- * private one is found only when the node keeps its body (it then reports the
- * block that holds it), so a miss gets an explicit hint rather than a bare
+ * path; it is tried as a block hash and then as a payment id. The node keeps
+ * no index of transaction ids: it finds a payment in its mempool or in its last
+ * 720 blocks (about a day), so a miss gets an explicit hint rather than a bare
  * "not found", which would wrongly suggest the transaction never existed.
  */
 private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLookup = try {
@@ -918,26 +920,32 @@ private suspend fun lookup(appState: ZSilentAppState, term: String): ExplorerLoo
                 runCatching { rpc.blockTransactions(block.height) }.getOrNull()
             )
         } else {
-            val privateTx = rpc.privateTransaction(term)
-            if (privateTx != null) {
-                val holder = privateTx.blockHeight?.let { height ->
-                    runCatching { rpc.blockByHeight(height) }.getOrNull()
-                }
-                ExplorerLookup.PrivateTx(privateTx, holder)
-            } else {
-                val pending = rpc.mempoolTransaction(term)
-                if (pending != null) {
-                    ExplorerLookup.PendingTx(pending)
-                } else {
-                    ExplorerLookup.NotFound(
-                        term,
-                        "Not a block hash on this node, nor a transaction it knows. The " +
-                            "node keeps no index of confirmed transaction hashes: it finds " +
-                            "a private one only when it keeps its body, as it does for the " +
-                            "ones sent from this node. The payments you received are in " +
-                            "your wallet's history."
+            val payment = rpc.transactionStatus(term)
+            when (payment?.status) {
+                "pending" -> ExplorerLookup.PendingTx(
+                    MempoolTransaction(hash = payment.txid.ifBlank { term }, status = "pending")
+                )
+                "confirmed" -> {
+                    val holder = payment.height?.let { height ->
+                        runCatching { rpc.blockByHeight(height) }.getOrNull()
+                    }
+                    ExplorerLookup.PrivateTx(
+                        PrivateTxLookup(
+                            txHash = payment.txid.ifBlank { term },
+                            status = "Confirmed",
+                            blockHeight = payment.height,
+                            timestamp = holder?.timestamp ?: 0
+                        ),
+                        holder
                     )
                 }
+                else -> ExplorerLookup.NotFound(
+                    term,
+                    "Not a block hash on this node, nor a payment in its mempool or in " +
+                        "its last 720 blocks (about a day): Zoka Quantic nodes keep no " +
+                        "index of transaction ids. Your sends and receipts are in your " +
+                        "wallet's history."
+                )
             }
         }
     }

@@ -95,6 +95,26 @@ class ExplorerModelDecodingTest {
         assertEquals("17480248669717492693", block.nonce.toString())
     }
 
+    /** `GET /transactions/<txid>` of the v2 node, pending and then mined (block 4012). */
+    @Test
+    fun a_v2_payment_lookup_decodes_pending_and_confirmed() {
+        val pending = codec.decodeFromString<V2TransactionStatus>(
+            """{"txid":"ebfdbf1a75ac1c5a0638f9978cbe641c7979dd202242b37004c2b7d289330554","status":"pending"}"""
+        )
+        assertEquals("pending", pending.status)
+        assertNull(pending.height)
+
+        val mined = codec.decodeFromString<V2TransactionStatus>(
+            """{"txid":"ebfdbf1a75ac1c5a0638f9978cbe641c7979dd202242b37004c2b7d289330554",
+                "status":"confirmed","height":4012,"confirmations":3,
+                "block_hash":"a63fff231ee40935d6ffcac0337ae39dd8f7d0719c194d1c626ad3c573862cba"}"""
+        )
+        assertEquals("confirmed", mined.status)
+        assertEquals(4012L, mined.height)
+        assertEquals("a63fff231ee40935d6ffcac0337ae39dd8f7d0719c194d1c626ad3c573862cba", mined.blockHash)
+        assertEquals(3L, mined.confirmations)
+    }
+
     /**
      * Genesis is served with `difficulty_bits: null` — the node passes `None`
      * because height 0 has no recorded difficulty. A non-nullable Int would
