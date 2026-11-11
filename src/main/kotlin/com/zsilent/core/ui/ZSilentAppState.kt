@@ -9,6 +9,7 @@ import com.zsilent.core.core.storage.SetupStore
 import com.zsilent.core.core.tor.TorLaunchConfig
 import com.zsilent.core.core.tor.TorSupervisor
 import com.zsilent.core.core.wallet.WalletService
+import com.zsilent.core.core.wallet.ViewKeyScope
 import com.zsilent.core.core.wallet.WalletBackupResult
 import com.zsilent.core.core.wallet.WalletCreationResult
 import com.zsilent.core.core.wallet.WalletImportResult
@@ -167,6 +168,7 @@ data class ZSilentUiState(
     val revealedSecretWallet: String = "",
     val revealedRecoveryPhrase: String? = null,
     val revealedViewKey: String? = null,
+    val revealedViewKeyScope: ViewKeyScope = ViewKeyScope.Incoming,
     val pinChangeBusy: Boolean = false,
     val pinChangeError: String? = null,
     val pinChangeResult: WalletPassphraseChangeResult? = null,
@@ -1963,8 +1965,8 @@ class ZSilentAppState(
         revealWalletSecrets(password = password, revealViewKey = false)
     }
 
-    fun revealViewKey(password: CharArray) {
-        revealWalletSecrets(password = password, revealViewKey = true)
+    fun revealViewKey(password: CharArray, scope: ViewKeyScope = ViewKeyScope.Incoming) {
+        revealWalletSecrets(password = password, revealViewKey = true, viewKeyScope = scope)
     }
 
     fun clearRevealedSecrets() {
@@ -2151,7 +2153,7 @@ class ZSilentAppState(
         return deletedEntries
     }
 
-    private fun revealWalletSecrets(password: CharArray, revealViewKey: Boolean) {
+    private fun revealWalletSecrets(password: CharArray, revealViewKey: Boolean, viewKeyScope: ViewKeyScope = ViewKeyScope.Incoming) {
         val snapshot = _uiState.value
         if (snapshot.secretRevealBusy) {
             password.fill('\u0000')
@@ -2186,13 +2188,23 @@ class ZSilentAppState(
                     WalletSecretsResult(
                         address = walletSelector,
                         userAddress = walletSelector,
-                        viewKey = walletService.exportViewKey(walletSelector, revealPassword)
+                        viewKey = walletService.exportViewKey(walletSelector, revealPassword, scope = viewKeyScope)
                     )
                 } else {
                     walletService.exportSecrets(walletSelector, revealPassword)
                 }
             }.onSuccess { secrets ->
                 revealPassword.fill('\u0000')
+                // A completed export cannot reveal data after a lock or wallet switch.
+                // It still ends the busy state, or the reveal buttons stay disabled.
+                val current = _uiState.value
+                if (current.appLocked || !current.sessionUnlocked ||
+                    current.activeWalletAddress != snapshot.activeWalletAddress ||
+                    current.activeWalletName != snapshot.activeWalletName
+                ) {
+                    update { it.copy(secretRevealBusy = false) }
+                    return@onSuccess
+                }
                 val secretWallet = secrets.userAddress.ifBlank { secrets.address.ifBlank { walletSelector } }
                 update {
                     it.copy(
@@ -2205,6 +2217,7 @@ class ZSilentAppState(
                         revealedSecretWallet = secretWallet,
                         revealedRecoveryPhrase = if (revealViewKey) null else secrets.mnemonic,
                         revealedViewKey = if (revealViewKey) secrets.viewKey else null,
+                        revealedViewKeyScope = viewKeyScope,
                         lastActivityMillis = System.currentTimeMillis()
                     )
                 }

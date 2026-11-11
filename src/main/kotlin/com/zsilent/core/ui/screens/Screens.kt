@@ -60,6 +60,7 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import com.zsilent.core.core.wallet.ViewKeyScope
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -3753,6 +3754,7 @@ private fun SettingsSecurityPage(
     var newPin by remember(ui.activeWalletAddress, ui.activeWalletName) { mutableStateOf("") }
     var confirmPin by remember(ui.activeWalletAddress, ui.activeWalletName) { mutableStateOf("") }
     var recoveryPassword by remember(ui.activeWalletAddress, ui.activeWalletName) { mutableStateOf("") }
+    var viewKeyScope by remember(ui.activeWalletAddress, ui.activeWalletName) { mutableStateOf(ViewKeyScope.Incoming) }
     val hasVisibleSecrets = ui.revealedRecoveryPhrase != null || ui.revealedViewKey != null
 
     Panel(title = "Access", meta = "${ui.onboardingAutoLockMinutes} min") {
@@ -3853,6 +3855,48 @@ private fun SettingsSecurityPage(
             label = "Wallet password",
             modifier = Modifier.fillMaxWidth()
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ViewKeyScope.entries.forEach { scope ->
+                FilterChip(
+                    selected = viewKeyScope == scope,
+                    onClick = {
+                        viewKeyScope = scope
+                        appState.clearRevealedSecrets()
+                    },
+                    enabled = !ui.secretRevealBusy,
+                    label = { Text(scope.label) }
+                )
+            }
+        }
+        Text(viewKeyScope.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = {
+                    chooseEncryptedBackupFile(save = true)?.let { path ->
+                        appState.exportWalletBackup(ui.activeWalletAddress, path, recoveryPassword.toCharArray())
+                        recoveryPassword = ""
+                    }
+                },
+                enabled = recoveryPassword.isNotBlank() && !ui.walletBackupBusy && !ui.walletImportBusy
+            ) { Text(if (ui.walletBackupBusy) "Exporting..." else "Export encrypted backup") }
+            OutlinedButton(
+                onClick = {
+                    chooseEncryptedBackupFile(save = false)?.let { path ->
+                        appState.restoreWalletBackup(path, recoveryPassword.toCharArray(), "restored-${System.currentTimeMillis()}")
+                        recoveryPassword = ""
+                    }
+                },
+                enabled = recoveryPassword.isNotBlank() && !ui.walletBackupBusy && !ui.walletImportBusy
+            ) { Text(if (ui.walletImportBusy) "Restoring..." else "Restore encrypted backup") }
+        }
+        Text(
+            "Keep the backup file and its password somewhere safe. If this computer signs checkpoints, its encrypted node recovery is included automatically.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ui.walletBackupResult?.let { Text("Encrypted backup saved to ${it.path}") }
+        ui.walletImportResult?.let { Text("Encrypted backup restored as ${it.name}") }
+        ui.walletBackupError?.let { ErrorText(it) }
+        ui.walletImportError?.let { ErrorText(it) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 onClick = {
@@ -3871,7 +3915,7 @@ private fun SettingsSecurityPage(
             }
             Button(
                 onClick = {
-                    appState.revealViewKey(recoveryPassword.toCharArray())
+                    appState.revealViewKey(recoveryPassword.toCharArray(), viewKeyScope)
                     recoveryPassword = ""
                     notice = null
                 },
@@ -3922,13 +3966,10 @@ private fun SettingsSecurityPage(
         ui.revealedViewKey?.let { viewKey ->
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    KeyValueRow("Type", "view key")
-                    CopyableKeyValueRow("View key", viewKey)
+                    KeyValueRow("Type", ui.revealedViewKeyScope.label)
+                    CopyableKeyValueRow(ui.revealedViewKeyScope.label, viewKey)
                     Text(
-                        "Sees every payment and the balance of this wallet, here or in zokascan.cc/wallet, where it " +
-                            "is opened inside the browser. It cannot spend: spending needs the recovery phrase, " +
-                            "since a Zoka Quantic wallet has no separate spend key. Share it only as you would a " +
-                            "bank statement; it cannot be revoked.",
+                        ui.revealedViewKeyScope.description + " Share it only with someone you trust; it cannot be revoked.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -3936,6 +3977,17 @@ private fun SettingsSecurityPage(
             }
         }
         notice?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+private fun chooseEncryptedBackupFile(save: Boolean): String? {
+    val dialog = java.awt.FileDialog(null as java.awt.Frame?, if (save) "Export encrypted backup" else "Restore encrypted backup", if (save) java.awt.FileDialog.SAVE else java.awt.FileDialog.LOAD)
+    return try {
+        if (save) dialog.file = "zoka-encrypted-backup-${System.currentTimeMillis()}.json"
+        dialog.isVisible = true
+        dialog.file?.let { java.io.File(dialog.directory, it).absolutePath }
+    } finally {
+        dialog.dispose()
     }
 }
 

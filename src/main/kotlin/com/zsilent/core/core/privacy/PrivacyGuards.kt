@@ -7,6 +7,9 @@ object PrivacyGuards {
         "private_key",
         "spending_key",
         "view_key",
+        "zqview",
+        "zqtestview",
+        "zqregtestview",
         "password"
     )
 

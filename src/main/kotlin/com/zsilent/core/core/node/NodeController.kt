@@ -296,6 +296,7 @@ class NodeController(private val cli: ZokaCli) {
         }
         checkpointAuthorityDir(network)?.let { dir ->
             command += listOf("--authority", dir.absolutePath)
+            command += AuthoritySupport.protectionFlags()
             _logs.tryEmit(RuntimeLog("node", "Checkpoint authority keys found in ${dir.absolutePath}: this node signs the chain's checkpoints."))
         }
         val builder = cli.processBuilder(binary, command)
@@ -536,15 +537,6 @@ class NodeController(private val cli: ZokaCli) {
         checkpointAuthorityDir(network) != null
 
     private fun checkpointAuthorityDir(network: String): File? {
-        val configured = System.getenv("ZSILENT_CHECKPOINT_AUTHORITY_DIR")?.trim().orEmpty()
-        if (configured.equals("none", ignoreCase = true)) return null
-        val candidates = when {
-            configured.isNotBlank() -> listOf(File(configured))
-            network == "testnet" -> listOf(File(cli.dataRoot, ".zoka/quantic-testnet"), cli.networkDir(network))
-            else -> emptyList()
-        }
-        return candidates.firstOrNull {
-            File(it, "checkpoint-authority.key").isFile && File(it, "checkpoint-authority-mldsa.key").isFile
-        }
+        return AuthoritySupport.directory(cli, network)
     }
 }

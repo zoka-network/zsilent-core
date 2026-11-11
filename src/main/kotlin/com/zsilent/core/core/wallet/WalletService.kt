@@ -10,11 +10,17 @@ import com.zsilent.core.models.WalletHistoryEntry
 import com.zsilent.core.models.WalletListResponse
 import com.zsilent.core.models.WalletReceiveInfo
 import com.zsilent.core.services.ZokaCli
+import com.zsilent.core.core.node.AuthoritySupport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 import java.nio.file.Path
 
 data class WalletSummary(
@@ -278,8 +284,28 @@ class WalletService(private val cli: ZokaCli) {
         require(wallet.isNotBlank()) { "wallet is required" }
         require(outPath.isNotBlank()) { "backup path is required" }
         val normalizedPath = Path.of(outPath).toAbsolutePath().normalize().toString()
-        val reply: QwBackup = runJson(quanticArgs("backup", network) + select(wallet) + listOf("--out", normalizedPath), password)
-        WalletBackupResult(name = reply.name, address = wallet, path = reply.backup.ifBlank { normalizedPath })
+        val authority = AuthoritySupport.directory(cli, network)
+        if (authority == null) {
+            val reply: QwBackup = runJson(quanticArgs("backup", network) + select(wallet) + listOf("--out", normalizedPath), password)
+            return@withContext WalletBackupResult(name = reply.name, address = wallet, path = reply.backup.ifBlank { normalizedPath })
+        }
+        // One file to keep: authority recovery is independently encrypted with
+        // the already-confirmed backup password. No authority seed reaches Kotlin.
+        val staging = Files.createTempDirectory("zsilent-encrypted-backup-").toFile()
+        try {
+            val walletFile = File(staging, "wallet.json")
+            val authorityFile = File(staging, "authority.json")
+            val reply: QwBackup = runJson(quanticArgs("backup", network) + select(wallet) + listOf("--out", walletFile.path), password.copyOf())
+            authorityCommand("authority-backup", authority, network, authorityFile, password)
+            val walletJson = json.parseToJsonElement(walletFile.readText()).jsonObject
+            val bundle = JsonObject(walletJson + (AUTHORITY_BACKUP_FIELD to json.parseToJsonElement(authorityFile.readText())))
+            Files.writeString(Path.of(normalizedPath), bundle.toString(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+            WalletBackupResult(name = reply.name, address = wallet, path = normalizedPath)
+        } finally {
+            password.fill('\u0000')
+            staging.listFiles()?.forEach { it.delete() }
+            staging.delete()
+        }
     }
 
     suspend fun restoreEncryptedBackup(
@@ -291,11 +317,45 @@ class WalletService(private val cli: ZokaCli) {
         require(inPath.isNotBlank()) { "backup path is required" }
         val normalizedPath = Path.of(inPath).toAbsolutePath().normalize().toString()
         val name = importName?.trim()?.takeIf { it.isNotBlank() } ?: "restored"
-        val reply: QwCreated = runJson(
-            quanticArgs("import-backup", network) + listOf("--name", name, "--file", normalizedPath),
-            password
-        )
-        WalletImportResult(name = reply.name, address = reply.address, path = normalizedPath)
+        require(File(normalizedPath).length() <= 16 * 1024) { "Wallet backup is too large" }
+        val bundle = json.parseToJsonElement(File(normalizedPath).readText()).jsonObject
+        val embedded = bundle[AUTHORITY_BACKUP_FIELD]
+        val staging = if (embedded != null) Files.createTempFile("zsilent-encrypted-authority-", ".json").toFile() else null
+        // The node keeps an imported backup byte for byte as the wallet file.
+        // Hand it the wallet alone, so the authority's recovery never ends up
+        // inside a wallet, nor in the plain backups made from it later.
+        val walletOnly = if (embedded != null) Files.createTempFile("zsilent-encrypted-wallet-", ".json").toFile() else null
+        try {
+            val authority = AuthoritySupport.restoreDirectory(cli, network)
+            if (embedded != null && staging != null && walletOnly != null) {
+                staging.writeText(embedded.toString())
+                walletOnly.writeText(JsonObject(bundle - AUTHORITY_BACKUP_FIELD).toString())
+                authorityCommand("authority-restore", authority, network, staging, password, checkOnly = true)
+            }
+            val reply: QwCreated = runJson(
+                quanticArgs("import-backup", network) + listOf("--name", name, "--file", walletOnly?.path ?: normalizedPath),
+                password.copyOf()
+            )
+            if (staging != null) {
+                try {
+                    authorityCommand("authority-restore", authority, network, staging, password)
+                } catch (error: Exception) {
+                    throw IllegalStateException("Wallet restored, but checkpoint authority recovery failed. Keep this encrypted backup. ${error.message}")
+                }
+            }
+            WalletImportResult(name = reply.name, address = reply.address, path = normalizedPath)
+        } finally {
+            password.fill('\u0000')
+            staging?.delete()
+            walletOnly?.delete()
+        }
+    }
+
+    private fun authorityCommand(action: String, authority: File, network: String, file: File, password: CharArray, checkOnly: Boolean = false) {
+        val args = listOf("quantic-pq-node", action, "--authority", authority.absolutePath, "--network", network,
+            if (action == "authority-backup") "--out" else "--file", file.absolutePath) +
+            if (checkOnly) listOf("--check-only", "yes") else emptyList()
+        runCommand(args, null, mapOf("ZOKA_AUTHORITY_BACKUP_PASSWORD" to String(password)))
     }
 
     /**
@@ -327,12 +387,13 @@ class WalletService(private val cli: ZokaCli) {
     suspend fun exportViewKey(
         wallet: String,
         password: CharArray,
-        network: String = ZokaNetworkConfig.Network
+        network: String = ZokaNetworkConfig.Network,
+        scope: ViewKeyScope = ViewKeyScope.Incoming
     ): String = withContext(Dispatchers.IO) {
         require(wallet.isNotBlank()) { "wallet is required" }
-        val reply: QwShownViewKey = runJson(quanticArgs("show-view-key", network) + select(wallet), password)
+        val reply: QwShownViewKey = runJson(quanticArgs("show-view-key", network) + select(wallet) + scope.exportFlags(), password)
         require(reply.viewKey.isNotBlank()) { "this node does not export view keys; update ZSilent" }
-        reply.viewKey
+        scope.validateExport(reply.kind, reply.viewKey)
     }
 
     suspend fun changePassphrase(
@@ -426,6 +487,7 @@ class WalletService(private val cli: ZokaCli) {
     }
 
     private companion object {
+        private const val AUTHORITY_BACKUP_FIELD = "zsilent_checkpoint_authority_backup"
         const val PASSWORD_ENV = "ZSILENT_WALLET_PASSWORD"
         const val NEW_PASSWORD_ENV = "ZSILENT_NEW_WALLET_PASSWORD"
         const val PHRASE_ENV = "ZSILENT_RECOVERY_PHRASE"
@@ -532,7 +594,7 @@ private data class QwPhrase(val words: Int = QUANTIC_SEED_WORDS, @SerialName("re
 private data class QwShownPhrase(val name: String = "", @SerialName("recovery_phrase") val recoveryPhrase: String = "")
 
 @Serializable
-private data class QwShownViewKey(val name: String = "", @SerialName("view_key") val viewKey: String = "")
+private data class QwShownViewKey(val name: String = "", @SerialName("view_key") val viewKey: String = "", val kind: String = "")
 
 @Serializable
 private data class QwBackup(val name: String = "", val backup: String = "")

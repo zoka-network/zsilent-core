@@ -3,6 +3,7 @@ package com.zsilent.core.core.node
 import com.zsilent.core.config.ZokaNetworkConfig
 import com.zsilent.core.config.ZokaNetworkSettings
 import com.zsilent.core.core.wallet.WalletService
+import com.zsilent.core.core.wallet.ViewKeyScope
 import com.zsilent.core.rpc.ZokaRpcClient
 import com.zsilent.core.services.ZokaCli
 import kotlinx.coroutines.delay
@@ -83,7 +84,9 @@ class V2NodeWalletE2ETest {
 
                 // The view key: Quantic's watch-only key, which cannot spend.
                 val viewKey = wallets.exportViewKey(alice.address, password.toCharArray())
-                assertTrue(viewKey.startsWith("zqregtestview2"), viewKey)
+                assertTrue(viewKey.startsWith("zqregtestviewin2"))
+                val fullViewKey = wallets.exportViewKey(alice.address, password.toCharArray(), scope = ViewKeyScope.Full)
+                assertTrue(fullViewKey.startsWith("zqregtestview2"))
                 assertEquals(alice.recoveryPhrase, wallets.exportSecrets(alice.address, password.toCharArray()).mnemonic)
 
                 // La corta: el nodo no la conoce hasta que se publica.
