@@ -68,13 +68,16 @@ object ZokaNetworkConfig {
 
     // Desde la 3.0 ZSilent es solo de Zoka Quantic (decisión del 21/10/2026), y
     // desde la 4.0 de la red STARK v2: la testnet v2 reemplaza a la v1
-    // (decisión del 28/10/2026). `Network` es la palabra que se le pasa al
-    // nodo v2 (`quantic-pq-node serve --network`) y a `quantic-pq-wallet`.
+    // (decisión del 28/10/2026). El protocolo v3 (revisión del 10/11/2026)
+    // es una cadena nueva con los mismos programas: `zoka-quantic-testnet-v3`,
+    // en su propia carpeta; las wallets y el setup de la v2 pasan solos
+    // (`NetworkMigration`). `Network` es la palabra que se le pasa al nodo
+    // (`quantic-pq-node serve --network`) y a `quantic-pq-wallet`.
     const val ZENITH_CHAIN_ID = "zoka-mainnet-zenith-v1"
-    const val QUANTIC_TESTNET_CHAIN_ID = "zoka-quantic-testnet-v2"
+    const val QUANTIC_TESTNET_CHAIN_ID = "zoka-quantic-testnet-v3"
     /** Reservado: la mainnet v2 todavía no existe en el nodo. */
     const val QUANTIC_MAINNET_CHAIN_ID = "zoka-quantic-v2"
-    const val QUANTIC_REGTEST_CHAIN_ID = "zoka-quantic-regtest-v2"
+    const val QUANTIC_REGTEST_CHAIN_ID = "zoka-quantic-regtest-v3"
     private const val DEFAULT_CHAIN_ID = QUANTIC_TESTNET_CHAIN_ID
     private const val DEFAULT_NETWORK = "testnet"
     /** La API local del nodo v2 (`--api`), solo en loopback. */
@@ -198,7 +201,7 @@ object ZokaNetworkConfig {
      * No es la de la v1 (`.zoka/quantic-testnet`): las dos conviven.
      */
     fun dataDir(network: String = current.network): String =
-        ".zoka/quantic-${network.ifBlank { DEFAULT_NETWORK }}-v2"
+        ".zoka/quantic-${network.ifBlank { DEFAULT_NETWORK }}-v3"
 
     /**
      * El puerto P2P de la v1, que solo usan el servicio onion y los pares
@@ -298,10 +301,10 @@ object ZokaNetworkConfig {
             return File(configured).let { if (it.isAbsolute) it else File(projectRoot, configured) }
         }
         val network = envOrProperty("ZSILENT_NETWORK", "zsilent.network") ?: DEFAULT_NETWORK
-        // El manifiesto de la red v2 (`quantic-testnet-v2-network.v1.json` en el
+        // El manifiesto de la red v3 (`quantic-testnet-v3-network.v1.json` en el
         // repo del nodo). `testnet-network.v1.json` es el de la testnet de
         // Zenith: con su API en el puerto 3000, no se tiene que encontrar.
-        val name = "quantic-$network-v2-network.v1.json"
+        val name = "quantic-$network-v3-network.v1.json"
         return listOfNotNull(
             resourcesRoot?.let { File(it, "docs/$name") },
             resourcesRoot?.let { File(it, "config/$name") },

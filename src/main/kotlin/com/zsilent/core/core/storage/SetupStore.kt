@@ -31,16 +31,16 @@ class SetupStore(private val path: Path) {
 
     companion object {
         /**
-         * Cada red v2 tiene su propio setup (`setup-quantic-testnet-v2.json`):
-         * sus wallets no son las de la v1, así que el onboarding se hace de
-         * nuevo. El `setup.json` de la 3.0 queda como estaba, por si se vuelve.
+         * Cada red tiene su propio setup (`setup-quantic-testnet-v3.json`):
+         * de la v2 a la v3 lo copia `NetworkMigration` (las mismas wallets);
+         * de la v1 a la v2 el onboarding se hizo de nuevo.
          */
         fun default(network: String = ZokaNetworkConfig.Network): SetupStore {
             val base = System.getenv("APPDATA")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { Path.of(it, "ZSilent Core") }
                 ?: Path.of(System.getProperty("user.home"), ".zsilent-core")
-            return SetupStore(base.resolve("setup-quantic-${network.ifBlank { "testnet" }}-v2.json"))
+            return SetupStore(base.resolve("setup-quantic-${network.ifBlank { "testnet" }}-v3.json"))
         }
     }
 }

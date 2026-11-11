@@ -10,7 +10,13 @@ internal object AuthoritySupport {
         if (setting.equals("none", ignoreCase = true)) return null
         val candidates = when {
             setting.isNotBlank() -> listOf(File(setting))
-            network == "testnet" -> listOf(File(cli.dataRoot, ".zoka/quantic-testnet"), cli.networkDir(network))
+            // The v1 folder, this network's, and the v2 one: a restore there
+            // keeps signing on the v3 testnet (the same keys, nothing copied).
+            network == "testnet" -> listOf(
+                File(cli.dataRoot, ".zoka/quantic-testnet"),
+                cli.networkDir(network),
+                File(cli.dataRoot, ".zoka/quantic-testnet-v2")
+            )
             else -> emptyList()
         }
         // A partial restore must fail closed rather than silently stop signing.

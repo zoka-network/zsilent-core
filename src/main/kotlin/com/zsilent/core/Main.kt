@@ -44,6 +44,7 @@ import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.zsilent.core.config.ZokaNetworkConfig
+import com.zsilent.core.core.storage.NetworkMigration
 import com.zsilent.core.core.mining.MiningController
 import com.zsilent.core.core.node.NodeController
 import com.zsilent.core.rpc.ZokaRpcClient
@@ -100,6 +101,10 @@ private fun preferredWindowSizeDp(): Pair<androidx.compose.ui.unit.Dp, androidx.
 
 fun main() {
     val instanceLock = AppInstanceLock.acquire() ?: return
+    // La testnet v3 es una cadena nueva: las wallets y el setup de la v2 pasan
+    // solos, antes de que nada los lea. Si falla, queda el onboarding.
+    runCatching { NetworkMigration.fromV2(AppInstanceLock.dataRoot(), ZokaNetworkConfig.Network) }
+        .onFailure { System.err.println("ZSilent: v2 to v3 migration: ${it.message}") }
     application {
         val appState = rememberZSilentAppState()
         val (windowWidth, windowHeight) = remember { preferredWindowSizeDp() }
@@ -213,6 +218,8 @@ internal class AppInstanceLock(
                 throw error
             }
         }
+
+        fun dataRoot(): File = defaultDataRoot()
 
         private fun defaultDataRoot(): File {
             val appData = System.getenv("APPDATA")?.takeIf { it.isNotBlank() }

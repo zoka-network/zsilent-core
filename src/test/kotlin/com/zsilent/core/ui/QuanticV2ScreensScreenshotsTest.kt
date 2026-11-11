@@ -64,7 +64,7 @@ class QuanticV2ScreensScreenshotsTest {
             setupStore = SetupStore(File(home, "setup.json").toPath())
         )
         val status = V2Status(
-            chainId = "zoka-quantic-testnet-v2",
+            chainId = "zoka-quantic-testnet-v3",
             height = 1_284,
             tipTimestamp = 1_792_600_000L,
             issuedAtoms = 5_015_400_000_000L,

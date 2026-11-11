@@ -23,7 +23,7 @@ val zokaExe = nodeRepoRoot.file("target/release/zoka$binaryExt")
 val zokahdExe = nodeRepoRoot.file("target/release/zokahd$binaryExt")
 // Desde la 4.0 ZSilent es de la red STARK v2: se empaqueta el manifiesto de la
 // testnet v2 (el nodo trae el mismo compilado; la app solo lee su chain id).
-val networkManifest = nodeRepoRoot.file("docs/quantic-testnet-v2-network.v1.json")
+val networkManifest = nodeRepoRoot.file("docs/quantic-testnet-v3-network.v1.json")
 val trustedSetupDir = nodeRepoRoot.dir("trusted-setup")
 val packageResourcesRoot = layout.buildDirectory.dir("zsilent-package-resources")
 val torBundleDir = (findProperty("zsilent.torBundleDir") as String?)

@@ -11,17 +11,17 @@ class ZokaNetworkConfigDisplayTest {
     // STARK v2. El título es lo primero que se mira para saber si lo que hay en
     // pantalla es dinero: la testnet tiene que decir testnet.
     @Test
-    fun the_quantic_testnet_is_shown_as_a_testnet_and_runs_as_the_v2_testnet() {
+    fun the_quantic_testnet_is_shown_as_a_testnet_and_runs_as_the_v3_testnet() {
         val chainId = ZokaNetworkConfig.QUANTIC_TESTNET_CHAIN_ID
 
-        assertEquals("zoka-quantic-testnet-v2", chainId)
+        assertEquals("zoka-quantic-testnet-v3", chainId)
         assertEquals("Zoka Quantic · Testnet", ZokaNetworkConfig.displayName(chainId, "testnet"))
         assertEquals("quantic testnet", ZokaNetworkConfig.shortName(chainId, "testnet"))
         assertTrue(ZokaNetworkConfig.isTestnet(chainId, "testnet"))
         assertEquals("testnet", ZokaNetworkConfig.networkForChain(chainId))
         assertEquals("zqtest2", ZokaNetworkConfig.addressPrefix("testnet"))
-        // Su carpeta no es la de la v1 (`.zoka/quantic-testnet`): conviven.
-        assertEquals(".zoka/quantic-testnet-v2", ZokaNetworkConfig.dataDir("testnet"))
+        // Su carpeta no es la de la v1 ni la de la v2: conviven.
+        assertEquals(".zoka/quantic-testnet-v3", ZokaNetworkConfig.dataDir("testnet"))
     }
 
     @Test
@@ -43,9 +43,9 @@ class ZokaNetworkConfigDisplayTest {
         val root = kotlin.io.path.createTempDirectory("zsilent-manifest").toFile()
         try {
             java.io.File(root, "docs").mkdirs()
-            java.io.File(root, "docs/quantic-testnet-v2-network.v1.json").writeText(
+            java.io.File(root, "docs/quantic-testnet-v3-network.v1.json").writeText(
                 """{"schema":"zoka-quantic-stark-network-v1","status":"active",""" +
-                    """"chain_id":"zoka-quantic-testnet-v2","seed_nodes":[]}"""
+                    """"chain_id":"zoka-quantic-testnet-v3","seed_nodes":[]}"""
             )
             assertEquals("http://127.0.0.1:9140", ZokaNetworkConfig.load(root).localRpcUrl)
         } finally {
