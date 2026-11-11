@@ -196,6 +196,9 @@ data class ZokaCli(
          * clients always operate on the same .zoka/<network> tree, regardless
          * of where the user launches them from.
          */
+        /** La carpeta de Zoka donde están `.zoka/<red>` (wallets y nodo). */
+        fun homeDir(): File = defaultDataRoot()
+
         private fun defaultDataRoot(): File {
             System.getenv("ZOKA_HOME")?.takeIf { it.isNotBlank() }?.let { return File(it) }
             val osName = System.getProperty("os.name").orEmpty().lowercase()

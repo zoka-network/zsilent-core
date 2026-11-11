@@ -103,7 +103,7 @@ fun main() {
     val instanceLock = AppInstanceLock.acquire() ?: return
     // La testnet v3 es una cadena nueva: las wallets y el setup de la v2 pasan
     // solos, antes de que nada los lea. Si falla, queda el onboarding.
-    runCatching { NetworkMigration.fromV2(AppInstanceLock.dataRoot(), ZokaNetworkConfig.Network) }
+    runCatching { NetworkMigration.fromV2(ZokaCli.homeDir(), AppInstanceLock.dataRoot(), ZokaNetworkConfig.Network) }
         .onFailure { System.err.println("ZSilent: v2 to v3 migration: ${it.message}") }
     application {
         val appState = rememberZSilentAppState()

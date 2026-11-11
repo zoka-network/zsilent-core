@@ -13,16 +13,17 @@ object NetworkMigration {
     private const val MARKER = "migrated-from-v2"
 
     /**
-     * Copia una sola vez de la v2 a la v3 lo que la v3 todavía no tiene, en
-     * `dataRoot` (la carpeta de ZSilent Core, donde están `.zoka/` y los
-     * setups), y lo marca. Devuelve lo que copió. Un corte a mitad se retoma
-     * en el arranque siguiente, con los archivos que falten; después de la
-     * marca no se copia nada más, así una wallet borrada en la v3 no vuelve.
+     * Copia una sola vez de la v2 a la v3 lo que la v3 todavía no tiene y lo
+     * marca. `zokaHome` es la carpeta de Zoka (`%APPDATA%\Zoka`, donde están
+     * `.zoka/<red>`) y `setupRoot` la de ZSilent Core, donde están los setups.
+     * Devuelve lo que copió. Un corte a mitad se retoma en el arranque
+     * siguiente, con los archivos que falten; después de la marca no se copia
+     * nada más, así una wallet borrada en la v3 no vuelve.
      */
-    fun fromV2(dataRoot: File, network: String): List<String> {
+    fun fromV2(zokaHome: File, setupRoot: File, network: String): List<String> {
         val net = network.ifBlank { "testnet" }
-        val old = File(dataRoot, ".zoka/quantic-$net-v2")
-        val new = File(dataRoot, ".zoka/quantic-$net-v3")
+        val old = File(zokaHome, ".zoka/quantic-$net-v2")
+        val new = File(zokaHome, ".zoka/quantic-$net-v3")
         val marker = File(new, MARKER)
         if (marker.exists()) return emptyList()
         val copied = mutableListOf<String>()
@@ -43,8 +44,8 @@ object NetworkMigration {
                 }
             }
         }
-        val setupOld = File(dataRoot, "setup-quantic-$net-v2.json")
-        val setupNew = File(dataRoot, "setup-quantic-$net-v3.json")
+        val setupOld = File(setupRoot, "setup-quantic-$net-v2.json")
+        val setupNew = File(setupRoot, "setup-quantic-$net-v3.json")
         if (setupOld.isFile && !setupNew.exists()) {
             setupOld.copyTo(setupNew)
             copied += setupNew.name
