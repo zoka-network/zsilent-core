@@ -134,6 +134,50 @@ class WalletService(private val cli: ZokaCli) {
         reply.shortAddress
     }
 
+    /**
+     * Las direcciones de la wallet, la principal primero (punto 4 de la
+     * revisión del 10/11): todas son de la misma frase, y quienes pagan a dos
+     * distintas no pueden saber que pagaron a la misma wallet.
+     */
+    suspend fun receiveAddresses(
+        wallet: String,
+        password: CharArray,
+        network: String = ZokaNetworkConfig.Network
+    ): List<ReceiveAddress> = withContext(Dispatchers.IO) {
+        require(wallet.isNotBlank()) { "wallet is required" }
+        val reply: QwAddresses = runJson(quanticArgs("addresses", network) + select(wallet), password)
+        reply.addresses.map { ReceiveAddress(it.index, it.shortAddress, it.address) }
+    }
+
+    /**
+     * Una dirección más, hasta ocho. El nodo la publica enseguida para que la
+     * corta sirva; si está apagado, queda para [publishAddressAt].
+     */
+    suspend fun newReceiveAddress(
+        wallet: String,
+        password: CharArray,
+        network: String = ZokaNetworkConfig.Network
+    ): Pair<ReceiveAddress, Boolean> = withContext(Dispatchers.IO) {
+        require(wallet.isNotBlank()) { "wallet is required" }
+        val reply: QwNewAddress = runJson(quanticArgs("new-address", network) + select(wallet), password)
+        ReceiveAddress(reply.index, reply.shortAddress, reply.address) to reply.published
+    }
+
+    /** Vuelve a publicar la dirección número `index` (0 es la principal). */
+    suspend fun publishAddressAt(
+        wallet: String,
+        index: Int,
+        password: CharArray,
+        network: String = ZokaNetworkConfig.Network
+    ): String = withContext(Dispatchers.IO) {
+        require(wallet.isNotBlank()) { "wallet is required" }
+        val reply: QwPublished = runJson(
+            quanticArgs("publish-address", network) + select(wallet) + listOf("--index", index.toString()),
+            password
+        )
+        reply.shortAddress
+    }
+
     suspend fun balance(
         wallet: String,
         password: CharArray,
@@ -516,6 +560,28 @@ private data class QwListEntry(
 
 @Serializable
 private data class QwPublished(@SerialName("short_address") val shortAddress: String = "")
+
+/** Una dirección de la wallet: `index` 0 es la principal. */
+data class ReceiveAddress(val index: Int, val shortAddress: String, val address: String)
+
+@Serializable
+private data class QwAddressEntry(
+    val index: Int = 0,
+    val address: String = "",
+    @SerialName("short_address") val shortAddress: String = ""
+)
+
+@Serializable
+private data class QwAddresses(val name: String = "", val addresses: List<QwAddressEntry> = emptyList())
+
+@Serializable
+private data class QwNewAddress(
+    val name: String = "",
+    val index: Int = 0,
+    val address: String = "",
+    @SerialName("short_address") val shortAddress: String = "",
+    val published: Boolean = false
+)
 
 @Serializable
 private data class QwList(val network: String = "", val details: List<QwListEntry> = emptyList())

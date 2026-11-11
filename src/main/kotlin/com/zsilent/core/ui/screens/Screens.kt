@@ -1680,8 +1680,61 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
                 }
             }
         }
+        MoreAddressesPanel(ui, appState)
     }
 }
+
+/**
+ * Más direcciones de la misma wallet (punto 4 de la revisión del 10/11): a
+ * cada persona que paga, otra dirección, y no pueden saber que pagaron a la
+ * misma wallet. Todo entra en el mismo saldo.
+ */
+@Composable
+private fun MoreAddressesPanel(ui: ZSilentUiState, appState: ZSilentAppState) {
+    val wallet = ui.activeWalletAddress
+    if (wallet.isBlank()) return
+    LaunchedEffect(wallet, ui.sessionUnlocked) {
+        if (ui.sessionUnlocked) appState.refreshReceiveAddresses()
+    }
+    val extra = if (ui.receiveAddressesWallet == wallet) ui.receiveAddresses.filter { it.index > 0 } else emptyList()
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Panel(title = "More addresses", meta = "${extra.size} of $MAX_EXTRA_ADDRESSES") {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "Give a different address to each person who pays you: they cannot tell they paid the same wallet. " +
+                    "Everything arrives in this balance.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            extra.forEach { address ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("#${address.index}", style = MaterialTheme.typography.labelMedium, color = muted)
+                    MonoText(address.shortAddress, maxLines = 1)
+                    CopyIconButton(address.shortAddress)
+                    TextButton(onClick = { appState.publishReceiveAddress(address.index) }, enabled = !ui.receiveAddressBusy) {
+                        Text("Publish again")
+                    }
+                }
+            }
+            if (!ui.sessionUnlocked) {
+                Text("Unlock the wallet to see or add addresses.", style = MaterialTheme.typography.bodySmall, color = muted)
+            }
+            OutlinedButton(
+                colors = zOutlinedButtonColors(),
+                onClick = { appState.createReceiveAddress() },
+                enabled = ui.sessionUnlocked && !ui.receiveAddressBusy && extra.size < MAX_EXTRA_ADDRESSES
+            ) { Text(if (ui.receiveAddressBusy) "Working…" else "New address") }
+            Text(
+                "Create it before giving it out: payments to it are found from then on. ZSilent publishes it so its short form works.",
+                style = MaterialTheme.typography.bodySmall,
+                color = muted
+            )
+            ui.receiveAddressError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+/** Además de la principal: el motor admite ocho por wallet. */
+private const val MAX_EXTRA_ADDRESSES = 7
 
 @Composable
 fun NodeScreen(ui: ZSilentUiState, appState: ZSilentAppState) {

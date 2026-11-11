@@ -150,6 +150,14 @@ data class ZSilentUiState(
      */
     val activeShortAddressPublished: Boolean? = null,
     val addressPublishBusy: Boolean = false,
+    /**
+     * Las direcciones de la wallet activa, la principal primero (punto 4 de la
+     * revisión del 10/11). Vacía hasta que se leen con la wallet abierta.
+     */
+    val receiveAddresses: List<com.zsilent.core.core.wallet.ReceiveAddress> = emptyList(),
+    val receiveAddressesWallet: String = "",
+    val receiveAddressBusy: Boolean = false,
+    val receiveAddressError: String? = null,
     val walletBalance: WalletBalance? = null,
     val walletHistory: WalletHistory = WalletHistory(),
     val walletBusy: Boolean = false,
@@ -3294,6 +3302,86 @@ class ZSilentAppState(
         if (lower.contains("batch error") || lower.contains("task join error")) {
             val message = line.substringAfter(":", line).trim().ifBlank { line }
             update { it.copy(miningDiagnostic = message) }
+        }
+    }
+
+    /** Lee las direcciones de la wallet activa (necesita la wallet abierta). */
+    fun refreshReceiveAddresses() {
+        val wallet = _uiState.value.activeWalletAddress
+        val password = copySessionPassword() ?: return
+        if (wallet.isBlank()) {
+            password.fill('\u0000')
+            return
+        }
+        scope.launch {
+            val result = try {
+                runCatching { walletService.receiveAddresses(wallet, password) }
+            } finally {
+                password.fill('\u0000')
+            }
+            update {
+                if (it.activeWalletAddress != wallet) return@update it
+                result.fold(
+                    onSuccess = { list -> it.copy(receiveAddresses = list, receiveAddressesWallet = wallet, receiveAddressError = null) },
+                    onFailure = { error -> it.copy(receiveAddressError = safeLogMessage(error)) }
+                )
+            }
+        }
+    }
+
+    /**
+     * Una dirección más para la wallet activa. El nodo la publica enseguida;
+     * si no estaba encendido, se vuelve a intentar al leer la lista.
+     */
+    fun createReceiveAddress() {
+        val snapshot = _uiState.value
+        val wallet = snapshot.activeWalletAddress
+        if (wallet.isBlank() || snapshot.receiveAddressBusy) return
+        val password = copySessionPassword() ?: run {
+            update { it.copy(receiveAddressError = "Unlock the wallet to add an address.") }
+            return
+        }
+        update { it.copy(receiveAddressBusy = true, receiveAddressError = null) }
+        scope.launch {
+            val result = try {
+                runCatching { walletService.newReceiveAddress(wallet, password) }
+            } finally {
+                password.fill('\u0000')
+            }
+            result.onSuccess { (address, published) ->
+                appendLog(RuntimeLog("wallet", "New receive address ${address.index}${if (published) ", published" else ""}"))
+            }
+            update {
+                it.copy(
+                    receiveAddressBusy = false,
+                    receiveAddressError = result.exceptionOrNull()?.let(::safeLogMessage)
+                )
+            }
+            refreshReceiveAddresses()
+        }
+    }
+
+    /** Vuelve a publicar la dirección `index`, para que su corta sirva. */
+    fun publishReceiveAddress(index: Int) {
+        val wallet = _uiState.value.activeWalletAddress
+        val password = copySessionPassword() ?: return
+        if (wallet.isBlank()) {
+            password.fill('\u0000')
+            return
+        }
+        update { it.copy(receiveAddressBusy = true, receiveAddressError = null) }
+        scope.launch {
+            val result = try {
+                runCatching { walletService.publishAddressAt(wallet, index, password) }
+            } finally {
+                password.fill('\u0000')
+            }
+            update {
+                it.copy(
+                    receiveAddressBusy = false,
+                    receiveAddressError = result.exceptionOrNull()?.let(::safeLogMessage)
+                )
+            }
         }
     }
 
