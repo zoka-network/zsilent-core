@@ -102,7 +102,7 @@ New-Item -ItemType Directory -Path $probeHome | Out-Null
 $previousZokaHome = $env:ZOKA_HOME
 $env:ZOKA_HOME = $probeHome
 try {
-    $probe = (& $zokaExe quantic-pq-wallet list --network testnet --dir (Join-Path $probeHome "quantic-testnet-v2") --json 2>&1 | Out-String)
+    $probe = (& $zokaExe quantic-pq-wallet list --network testnet --dir (Join-Path $probeHome "quantic-testnet-v3") --json 2>&1 | Out-String)
     $probeExit = $LASTEXITCODE
 } finally {
     $env:ZOKA_HOME = $previousZokaHome
@@ -111,7 +111,7 @@ if ($probeExit -ne 0 -or $probe -notmatch '"wallets"') {
     throw "zoka.exe was built without the Zoka Quantic v2 wallet. Rebuild with: cargo build --release --features randomx,quantic-pq --bins"
 }
 
-$networkManifest = Join-Path $NodeRepoRoot "docs\quantic-testnet-v2-network.v1.json"
+$networkManifest = Join-Path $NodeRepoRoot "docs\quantic-testnet-v3-network.v1.json"
 $trustedSetupDir = Join-Path $NodeRepoRoot "trusted-setup"
 $requiredSetup = @("DIGEST", "balance.params", "merkle.params", "nullifier.params", "private_tx.params")
 foreach ($name in $requiredSetup) {
