@@ -13,7 +13,9 @@ data class ZokaCli(
     val dataRoot: File
 ) {
     private val expectedTrustedSetupDigest = "219fdb5d5e47e115ca899d13a6de284df03c86eaaef05eb4ff4adb395cfb0d8e"
-    private val commandMutex = ReentrantLock()
+    // Justo (fair): quien espera primero pasa primero. Sin eso, un envío que
+    // espera el candado podía quedar atrás de lecturas pedidas después.
+    private val commandMutex = ReentrantLock(true)
 
     val ready: Boolean = zoka?.exists() == true && zokahd?.exists() == true
     val workDir: File

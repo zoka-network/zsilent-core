@@ -61,6 +61,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class ZSilentUiState(
     val onboardingComplete: Boolean = false,
@@ -257,6 +258,10 @@ data class ZSilentUiState(
 // Keep this small: mining far behind the head only wastes CPU on blocks
 // that will be orphaned.
 private const val MINING_SYNC_TOLERANCE_BLOCKS = 2L
+/** Sin bloques nuevos, el saldo se vuelve a leer igual cada tanto. */
+private const val WALLET_REFRESH_FALLBACK_MS = 5 * 60_000L
+/** Entre dos lecturas automáticas, aunque entren bloques seguidos al sincronizar. */
+private const val WALLET_REFRESH_MIN_GAP_MS = 20_000L
 
 // La identidad de iroh que mostraba la v1 era la de las instantáneas de su
 // nodo (`zoka iroh-id`); el nodo v2 tiene otra, la de su descriptor.
@@ -304,6 +309,16 @@ class ZSilentAppState(
     @Volatile private var blockPushInProgress = false
     private var lastPushedRemoteHeight = 0L
     private var lastBalanceRefreshMillis = 0L
+    // Saldo e historial, de a una lectura por vez. El 25/11/2026 cada una
+    // tardaba ~30 s con la testnet a la altura 9.741, y lanzar una cada 30 s
+    // sin esperar a la anterior apilaba una cola que no se vaciaba nunca: un
+    // envío esperaba detrás de toda la cola (unos 6 minutos). Una pedida
+    // mientras otra corre queda anotada y se hace una sola vez al terminar.
+    private val walletRefreshRunning = AtomicBoolean(false)
+    @Volatile private var walletRefreshQueued = false
+    // La altura de la última lectura automática: se vuelve a leer cuando entra
+    // un bloque, que es cuando el saldo puede cambiar.
+    private var lastBalanceRefreshHeight = -1L
 
     fun start() {
         val staleProcesses = ZokaProcessKiller.terminateManagedZokaProcesses(cli)
@@ -1926,7 +1941,7 @@ class ZSilentAppState(
                         sendResult = result,
                         sendError = null,
                         // Keep wallet UNLOCKED — session password stays in memory.
-                        // Balance will refresh automatically on next pollRpc cycle.
+                        // El saldo se vuelve a leer acá abajo, con el pago reservado.
                         walletBalance = null,
                         walletHistory = WalletHistory(wallet = it.activeWalletName)
                     )
@@ -1934,6 +1949,8 @@ class ZSilentAppState(
                 // Refresh with session password so wallet stays visible immediately
                 val pwd = copySessionPassword()
                 if (pwd != null) refreshWallets(pwd) else refreshWallets()
+                pwd?.fill('\u0000')
+                refreshActiveWalletFromSession()
             }.onFailure { error ->
                 appendLog(RuntimeLog("send", "Private transfer failed: ${safeLogMessage(error)}"))
                 update {
@@ -2758,11 +2775,17 @@ class ZSilentAppState(
         }
         // Refresh balance whenever the local node is online — runs even when
         // the remote RPC is offline so mining rewards appear without restarting.
+        // Solo con un bloque nuevo (o cada 5 min, por las dudas), nunca con otra
+        // lectura en curso ni durante un envío: el envío usa el mismo candado.
         val balRefNow = System.currentTimeMillis()
         val balRefSnap = _uiState.value
-        if (!balRefSnap.walletLocked && !balRefSnap.walletBusy && localRpcOnline &&
-            balRefNow - lastBalanceRefreshMillis > 30_000L) {
+        val balRefNewBlock = localHeight != lastBalanceRefreshHeight
+        val balRefStale = balRefNow - lastBalanceRefreshMillis > WALLET_REFRESH_FALLBACK_MS
+        if (!balRefSnap.walletLocked && !balRefSnap.walletBusy && !balRefSnap.sendBusy && localRpcOnline &&
+            !walletRefreshRunning.get() && (balRefNewBlock || balRefStale) &&
+            balRefNow - lastBalanceRefreshMillis > WALLET_REFRESH_MIN_GAP_MS) {
             lastBalanceRefreshMillis = balRefNow
+            lastBalanceRefreshHeight = localHeight
             val balRefPwd = copySessionPassword()
             if (balRefPwd != null && balRefPwd.isNotEmpty()) {
                 val addr = balRefSnap.activeWalletAddress.ifBlank { balRefSnap.activeWalletName }
@@ -3173,13 +3196,60 @@ class ZSilentAppState(
         balancePassword: CharArray,
         historyPassword: CharArray
     ) {
+        if (!walletRefreshRunning.compareAndSet(false, true)) {
+            // Ya hay una lectura en curso: esta queda pedida para cuando
+            // termine, con la wallet activa de ese momento.
+            walletRefreshQueued = true
+            balancePassword.fill('\u0000')
+            historyPassword.fill('\u0000')
+            return
+        }
         scope.launch {
+            try {
+                runWalletRefresh(walletAddress, walletLabel, balancePassword, historyPassword)
+            } finally {
+                balancePassword.fill('\u0000')
+                historyPassword.fill('\u0000')
+                walletRefreshRunning.set(false)
+                if (walletRefreshQueued) {
+                    walletRefreshQueued = false
+                    refreshActiveWalletFromSession()
+                }
+            }
+        }
+    }
+
+    /** Una lectura de la wallet activa con la contraseña de la sesión, si la hay. */
+    private fun refreshActiveWalletFromSession() {
+        val snapshot = _uiState.value
+        if (snapshot.walletLocked) return
+        val password = copySessionPassword() ?: return
+        try {
+            if (password.isEmpty()) return
+            val address = snapshot.activeWalletAddress.ifBlank { snapshot.activeWalletName }
+            refreshUnlockedWalletData(address, snapshot.activeWalletName, password.copyOf(), password.copyOf())
+        } finally {
+            password.fill('\u0000')
+        }
+    }
+
+    private suspend fun runWalletRefresh(
+        walletAddress: String,
+        walletLabel: String,
+        balancePassword: CharArray,
+        historyPassword: CharArray
+    ) {
+        run {
             runCatching {
                 val walletSelector = walletAddress.ifBlank { walletLabel }
                 val balance = walletService.balance(walletSelector, balancePassword)
-                val history = walletService.history(walletSelector, historyPassword)
+                // Un envío pedido mientras se leía el saldo pasa antes que el
+                // historial: el historial se lee en la próxima vuelta.
+                val history = if (_uiState.value.sendBusy) null
+                else walletService.history(walletSelector, historyPassword)
                 balance to history
-            }.onSuccess { (balance, history) ->
+            }.onSuccess { (balance, fresh) ->
+                val history = fresh ?: _uiState.value.walletHistory
                 update {
                     // Guard against a stale in-flight request: this fetch was
                     // issued for `walletAddress`, but the user may have since
