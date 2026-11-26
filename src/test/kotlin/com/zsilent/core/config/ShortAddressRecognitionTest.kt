@@ -55,3 +55,20 @@ class ShortAddressQrSizeTest {
         assertTrue(matrix.width - 2 * margin <= 33, "${matrix.width - 2 * margin} modules")
     }
 }
+
+class IntegratedAddressRecognitionTest {
+    // El vector fijo del nodo (`crates/zoka-pq-pool`, integrated.rs): la corta
+    // de la semilla de prueba 2 de testnet con el código de cliente 42.
+    private val integrated = "zqtesti23jYjdoHfKWvz5DDUPwYYXACN7eAWX8qdEVQRw5uAGAeCskj7rGtZtrKFb16E2"
+
+    @Test
+    fun an_integrated_address_is_a_recipient_but_neither_short_nor_full() {
+        assertTrue(ZokaNetworkConfig.isIntegratedAddress(integrated))
+        assertTrue(ZokaNetworkConfig.isRecipient(integrated))
+        assertFalse(ZokaNetworkConfig.isShortAddress(integrated))
+        assertFalse(ZokaNetworkConfig.isAddress(integrated))
+        assertFalse(ZokaNetworkConfig.isIntegratedAddress(integrated.replace("zqtesti2", "zqi2")), "another network's prefix")
+        assertFalse(ZokaNetworkConfig.isIntegratedAddress(integrated.replace('j', '0')), "0 is not Base58")
+        assertFalse(ZokaNetworkConfig.isIntegratedAddress(integrated + "zzzz"), "too long")
+    }
+}

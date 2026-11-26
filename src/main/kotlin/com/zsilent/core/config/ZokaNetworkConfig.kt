@@ -257,8 +257,34 @@ object ZokaNetworkConfig {
         return trimmed.startsWith(AddressPrefix) && body.length in 49..51 && body.all { it in BASE58 }
     }
 
-    /** A quién se le puede mandar: una completa, o una corta que resuelve el nodo. */
-    fun isRecipient(text: String): Boolean = isAddress(text) || isShortAddress(text)
+    /** Cómo empiezan las direcciones integradas (de depósito de un exchange). */
+    fun integratedPrefix(network: String): String = when (network.ifBlank { DEFAULT_NETWORK }) {
+        "mainnet" -> "zqi2"
+        "regtest" -> "zqregtesti2"
+        else -> "zqtesti2"
+    }
+
+    /**
+     * Si `text` parece una dirección integrada de esta red: la corta de un
+     * exchange más el código de un cliente (unos 70 caracteres). El nodo la
+     * resuelve como una corta y pone el código en el memo del pago.
+     */
+    fun isIntegratedAddress(text: String): Boolean {
+        val trimmed = text.trim()
+        val prefix = integratedPrefix(current.network)
+        val body = trimmed.removePrefix(prefix)
+        return trimmed.startsWith(prefix) && body.length in 58..64 && body.all { it in BASE58 }
+    }
+
+    /**
+     * Lo que ocupa en el memo el código de una dirección integrada
+     * (`zoka-tag:` + hasta 20 dígitos + el salto de línea): el resto queda
+     * para el memo de quien paga.
+     */
+    const val IntegratedMemoOverhead = 30
+
+    /** A quién se le puede mandar: una completa, una corta o una integrada, que resuelve el nodo. */
+    fun isRecipient(text: String): Boolean = isAddress(text) || isShortAddress(text) || isIntegratedAddress(text)
 
     private const val BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 

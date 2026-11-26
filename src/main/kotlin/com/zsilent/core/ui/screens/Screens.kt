@@ -1218,9 +1218,15 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
     // El filtro rápido; el nodo valida la dirección entera (checksum y red) al
     // enviar. Una corta la resuelve el nodo y la comprueba contra su resumen.
     val recipientLooksValid = com.zsilent.core.config.ZokaNetworkConfig.isRecipient(address)
-    // El memo viaja cifrado con la nota: solo lo lee quien recibe. Hasta 512 bytes.
+    // El memo viaja cifrado con la nota: solo lo lee quien recibe. Hasta 512
+    // bytes; a una dirección integrada, el código del cliente ocupa una parte.
     val memoBytes = memo.toByteArray(Charsets.UTF_8).size
-    val memoLooksValid = memoBytes <= 512
+    val memoLimit = if (com.zsilent.core.config.ZokaNetworkConfig.isIntegratedAddress(address)) {
+        512 - com.zsilent.core.config.ZokaNetworkConfig.IntegratedMemoOverhead
+    } else {
+        512
+    }
+    val memoLooksValid = memoBytes <= memoLimit
     val amountLooksValid    = amount.toDoubleOrNull()?.let { it > 0.0 } == true
     val selectedWallet      = ui.wallets.firstOrNull { it.address == fromWallet }
     val fromLooksValid      = ui.wallets.any { it.address == fromWallet }
@@ -1408,7 +1414,7 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                     OutlinedTextField(
                         value = memo, onValueChange = { memo = it },
                         label = { Text("Memo (optional)") },
-                        supportingText = { Text("Only the recipient can read it · $memoBytes / 512 bytes", fontSize = 11.sp) },
+                        supportingText = { Text("Only the recipient can read it · $memoBytes / $memoLimit bytes", fontSize = 11.sp) },
                         isError = !memoLooksValid,
                         colors = zFieldColors(), shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth(),
