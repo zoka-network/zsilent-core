@@ -1215,6 +1215,12 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
     // El filtro rápido; el nodo valida la dirección entera (checksum y red) al
     // enviar. Una corta la resuelve el nodo y la comprueba contra su resumen.
     val recipientLooksValid = com.zsilent.core.config.ZokaNetworkConfig.isRecipient(address)
+    // La corta del destinatario, para su Zoka ID en la revisión (docs/ZOKA-ID.md).
+    var recipientShort by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(reviewOpen, address) {
+        recipientShort = null
+        if (reviewOpen && recipientLooksValid) recipientShort = appState.recipientShortAddress(address)
+    }
     // El memo viaja cifrado con la nota: solo lo lee quien recibe. Hasta 512
     // bytes; a una dirección integrada, el código del cliente ocupa una parte.
     val memoBytes = memo.toByteArray(Charsets.UTF_8).size
@@ -1280,6 +1286,14 @@ fun SendScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boolean 
                     com.zsilent.core.ui.onboarding.NoirKeyValue("Recipient", "${address.take(16)}…${address.takeLast(8)}", mono = true)
                     if (memo.isNotBlank()) com.zsilent.core.ui.onboarding.NoirKeyValue("Memo", memo.take(60) + if (memo.length > 60) "…" else "")
                     com.zsilent.core.ui.onboarding.NoirKeyValue("Privacy", "zero-knowledge · post-quantum envelopes · keys never leave device")
+                }
+                recipientShort?.let {
+                    com.zsilent.core.ui.components.ZokaIdView(it, label = "Recipient's Zoka ID", size = 44.dp)
+                    Text(
+                        "Ask the recipient for their code and compare it before you send.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 ui.sendError?.let { ErrorText(it) }
                 PasswordField(password, { password = it }, "Wallet password to sign", Modifier.fillMaxWidth())
@@ -1656,6 +1670,12 @@ fun ReceiveScreen(ui: ZSilentUiState, appState: ZSilentAppState, embedded: Boole
                             Text("Short address", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             MonoText(shortAddress, maxLines = 2)
                             CopyIconButton(shortAddress)
+                            com.zsilent.core.ui.components.ZokaIdView(shortAddress, size = 44.dp)
+                            Text(
+                                "The payer's wallet shows this code before sending: read it to them to confirm it is you.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Text(
                                 when (ui.activeShortAddressPublished) {
                                     true -> "Published: other wallets can pay this address."
@@ -1711,7 +1731,13 @@ private fun MoreAddressesPanel(ui: ZSilentUiState, appState: ZSilentAppState) {
             extra.forEach { address ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("#${address.index}", style = MaterialTheme.typography.labelMedium, color = muted)
+                    com.zsilent.core.ui.components.ZokaIdMosaic(address.shortAddress, size = 28.dp)
                     MonoText(address.shortAddress, maxLines = 1)
+                    Text(
+                        com.zsilent.core.ui.components.ZokaId.code(address.shortAddress).orEmpty(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = muted
+                    )
                     CopyIconButton(address.shortAddress)
                     TextButton(onClick = { appState.publishReceiveAddress(address.index) }, enabled = !ui.receiveAddressBusy) {
                         Text("Publish again")

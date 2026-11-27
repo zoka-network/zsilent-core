@@ -459,6 +459,21 @@ class WalletService(private val cli: ZokaCli) {
         }
     }
 
+    /**
+     * La forma corta canónica de una dirección completa, corta o de un
+     * exchange, sin abrir ninguna wallet: de ella sale el Zoka ID del
+     * destinatario (docs/ZOKA-ID.md del nodo). Null si no es una dirección.
+     */
+    suspend fun shortAddressOf(text: String, network: String = ZokaNetworkConfig.Network): String? =
+        withContext(Dispatchers.IO) {
+            val trimmed = text.trim()
+            if (trimmed.isEmpty()) return@withContext null
+            runCatching {
+                val reply: QwParsedAddress = runJson(quanticArgs("parse-address", network) + listOf("--address", trimmed), null)
+                reply.shortAddress?.takeIf { reply.valid && it.isNotBlank() }
+            }.getOrNull()
+        }
+
     private fun quanticArgs(action: String, network: String): List<String> = buildList {
         val chosen = network.ifBlank { ZokaNetworkConfig.Network }
         add("quantic-pq-wallet")
@@ -658,6 +673,13 @@ private data class QwPhrase(val words: Int = QUANTIC_SEED_WORDS, @SerialName("re
 
 @Serializable
 private data class QwShownPhrase(val name: String = "", @SerialName("recovery_phrase") val recoveryPhrase: String = "")
+
+@Serializable
+private data class QwParsedAddress(
+    val valid: Boolean = false,
+    val kind: String? = null,
+    @SerialName("short_address") val shortAddress: String? = null,
+)
 
 @Serializable
 private data class QwShownViewKey(val name: String = "", @SerialName("view_key") val viewKey: String = "", val kind: String = "")

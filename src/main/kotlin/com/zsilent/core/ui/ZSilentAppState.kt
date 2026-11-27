@@ -3400,6 +3400,12 @@ class ZSilentAppState(
     }
 
     /**
+     * La forma corta canónica de un destinatario (completa, corta o de un
+     * exchange), para mostrar su Zoka ID en la revisión del pago.
+     */
+    suspend fun recipientShortAddress(text: String): String? = walletService.shortAddressOf(text)
+
+    /**
      * Una dirección más para la wallet activa. El nodo la publica enseguida;
      * si no estaba encendido, se vuelve a intentar al leer la lista.
      */
