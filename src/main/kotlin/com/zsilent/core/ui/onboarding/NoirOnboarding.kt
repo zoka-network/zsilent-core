@@ -931,38 +931,18 @@ fun WalletChoiceStepNoir(ui: ZSilentUiState, appState: ZSilentAppState) {
             )
             ChoiceCard(
                 title = "Restore existing wallet",
-                detail = "Enter a 12 or 24 word phrase you already own.",
+                detail = "Enter the 24 words of a wallet from ZSilent, ZKAPriv or the web wallet.",
                 selected = ui.walletSetupMode == WalletSetupMode.ImportSeed,
                 modifier = Modifier.weight(1f),
                 onClick = { appState.setWalletSetupMode(WalletSetupMode.ImportSeed) }
             )
         }
 
-        // Zoka Quantic crea siempre frases de 24 palabras (12 son 128 bits: 64
-        // frente a una búsqueda con Grover). Restaurar acepta las dos.
+        // Zoka Quantic usa siempre 24 palabras (256 bits): `quantic-pq-wallet
+        // restore` rechaza una frase de 12, así que restaurar no ofrece elegir.
         if (ui.walletSetupMode == WalletSetupMode.ImportSeed) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SeedCountPill("12 words", ui.seedWordCount == SeedWordCount.Twelve) { appState.setSeedWordCount(SeedWordCount.Twelve) }
-                SeedCountPill("24 words", ui.seedWordCount == SeedWordCount.TwentyFour) { appState.setSeedWordCount(SeedWordCount.TwentyFour) }
-            }
             RestoreSeedGrid(ui, appState)
         }
-    }
-}
-
-@Composable
-private fun SeedCountPill(label: String, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
-    val border = if (selected) NoirAccent else NoirOutlineStrong
-    val fg = if (selected) NoirText else NoirTextMuted
-    Row(
-        modifier = Modifier
-            .background(if (selected) NoirSurfaceElev else Color.Transparent, shape)
-            .border(BorderStroke(1.dp, border), shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 7.dp)
-    ) {
-        Text(label, color = fg, fontSize = 12.sp, letterSpacing = 0.4.sp)
     }
 }
 
@@ -991,7 +971,7 @@ private fun ChoiceCard(
 
 @Composable
 private fun RestoreSeedGrid(ui: ZSilentUiState, appState: ZSilentAppState) {
-    val wordCount = ui.seedWordCount.words
+    val wordCount = SeedWordCount.TwentyFour.words
     val words = remember(ui.onboardingSeedPhrase, wordCount) {
         val parsed = ui.onboardingSeedPhrase
             .trim()

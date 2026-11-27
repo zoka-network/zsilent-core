@@ -877,7 +877,7 @@ private fun DashboardPeerPanel(
         )
         HintText(
             if (rpcEndpointLocal) {
-                "This is the local node's sessions, not a global node count: the v2 node counts them and does not list who they are."
+                "This is the local node's sessions, not a global node count: the node counts them and does not list who they are."
             } else {
                 "This is the configured RPC endpoint's adjacent mesh, not this PC's peer count or a global node count."
             }
@@ -966,7 +966,7 @@ private fun DashboardMiningPanel(
             if (listening) {
                 "XMRig mines against ${stratum?.listening}; each block pays the address its miner logs in with. The counts start with the node."
             } else {
-                "Turn the Stratum on in its section to mine with XMRig: the v2 testnet has no built-in miner."
+                "Turn the Stratum on in its section to mine with XMRig: the testnet has no built-in miner."
             }
         )
     }

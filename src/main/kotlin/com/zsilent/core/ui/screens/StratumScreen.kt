@@ -109,7 +109,7 @@ fun StratumScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                         "reward to the miner that found it, and nothing is split."
                 )
                 HintText(
-                    "The v2 testnet has no built-in miner: XMRig through this Stratum is how a block gets " +
+                    "The testnet has no built-in miner: XMRig through this Stratum is how a block gets " +
                         "found. A block reward matures after 60 confirmations."
                 )
             }

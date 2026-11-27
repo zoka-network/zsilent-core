@@ -159,13 +159,13 @@ class ZokaRpcClient(val baseUrl: String) {
         }
         // Las wallets v2 escanean su propia copia de la cadena: el nodo nunca
         // recibe una clave de vista.
-        throw UnsupportedOperationException("the v2 node has no view-key scan; wallets scan their own chain copy")
+        throw UnsupportedOperationException("the node has no view-key scan; wallets scan their own chain copy")
     }
 
     // Moving raw blocks between nodes over HTTP was a v1 sync path. The v2
     // nodes exchange blocks over their own authenticated connections.
     suspend fun getRawBlock(height: Long): String {
-        throw UnsupportedOperationException("the v2 node syncs blocks with its peers, not through ZSilent")
+        throw UnsupportedOperationException("the node syncs blocks with its peers, not through ZSilent")
     }
 
     suspend fun submitBlock(rawBlockJson: String): Boolean = false
@@ -176,7 +176,7 @@ class ZokaRpcClient(val baseUrl: String) {
 }
 
 private const val NO_INTEGRATED_MINING =
-    "the Zoka Quantic v2 testnet has no built-in miner: mine with XMRig against the node's Stratum"
+    "the Zoka Quantic testnet has no built-in miner: mine with XMRig against the node's Stratum"
 
 /**
  * `GET /transactions/<txid>` del nodo v2: `status` es "pending" (en el
@@ -269,8 +269,8 @@ internal fun V2Status.toSyncStatus(nowSeconds: Long = System.currentTimeMillis()
     )
 }
 
-// The v2 node reaches its peers over iroh, directly or through a relay, never
-// over Tor; it reports counts only. "Direct" carries the sessions it opened and
+// The node reaches its peers over iroh, directly or through a relay, or only
+// over Tor in Tor mode; it reports counts only. "Direct" carries the sessions it opened and
 // "other" the ones opened to it, which is how the screens label them.
 internal fun V2Status.toPeers() = PeersResponse(
     connectedPeers = peers.connected,

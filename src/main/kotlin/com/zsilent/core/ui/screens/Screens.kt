@@ -483,7 +483,7 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     var newWalletName by remember { mutableStateOf("") }
     var newWalletPassword by remember { mutableStateOf("") }
     var newWalletPasswordConfirm by remember { mutableStateOf("") }
-    var newWalletSeedWords by remember { mutableStateOf(SeedWordCount.TwentyFour) }
+    val newWalletSeedWords = SeedWordCount.TwentyFour
     var backupPath by remember(ui.activeWalletName) {
         mutableStateOf(defaultWalletBackupPath(ui.activeWalletName.ifBlank { ui.walletName }))
     }
@@ -605,15 +605,12 @@ fun WalletScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                                     shape = MaterialTheme.shapes.medium,
                                     modifier = Modifier.weight(1f)
                                 )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    SeedWordCount.entries.forEach { count ->
-                                        FilterChip(
-                                            selected = newWalletSeedWords == count,
-                                            onClick = { newWalletSeedWords = count },
-                                            label = { Text("${count.words} words") }
-                                        )
-                                    }
-                                }
+                                // Zoka Quantic usa siempre 24 palabras (256 bits).
+                                Text(
+                                    "24 words",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 PasswordField(newWalletPassword, { newWalletPassword = it }, "Wallet password", Modifier.weight(1f))
@@ -2015,7 +2012,7 @@ private fun NodePeerTable(ui: ZSilentUiState) {
                 EmptyState(
                     if (ui.localConnectedPeers > 0) "${ui.localConnectedPeers} session(s) open"
                     else if (ui.localRpcOnline) "No connected peers yet" else "Node offline",
-                    sub = if (ui.localConnectedPeers > 0) "The v2 node reports how many sessions it holds, not who they are."
+                    sub = if (ui.localConnectedPeers > 0) "The node reports how many sessions it holds, not who they are."
                           else if (ui.localRpcOnline) "Dialing the seeds over iroh."
                           else "Start the node to see connected peers."
                 )
@@ -2577,17 +2574,22 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
     val rpcEndpointLocal = remember(appState) { appState.localRpc.isLocalEndpoint() }
     val nodeOnline = ui.localRpcOnline
     val peers = ui.nodeV2?.peers
-    val relay = peers?.relay == true
+    val tor = ui.torEnabled
+    // En Modo Tor el nodo no usa UDP ni relays: solo el circuito de Tor.
+    val relay = peers?.relay == true && !tor
     val runtimeKeepsSessionOpen = ui.nodeStatus == ServiceStatus.Starting ||
         ui.nodeStatus == ServiceStatus.Online ||
         ui.nodeStatus == ServiceStatus.Stopping
 
-    // La red v2 va por iroh (QUIC): cada conexión negocia el intercambio
+    // La red va por iroh (QUIC): cada conexión negocia el intercambio
     // postcuántico híbrido y cada servidor prueba la identidad ML-DSA que fija
-    // su descriptor. No hay Tor: QUIC va por UDP y Tor solo lleva TCP.
+    // su descriptor. Los relays son los de Zoka (relay1 y relay2.zoka.network)
+    // y los de n0; el nodo usa el más rápido, y la búsqueda de direcciones es la
+    // DNS de n0. Con el Modo Tor el nodo va solo por Tor, a las semillas onion.
     val stateLabel = when {
         !rpcEndpointLocal -> "REMOTE RPC"
         !nodeOnline -> "NODE OFFLINE"
+        tor -> "TOR MODE"
         relay -> "IROH · RELAYED"
         else -> "IROH · DIRECT"
     }
@@ -2600,8 +2602,8 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
         if (nodeOnline && relay) {
             add(
                 ScreenNotice(
-                    title = "The relay sees this PC's IP address",
-                    detail = "Connections carried by the relays (n0 today) and the pkarr DNS that resolves endpoints see this PC's IP and endpoint id. Peers see your endpoint id and what your node asks them. Payments stay private: amounts, owners and memos travel encrypted, inside the STARK.",
+                    title = "The relays see this PC's IP address",
+                    detail = "A connection carried by a relay (Zoka's relay1 and relay2.zoka.network, or n0's) and n0's address lookup (pkarr DNS) see this PC's IP and endpoint id. Peers see your endpoint id and what your node asks them. Tor mode hides your IP from all of them. Payments stay private: amounts, owners and memos travel encrypted, inside the STARK.",
                     tone = ZTone.Info
                 )
             )
@@ -2640,21 +2642,37 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
                 ) {
                     Pill("post-quantum tls required", ZTone.On)
                     Pill("ml-dsa pinned peers", ZTone.On)
-                    Pill(if (relay) "relays · n0" else "direct only", if (relay) ZTone.Warn else ZTone.On)
-                    Pill("no tor", ZTone.Off)
+                    Pill(
+                        when {
+                            tor -> "no relays"
+                            relay -> "relays · zoka + n0"
+                            else -> "direct only"
+                        },
+                        if (relay) ZTone.Warn else ZTone.On
+                    )
+                    Pill(if (tor) "tor mode" else "tor mode off", if (tor) ZTone.On else ZTone.Off)
                 }
             }
             HintText(
-                "Every connection of the v2 node must negotiate the hybrid post-quantum key exchange (X25519MLKEM768), and each server proves the ML-DSA-65 identity its descriptor pins. There is no Tor transport yet: QUIC runs over UDP and Tor only carries TCP."
+                "Every connection of the node must negotiate the hybrid post-quantum key exchange (X25519MLKEM768), and each server proves the ML-DSA-65 identity its descriptor pins. Tor mode (Settings → Network) takes the node only through Tor, to the network's onion seeds: no UDP and no relays, so peers do not see this computer's IP."
             )
         }
 
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-            StatusCard("Transport", "iroh", "QUIC, hybrid TLS", Modifier.weight(1f))
+            StatusCard(
+                "Transport",
+                if (tor) "tor" else "iroh",
+                if (tor) "hybrid TLS inside Tor" else "QUIC, hybrid TLS",
+                Modifier.weight(1f)
+            )
             StatusCard(
                 "Relay",
-                if (relay) "n0" else "none",
-                if (relay) "sees IP and endpoint id" else "direct connections only",
+                if (relay) "zoka + n0" else "none",
+                when {
+                    tor -> "Tor mode uses none"
+                    relay -> "sees IP and endpoint id"
+                    else -> "direct connections only"
+                },
                 Modifier.weight(1f)
             )
             StatusCard("Outbound", peers?.outbound?.toString() ?: "-", "sessions this node opened", Modifier.weight(1f))
@@ -2679,15 +2697,34 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
             Column(Modifier.weight(1.45f), verticalArrangement = Arrangement.spacedBy(ZTheme.spacing.gap)) {
-                Panel(title = "Network path", meta = if (relay) "relayed" else "direct") {
-                    KeyValueRow("Transport", "iroh (QUIC)")
+                Panel(title = "Network path", meta = if (tor) "tor" else if (relay) "relayed" else "direct") {
+                    KeyValueRow("Transport", if (tor) "Tor, to the onion seeds" else "iroh (QUIC)")
                     KeyValueRow("Key exchange", "X25519MLKEM768, required")
                     KeyValueRow("Peer identity", "ML-DSA-65, pinned by descriptor")
-                    KeyValueRow("Relays", if (relay) "n0 (relay and pkarr DNS)" else "none")
-                    KeyValueRow("Sees your IP", if (relay) "relay operator and peers" else "peers")
+                    KeyValueRow(
+                        "Relays",
+                        when {
+                            tor -> "none (Tor mode)"
+                            relay -> "Zoka's (relay1, relay2.zoka.network) and n0's"
+                            else -> "none"
+                        }
+                    )
+                    KeyValueRow("Address lookup", if (tor) "none (onion seeds)" else "n0 (pkarr DNS)")
+                    KeyValueRow(
+                        "Sees your IP",
+                        when {
+                            tor -> "no peer or relay"
+                            relay -> "relay operators and peers"
+                            else -> "peers"
+                        }
+                    )
                     KeyValueRow("Payments", "private: STARK proofs, encrypted notes")
                     HintText(
-                        "What the network sees: your IP, your endpoint id and what your node asks. What stays private: amounts, owners, memos and which note a payment spends."
+                        if (tor) {
+                            "What the network sees: your endpoint id and what your node asks, not your IP. What stays private: amounts, owners, memos and which note a payment spends."
+                        } else {
+                            "What the network sees: your IP, your endpoint id and what your node asks. What stays private: amounts, owners, memos and which note a payment spends."
+                        }
                     )
                 }
             }
@@ -2739,7 +2776,8 @@ fun PrivacyScreen(ui: ZSilentUiState, appState: ZSilentAppState) {
 
         Panel(title = "Live privacy posture", meta = "current UI state") {
             PostureRow("Hybrid TLS", true, "required on every connection")
-            PostureRow("Relay", !relay, if (relay) "n0 sees your IP" else "none")
+            PostureRow("Relay", !relay, if (relay) "relays see your IP" else "none")
+            PostureRow("Tor mode", tor, if (tor) "on · IP hidden from peers" else "off · optional")
             PostureRow("On-screen balances", ui.balancesHidden, if (ui.balancesHidden) "hidden" else "visible")
             PostureRow("Wallet session", ui.appLocked, if (ui.sessionUnlocked && !ui.appLocked) "unlocked" else "locked")
             PostureRow(
@@ -3584,8 +3622,8 @@ private fun SettingsHome(ui: ZSilentUiState, onOpen: (SettingsPage) -> Unit) {
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { onOpen(SettingsPage.Network) }
             )
-            // La v2 no tiene Tor (QUIC va por UDP y Tor solo lleva TCP): la
-            // tarjeta dice qué ve la red, sin un interruptor que no existe.
+            // La tarjeta dice qué ve la red; el interruptor del Modo Tor está
+            // en la página Network.
             SettingsMenuCard(
                 title = "Network privacy",
                 detail = if (ui.torEnabled) {
@@ -4202,7 +4240,7 @@ private fun SettingsAboutPage(ui: ZSilentUiState) {
         KeyValueRow("Node height", ui.chainHeight.toString())
         KeyValueRow("Network height", ui.networkHeight.toString())
         KeyValueRow("Sync gate", if (ui.miningSyncReady) "mining enabled" else "mining locked")
-        KeyValueRow("Route", "iroh (QUIC) · no Tor")
+        KeyValueRow("Route", if (ui.torEnabled) "Tor mode · onion seeds" else "iroh (QUIC) · Tor mode off")
     }
 }
 

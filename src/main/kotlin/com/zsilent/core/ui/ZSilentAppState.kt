@@ -2864,7 +2864,7 @@ class ZSilentAppState(
 
     private fun rpcSyncBlockedReason(snapshot: ZSilentUiState): String {
         if (cli.zoka == null) return "Cannot sync: zoka binary was not found."
-        if (!canRunRpcSync(snapshot)) return "The v2 node syncs itself with its peers; start the node to sync."
+        if (!canRunRpcSync(snapshot)) return "The node syncs itself with its peers; start the node to sync."
         if (rpcSyncInProgress || snapshot.syncBusy) return "Sync is already running."
         if (snapshot.nodeStatus != ServiceStatus.Offline) {
             return "The full node already syncs itself while it's running; stop it before running a direct RPC sync."
